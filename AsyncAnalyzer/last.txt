@@ -1,0 +1,1730 @@
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-1.0.0-1771121245610.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-1.0.0-1771123158237.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-1.0.0-1771123488579.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-1.0.0-1771125633374.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-1771123711372.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-3.0.0-1771108356621.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-3.0.0-1771109005499.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-3.0.0-1771109321118.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-3.0.0-1771109578148.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-3.0.0-1771109737752.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771129764403.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771130229441.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771130459950.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771130973866.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771131470711.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771131783363.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771132374013.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771132640608.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771133015699.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771134124156.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771134317116.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771134771259.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771134834082.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771135002941.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771135598616.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771135823315.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771136383576.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771136621416.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSpawner-4.0.0-1771136687380.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSus-1.0.0-1773154434614.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutSus-1.0.0-1773155435842.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\donutteams-1.0-1775513802528.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\donutteams-1.0-1775513913790.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\donutteams-1.0-1775519766389.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutTpa-13 (1)-1773576401069.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771732718313.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771944738480.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771944783593.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771945701609.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771946154484.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771949127810.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771949903199.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771950160433.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771951214854.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771951326275.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771951402496.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771951729748.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771952237270.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771952370543.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771952523510.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771953134310.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771953359288.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771953743468.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771954143854.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771955822635.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771956099090.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771956655740.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771956962944.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771958587547.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771958993159.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771959235723.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771959609650.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771959888928.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771960199396.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771960612066.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771960833604.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771961137147.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771961345266.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771961565503.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771961681566.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771965441795.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771968950600.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771969200892.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1771969621907.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772035531766.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772036583160.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772037611381.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772043360520.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772053533052.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772053905718.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772107374565.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772107917547.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108015352.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108129116.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108293150.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108370266.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108492905.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108632751.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108704457.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772108854212.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772109078697.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772109237986.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772109398264.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772110170585.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772110668344.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111082021.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111217825.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111399104.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111499082.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111540490.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111607998.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111697358.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772111992195.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772118010057.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772201233922.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\DonutWorth-1.0.0-1772381568643.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\fakeplayer-0.3.13 (1)-1771642841237.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\fakeplayer-0.3.13 (1)-1775433202835.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\multiverse-core-5.5.3-1774554219848.jar
+  │    Hits : javassist
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772286358854.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772287120647.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772288601844.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772289323602.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772289909853.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772292500012.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772293555263.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772293762277.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772293857979.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772293935239.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772294022666.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772294111171.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772294423586.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772294630347.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772294720243.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772294828549.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772296018843.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772296205897.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772297817977.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772298210628.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772298692354.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772299202068.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772300032606.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772300193768.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772300312627.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772300507425.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772300930822.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772301114552.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772301923767.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772302522256.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772303004093.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772303438849.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772304991640.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772309081496.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772309393642.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772309657096.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772309776532.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772310039906.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772310295983.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772310701663.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772311024659.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772311255609.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772317698082.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772317928466.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772318149513.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772318417550.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772318793234.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772319075199.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772319116664.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772319254641.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772320499464.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772321265147.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772321665546.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772321759840.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772321884062.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772322033495.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772322072487.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772322451384.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772322584325.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772323191628.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772324166440.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772324684341.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772324841610.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772324992621.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772326060056.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772326530607.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772327019944.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772327297746.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772328079257.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772328634063.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772335226105.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772336174880.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772376413262.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772377212873.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772377739348.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772379350260.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772380437896.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772380882101.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772381495990.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772382104067.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772382259633.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772382427701.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772383077715.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772383287399.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772383416867.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772383800053.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772383958435.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772384158971.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772384614361.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772384867177.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772384995257.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772385086497.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772393774969.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772394034323.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772394175541.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772394646400.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772394926253.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772395706685.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772396187677.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772396373662.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772396586594.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772397004299.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772397190054.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772397400524.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772397653285.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772397896021.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772398109788.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772398212671.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772398424269.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772399044980.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772399237505.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772399363950.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772399835059.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772400197066.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772554617611.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772554844531.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772555492596.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772556521373.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772556784594.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772557128058.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772557537783.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772558724072.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772558919415.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772559065824.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772559218335.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772559543154.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772561060838.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772563669881.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772565291649.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772565666116.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772565752624.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772570590890.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772570689261.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772570821445.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772570941977.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772633326183.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772633684232.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772633903641.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\RevoCore-1.0.0-1772634053109.jar
+  │    Hits : invsee
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\TAB v5.4.0-1770323144674.jar
+  │    Hits : pingspoof
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\LocalHost\plugins\.paper-remapped\unknown-origin\TAB v5.4.0-1772826879320.jar
+  │    Hits : pingspoof
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768309774371.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768310182752.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768310551091.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768310906336.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768311026765.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768312125286.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768312189321.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769285571582.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769285765583.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769287163508.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769355928676.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769709343489.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769709788321.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769710880256.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769711230057.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769711835471.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769712055254.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770323555210.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770323728538.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770324879597.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325159069.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325186639.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325552572.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325612181.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325742318.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2.jar-out (1)-1769285865729.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2.jar-out-1769537474844.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2.jar-out-1770323142495.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695267147.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695523355.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695618614.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695666855.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769696029144.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769696475088.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769696607743.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769697787279.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769698950405.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769699239916.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769699654206.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769699961514.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769700779303.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769700849022.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769701030377.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3.jar-out-1770381027639.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3.jar-out-1770385433035.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769691621153.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769692249593.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769692553413.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769692753738.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769283652346.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769283879058.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769284108847.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769533043177.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769538050986.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769609424856.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769609794805.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.1.jar-out-1769285867929.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769285569468.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769285767940.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769287166741.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769287385321.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769287732640.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769355491388.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769355634974.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769355904283.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769356087308.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357236199.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357414801.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357505875.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357623970.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357816181.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358011346.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358371706.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358703547.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358901853.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769373851539.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769374115972.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769374215908.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769374489095.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375018736.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375155389.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375421659.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375669267.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375889264.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769876787850.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769876911534.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769880469034.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1770323972842.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1769876982044.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1769877084578.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770323149160.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770382325202.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770384807078.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770385283461.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771087912360.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771088160949.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769289403772.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290044900.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290182532.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290209053.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290346439.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290442218.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294171730.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294630712.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294661609.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294718221.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295300607.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295457037.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295549635.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295610789.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295789666.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295982432.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1770323139520.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769825299657.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769825510269.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769825653987.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769826291658.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769827088335.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828138397.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828418023.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828518963.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828566742.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828757348.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828890740.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829119853.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829273330.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829412893.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829490468.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829545970.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829612462.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829665212.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829754454.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829778588.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829802128.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829883433.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770324249380.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770324353686.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770385285786.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770823770445.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770823896183.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770824589501.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770824905781.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770825920980.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770826650747.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770827097545.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770827489153.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829425605.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829678705.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829809005.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829933853.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770830119192.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770830256796.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770832165432.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770833108917.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT.jar-out-1770823261386.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT.jar-out-1770823517350.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutSimpleSpawn-1.0-1770829889255.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\DonutSimpleSpawn-1.0-1770830000443.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia\plugins\.paper-remapped\unknown-origin\TAB v5.4.0-1770323144674.jar
+  │    Hits : pingspoof
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768309774371.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768310182752.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768310551091.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768310906336.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768311026765.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768312125286.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-1.1-1768312189321.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769285571582.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769285765583.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769287163508.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769355928676.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769709343489.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769709788321.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769710880256.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769711230057.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769711835471.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1769712055254.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770323555210.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770323728538.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770324879597.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325159069.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325186639.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325552572.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325612181.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2-1770325742318.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2.jar-out (1)-1769285865729.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2.jar-out-1769537474844.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.2.jar-out-1770323142495.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695267147.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695523355.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695618614.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769695666855.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769696029144.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769696475088.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769696607743.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769697787279.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769698950405.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769699239916.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769699654206.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769699961514.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769700779303.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769700849022.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3-1769701030377.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3.jar-out-1770381027639.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutBaltop-2.2.3.jar-out-1770385433035.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769691621153.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769692249593.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769692553413.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLifes-1.0.0-1769692753738.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769283652346.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769283879058.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769284108847.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769533043177.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769538050986.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769609424856.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutLives-1.0.0-1769609794805.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.1.jar-out-1769285867929.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769285569468.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769285767940.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769287166741.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769287385321.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769287732640.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769355491388.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769355634974.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769355904283.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769356087308.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357236199.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357414801.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357505875.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357623970.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769357816181.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358011346.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358371706.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358703547.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769358901853.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769373851539.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769374115972.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769374215908.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769374489095.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375018736.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375155389.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375421659.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375669267.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769375889264.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769876787850.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769876911534.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1769880469034.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2-1770323972842.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1769876982044.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1769877084578.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770323149160.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770382325202.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770384807078.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.0.2.jar-out-1770385283461.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771029167164.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771029715045.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771087925410.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771088168259.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutPay-1.1.0-1771088606507.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769289403772.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290044900.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290182532.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290209053.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290346439.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769290442218.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294171730.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294630712.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294661609.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769294718221.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295300607.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295457037.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295549635.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295610789.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295789666.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1769295982432.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutServerCore-1.0-SNAPSHOT-1770323139520.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769825299657.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769825510269.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769825653987.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769826291658.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769827088335.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828138397.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828418023.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828518963.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828566742.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828757348.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769828890740.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829119853.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829273330.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829412893.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829490468.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829545970.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829612462.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829665212.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829754454.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829778588.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829802128.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1769829883433.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770324249380.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770324353686.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770385285786.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770823770445.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770823896183.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770824589501.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770824905781.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770825920980.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770826650747.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770827097545.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770827489153.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829425605.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829678705.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829809005.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770829933853.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770830119192.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770830256796.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770832165432.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT-1770833108917.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT.jar-out-1770823261386.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutShop-1.0-SNAPSHOT.jar-out-1770823517350.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutSimpleSpawn-1.0-1770829889255.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\DonutSimpleSpawn-1.0-1770830000443.jar
+  │    Hits : Donut
+
+  │  ⚠ FLAGGED  C:\Users\Gigabyte\Downloads\CrossServer LocalHost\folia2\plugins\.paper-remapped\unknown-origin\TAB v5.4.0-1770323144674.jar
+  │    Hits : pingspoof
+
+  │  ————————————————————————————————————————————————————————————————————  │
+  │  1154 suspicious JAR(s) detected — review immediately               │
+  └──────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  PC SCAN SUMMARY
+
+  Flagged processes   : 0
+  Unknown processes   : 0
+  Startup flags       : 0
+  Cheat folders found : 0
+  Flagged JARs        : 1154
+  Flagged mods (scan) : 1
+    ⚠ appleskin-fabric-mc1.19-2.4.1_1.jar
+
+  ACTION REQUIRED — review all flagged items above.
