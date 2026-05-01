@@ -2254,7 +2254,7 @@ function Run-PCscan {
                 $isInstaller = $path -match '(?i)(CodeSetup|WindowsInstaller|is-[A-Z0-9]{5}\.tmp|Squirrel|SquirrelSetup|nsis|setup\.exe|installer\.exe|unins\d+|Update\.exe|bootstrapper|vcredist|dotnet|ndp|wix)'
                 if (-not $isInstaller) { $isSuspiciousPath = $true; $pathReason = "Running from Temp folder" }
             }
-            elseif ($path -match 'AppData\\Roaming\\(?!\.minecraft|Minecraft|Discord|Spotify|Code|cursor|npm)') {
+            elseif ($path -match 'AppData\\Roaming\\(?!\.minecraft|Minecraft|Discord|Spotify|Code|cursor|npm|JetBrains)') {
                 $isSuspiciousPath = $true; $pathReason = "Running from AppData\Roaming"
             }
         }
