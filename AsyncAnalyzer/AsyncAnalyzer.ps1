@@ -2804,6 +2804,103 @@ function Run-PCscan {
     W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
 
     Write-Host ""
+    W "  Scanning for obfuscated files..." DarkGray
+    $obfFlags = [System.Collections.Generic.List[object]]::new()
+    $obfRoots = [System.Collections.Generic.List[string]]::new()
+    foreach ($base in @(
+        [System.IO.Path]::Combine($env:USERPROFILE, "Downloads"),
+        [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
+        $env:TEMP
+    )) {
+        [void]$obfRoots.Add($base)
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                [void]$obfRoots.Add($sub)
+                try {
+                    foreach ($sub2 in [System.IO.Directory]::GetDirectories($sub)) {
+                        [void]$obfRoots.Add($sub2)
+                    }
+                } catch {}
+            }
+        } catch {}
+    }
+    $obfSeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $pyObfPatterns = @(
+        "exec(base64","eval(base64","exec(compile","eval(compile",
+        "exec(__import__","marshal.loads","__import__('marshal')",
+        "zlib.decompress","lzma.decompress","bz2.decompress",
+        "base64.b64decode","base64.urlsafe_b64decode",
+        "bytes.fromhex","bytearray.fromhex",
+        "compile(base64","compile(zlib","compile(bytes",
+        "lambda _","lambda __","lambda ___",
+        "globals()['__builtins__']","__builtins__.__dict__",
+        "getattr(__builtins__","getattr(globals",
+        "chr("+[char]0x29,"chr(0x","''.join(chr","map(chr",
+        "uu.decode","codecs.decode","rot_13","rot13",
+        "pyc\x00\x00\x00","import sys; sys.exit","PyInstaller"
+    )
+    foreach ($obfRoot in $obfRoots) {
+        if (-not [System.IO.Directory]::Exists($obfRoot)) { continue }
+        try {
+            $obfFiles = [System.Collections.Generic.List[string]]::new()
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.jar', [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.py',  [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.pyw', [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
+            foreach ($obfFile in $obfFiles) {
+                if (-not $obfSeenPaths.Add($obfFile)) { continue }
+                $ext = [System.IO.Path]::GetExtension($obfFile).ToLower()
+                Spin "Obf-scan: $([System.IO.Path]::GetFileName($obfFile))"
+                $reasons = [System.Collections.Generic.List[string]]::new()
+                if ($ext -eq ".jar") {
+                    try {
+                        $oFlags = Invoke-ObfuscationScan -FilePath $obfFile
+                        foreach ($of in $oFlags) { [void]$reasons.Add("[OBFUSCATION] $of") }
+                    } catch {}
+                } elseif ($ext -eq ".py" -or $ext -eq ".pyw") {
+                    try {
+                        $src = [System.IO.File]::ReadAllText($obfFile)
+                        $srcL = $src.ToLower()
+                        $hits = [System.Collections.Generic.List[string]]::new()
+                        foreach ($pat in $pyObfPatterns) {
+                            if ($src.Contains($pat) -or $srcL.Contains($pat.ToLower())) { [void]$hits.Add($pat) }
+                        }
+                        $longBase64 = [regex]::Matches($src, "[A-Za-z0-9+/]{200,}={0,2}")
+                        if ($longBase64.Count -gt 0) { [void]$hits.Add("long base64 blob ($($longBase64.Count) occurrence(s))") }
+                        $hexBlobs = [regex]::Matches($src, "\\x[0-9a-fA-F]{2}(?:\\x[0-9a-fA-F]{2}){19,}")
+                        if ($hexBlobs.Count -gt 0) { [void]$hits.Add("hex-encoded blob ($($hexBlobs.Count) occurrence(s))") }
+                        $chrCalls = [regex]::Matches($src, "chr\(\d+\)")
+                        if ($chrCalls.Count -ge 10) { [void]$hits.Add("chr() obfuscation ($($chrCalls.Count) calls)") }
+                        if ($hits.Count -gt 0) {
+                            $reasons.Add("[OBFUSCATION] $( ($hits | Select-Object -First 5) -join ' | ' )")
+                        }
+                    } catch {}
+                }
+                if ($reasons.Count -gt 0) {
+                    $fi = try { [System.IO.FileInfo]::new($obfFile) } catch { $null }
+                    $meta = if ($fi) { "size: $([math]::Round($fi.Length/1KB,1)) KB  modified: $($fi.LastWriteTime.ToString('yyyy-MM-dd'))" } else { "" }
+                    [void]$obfFlags.Add([PSCustomObject]@{ Path = $obfFile; Reasons = $reasons; Meta = $meta })
+                }
+            }
+        } catch {}
+    }
+    SpinClear
+    $pcIssues += $obfFlags.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) OBFUSCATED FILE SCAN " + "$([char]0x2500)" * 49 + "$([char]0x2510)") DarkCyan
+    if ($obfFlags.Count -eq 0) {
+        W "  $([char]0x2502)   OK $([char]0x2014) no obfuscated files detected                              $([char]0x2502)" DarkCyan
+    } else {
+        foreach ($f in $obfFlags) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  $($f.Path)" Red
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkYellow }
+            if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
+        }
+        Write-Host ""
+        W "  $([char]0x2502)  $($obfFlags.Count) obfuscated file(s) detected $([char]0x2014) review immediately" Red
+    }
+    W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
+
+    Write-Host ""
     W "  Scanning EXE files for cheat indicators..." DarkGray
     $exeCheatTokens = @(
         "autoclicker","autoclick","killaura","aimbot","triggerbot","bhop",
