@@ -1,4 +1,4 @@
-if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
+﻿if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
     Write-Host "  [!] AsyncAnalyzer requires PowerShell 5.1 or newer." -ForegroundColor Red
     Write-Host "      Your version: $($PSVersionTable.PSVersion)" -ForegroundColor DarkGray
     return
@@ -215,36 +215,106 @@ $script:cheatStrings = @(
 $script:knownCheatFileTokens = @(
     "doomsday","doomsdayclient","doomsday-client","doomsday_client",
     "darik","dariks","dqrkis","dqrk",
-    "vape","vapeclient","vape-client","vape_client","vapelite","vape-lite",
-    "meteor","meteorclient","meteor-client","meteor_client",
-    "liquidbounce","liquid-bounce","liquid_bounce","liquidb",
-    "wurst","wurst-client","wurst_client",
-    "sigma","sigmaclient","sigma-client",
-    "rise","riseclient","rise-client",
-    "future","futureclient","future-client",
-    "konas","konasclient","konas-client",
-    "inertia","inertiaclient","inertia-client",
-    "exhibition","exhibitionclient",
-    "pandaware","panda-ware","panda_ware",
-    "astolfo","astolfoclient","astolfo-client",
-    "rusherhack","rusher-hack","rusher_hack",
-    "novaclient","nova-client","nova_client","novaware",
-    "impact","impactclient","impact-client",
-    "aristois","aristois-client",
-    "azura","azuraclient","azura-client",
-    "moonlight","moonlightclient","moon-client",
-    "intent","intentclient","intent-client","intentstore",
-    "prestige","prestigeclient","prestige-client",
-    "cheatbreaker","cheat-breaker",
-    "kami","kamiclient","kami-client",
-    "meteor-dev","meteordev",
-    "fdp","fdpclient","fdp-client",
-    "xray","xrayclient","xray-mod",
-    "baritone","baritoneclient",
-    "skidfuscator","skid-client","skidclient",
-    "noob","nooby","cheat","hack","hacked","hacker",
+    "vape","vapeclient","vape-client","vape_client","vapelite","vape-lite","vapepro",
+    "meteor","meteorclient","meteor-client","meteor_client","meteordev","meteor-dev",
+    "liquidbounce","liquid-bounce","liquid_bounce","liquidb","liquidbounceclient",
+    "wurst","wurst-client","wurst_client","wurstclient","wurst7",
+    "sigma","sigmaclient","sigma-client","sigmahack","sigmamod",
+    "rise","riseclient","rise-client","risehack",
+    "future","futureclient","future-client","futurehack",
+    "konas","konasclient","konas-client","konashack",
+    "inertia","inertiaclient","inertia-client","inertiahack",
+    "exhibition","exhibitionclient","exhibitionhack",
+    "pandaware","panda-ware","panda_ware","pandaclient",
+    "astolfo","astolfoclient","astolfo-client","astolfohack",
+    "rusherhack","rusher-hack","rusher_hack","rushermod",
+    "novaclient","nova-client","nova_client","novaware","novahack",
+    "impact","impactclient","impact-client","impacthack",
+    "aristois","aristois-client","aristoisclient",
+    "azura","azuraclient","azura-client","azurahack",
+    "moonlight","moonlightclient","moon-client","moonhack",
+    "intent","intentclient","intent-client","intentstore","intenthack",
+    "prestige","prestigeclient","prestige-client","prestigehack",
+    "cheatbreaker","cheat-breaker","cheatbreakerclient",
+    "kami","kamiclient","kami-client","kamiblue","kami-blue",
+    "fdp","fdpclient","fdp-client","fdphack",
+    "xray","xrayclient","xray-mod","xrayhack","xraymod",
+    "baritone","baritoneclient","baritonehack",
+    "skidfuscator","skid-client","skidclient","skidware",
+    "noob","nooby","cheat","hack","hacked","hacker","hackme",
     "inject","injector","loader","payload","bypass","cracked","crack",
-    "stealer","grabber","logger","keylog","token","exploit","malware","rat"
+    "stealer","grabber","logger","keylog","token","exploit","malware","rat",
+    "sabotage","sabotageclient","omega","omegaclient","omega-client",
+    "flex","flexclient","flex-client","flexhack",
+    "swift","swiftclient","swift-client","swifthack",
+    "vertex","vertexclient","vertex-client","vertexhack",
+    "vapor","vaporclient","vapor-client","vaporhack",
+    "blaze","blazeclient","blaze-client","blazehack",
+    "noble","nobleclient","noble-client","noblehack",
+    "royal","royalclient","royal-client","royalhack",
+    "spirit","spiritclient","spirit-client","spirithack",
+    "phantom","phantomclient","phantom-client","phantomhack",
+    "ghost","ghostclient","ghost-client","ghosthack","ghostware",
+    "shadow","shadowclient","shadow-client","shadowhack",
+    "crystal","crystalclient","crystal-client","crystalware",
+    "drip","dripclient","drip-client","driphack","dripware",
+    "tenacity","tenacityclient","tenacity-client",
+    "thunder","thunderclient","thunder-client","thunderhack",
+    "storm","stormclient","storm-client","stormhack",
+    "abyss","abyssclient","abyss-client","abysshack",
+    "raven","ravenclient","raven-client","ravenhack","ravenb",
+    "themis","themisclient","themishack",
+    "saber","saberclient","saber-client","saberhack",
+    "blade","bladeclient","blade-client","bladehack",
+    "toxic","toxicclient","toxic-client","toxichack",
+    "breach","breachclient","breach-client","breachhack",
+    "clarity","clarityclient","clarity-client",
+    "motion","motionclient","motion-client","motionhack",
+    "flux","fluxclient","flux-client","fluxhack","fluxbe",
+    "strafe","strafeclient","strafe-client","strafehack",
+    "aura","auraclient","aura-client","aurahack",
+    "nemesis","nemesisclient","nemesis-client","nemesishack",
+    "nexus","nexusclient","nexus-client","nexushack",
+    "crypt","cryptclient","crypt-client","crypthack","cryptware",
+    "nodus","nodusclient","nodus-client","nodushack",
+    "hyperium","hyperiumclient","hyperiumhack",
+    "salwyrr","salwyrrclient","salwyrrhack",
+    "bleach","bleachclient","bleachhack","bleach-hack",
+    "erosion","erosionclient","erosionhack",
+    "entropy","entropyclient","entropyhack","entropy-client",
+    "ares","aresclient","ares-client","areshack","areswarez",
+    "wolfram","wolframclient","wolfram-client","wolframhack",
+    "pyro","pyroclient","pyro-client","pyrohack",
+    "kira","kiraclient","kira-client","kirahack",
+    "solace","solaceclient","solace-client","solacehack",
+    "serenity","serenityclient","serenityhack",
+    "polaris","polarisclient","polaris-client",
+    "lucid","lucidclient","lucid-client","lucidhack",
+    "comet","cometclient","comet-client","comethack",
+    "aurora","auroraclient","aurora-client","aurorahack",
+    "twilight","twilightclient","twilight-hack",
+    "quantum","quantumclient","quantum-client","quantumhack",
+    "pulsar","pulsarclient","pulsar-client","pulsarhack",
+    "radium","radiumclient","radium-client","radiumhack",
+    "prism","prismclient","prism-client","prismhack",
+    "zenith","zenithclient","zenith-client","zenithhack",
+    "apex","apexclient","apex-client","apexhack",
+    "orion","orionclient","orion-client","orionhack",
+    "inferno","infernoclient","inferno-client","infernohack",
+    "eclipse","eclipseclient","eclipse-client","eclipsehack",
+    "rage","rageclient","rage-client","ragehack","ragebot",
+    "autoclicker","auto-clicker","auto_clicker","clickbot","clicker",
+    "killaura","kill-aura","kill_aura","aurabot",
+    "aimbot","aim-bot","aim_bot","aimassist","triggerbot",
+    "esp","wallhack","wall-hack","nofallhack",
+    "bhop","bunny-hop","speedhack","speed-hack","flyhack","fly-hack",
+    "scaffold","scaffoldhack","scaffold-hack",
+    "dllinjector","dll-injector","dll_injector","injectorpro",
+    "bypassed","bypassclient","bypass-client","bypasshack",
+    "cracked","crackedclient","cracked-client","crackedhack",
+    "nulled","nulledclient","nulled-client","nulledhack",
+    "leaked","leakedclient","leaked-client","leakedhack",
+    "skid","skidclient","skid-client","skidhack"
 )
 
 function Get-BigramSimilarity([string]$a, [string]$b) {
@@ -277,7 +347,7 @@ function Get-FilenameSimilarityMatch([string]$JarName) {
         $sim = Get-BigramSimilarity $base $t
         if ($sim -gt $bestScore) { $bestScore = $sim; $bestToken = $token }
     }
-    if ($bestScore -ge 0.25 -and $null -ne $bestToken) {
+    if ($bestScore -ge 0.45 -and $null -ne $bestToken) {
         return [PSCustomObject]@{ Token = $bestToken; Score = [Math]::Round($bestScore * 100) }
     }
     return $null
@@ -2103,7 +2173,10 @@ $script:cheatProcessNames = [System.Collections.Generic.HashSet[string]]::new([S
     "flux","fluxclient","remix","pandora","hypnotic","reflex","phantom",
     "ares","atomclient","zephyr","xeclient","vertex","velocityclient",
     "rusher","rusherhack","novoline","azuraclient","fdp","fdpclient",
-    "pyroclient","drip","drippy","entropy","nightx","blaze","blazemod"
+    "pyroclient","drip","drippy","entropy","nightx","blaze","blazemod",
+    "autocrystal","auto-crystal","crystalmacro","crystal-macro","crystalaura","crystal-aura",
+    "anchorbot","anchor-bot","anchormacro","anchor-macro","anchoraura","anchor-aura",
+    "macroclient","macro-client","autoanchor","auto-anchor"
 ) | ForEach-Object { [void]$script:cheatProcessNames.Add($_) }
 
 $script:suspiciousProcessPatterns = @(
@@ -2600,34 +2673,64 @@ function Run-PCscan {
     W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
 
     $pyCheatKeywordsHigh = @(
-        "autoclicker","autoclick","auto_clicker",
-        "aimbot","aim_bot","aimassist","aim_assist",
-        "triggerbot","trigger_bot",
-        "cheatclient","cheat_client","ghosthack","ghost_hack",
-        "autototem","auto_totem","autocrystal","auto_crystal",
-        "killaura","kill_aura","forcefield","force_field",
-        "antiknockback","anti_knockback","velocity_hack",
-        "wallhack","wall_hack","flyhack","fly_hack",
-        "esp_hack","player_esp","nofall","no_fall",
-        "bunnyhop","speed_hack","speedhack","xray","x_ray",
-        "critaura","crit_aura","reach_hack","reachhack",
+        "autoclicker","autoclick","auto_clicker","clickspeed","cps_boost",
+        "aimbot","aim_bot","aimassist","aim_assist","aimlock","smooth_aim",
+        "triggerbot","trigger_bot","auto_trigger","triggerdelay",
+        "cheatclient","cheat_client","ghosthack","ghost_hack","ghostclient",
+        "autototem","auto_totem","autocrystal","auto_crystal","crystal_bot",
+        "killaura","kill_aura","forcefield","force_field","multiaura",
+        "antiknockback","anti_knockback","velocity_hack","novelocity","nofall",
+        "wallhack","wall_hack","flyhack","fly_hack","freecam","noclip",
+        "esp_hack","player_esp","entity_esp","chest_esp","item_esp",
+        "bunnyhop","speed_hack","speedhack","speed_boost","fastmove",
+        "xray","x_ray","xray_hack","ore_finder","block_esp","tracers",
+        "critaura","crit_aura","reach_hack","reachhack","hitbox_expand",
+        "scaffold","scaffoldwalk","scaffold_walk","tower_hack","towerhack",
         "dll_inject","dll_injector","process_inject","processinjector",
-        "keyboard.hook","pynput","pywin32","win32api",
+        "keyboard.hook","pynput","pywin32","win32api","SendInput",
         "GetAsyncKeyState","GetForegroundWindow","SetForegroundWindow",
-        "pymem","ReadProcessMemory","WriteProcessMemory",
-        "VirtualAllocEx","CreateRemoteThread","OpenProcess",
-        "bhop","bunny_hop","scaffold_walk","scaffoldwalk",
-        "crystal_pvp","crystalpvp","surroundaura","surround_aura"
+        "pymem","ReadProcessMemory","WriteProcessMemory","ctypes.windll",
+        "VirtualAllocEx","CreateRemoteThread","OpenProcess","kernel32",
+        "bhop","bunny_hop","crystal_pvp","crystalpvp","surroundaura",
+        "stealer","token_grab","discord_token","browser_token","cookie_steal",
+        "password_grab","credential_steal","keylogger","keylog","screenshot",
+        "webhook","requests.post","base64.b64decode","exec(base64","eval(base64",
+        "subprocess.Popen","os.system","os.popen","os.startfile",
+        "socket.connect","bind_shell","reverse_shell","connect_back",
+        "mouse_event","keybd_event","SetWindowsHookEx","win32con",
+        "screen_capture","ImageGrab","mss.mss","cv2.matchTemplate",
+        "send_keys","pyautogui","pynput.mouse","pynput.keyboard",
+        "minecraft","mineflayer","mc_client","mc_bot","mc_protocol",
+        "entity_list","player_list","packet_intercept","packet_modify",
+        "forge_inject","fabric_inject","optifine_bypass","liteloader",
+        "obfuscate","marshal.loads","compile(","__import__('os')",
+        "bypass_anticheat","watchdog_bypass","ncp_bypass","aac_bypass",
+        "anchor_macro","anchormacro","anchor_bot","anchorbot","auto_anchor","autoanchor",
+        "crystal_macro","crystalmacro","crystal_aura","crystalaura","anchor_aura","anchoraura",
+        "macro_key","macroclient","macro_client","crystal_pvp"
     )
     $pyCheatKeywordsCritical = @(
-        "pymem","ReadProcessMemory","WriteProcessMemory",
+        "ReadProcessMemory","WriteProcessMemory",
         "VirtualAllocEx","CreateRemoteThread","OpenProcess",
-        "keyboard.hook","GetAsyncKeyState"
+        "NtWriteVirtualMemory","NtAllocateVirtualMemory",
+        "ZwWriteVirtualMemory","CreateRemoteThreadEx",
+        "RtlCreateUserThread","shellcode","meterpreter",
+        "reverse_shell","keyboard.hook","GetAsyncKeyState"
     )
     $pyCheatFileNames = @(
         "cheat","hack","inject","aimbot","killaura","autoclicker",
         "triggerbot","bhop","esp","xray","wallhack","stealer","grabber",
-        "autocrystal","autototem","ghostclient","cheatclient"
+        "autocrystal","autototem","ghostclient","cheatclient",
+        "token_grab","discord_grab","cookie_grab","password_grab",
+        "keylogger","keylog","rat","trojan","payload","dropper",
+        "bypass","exploit","loader","crypter","obfuscate",
+        "autobot","macro","speedhack","speed_hack","noclip",
+        "flyhack","fly_hack","freecam","anticheat_bypass",
+        "reach_hack","hitbox_hack","scaffold_bot","crystal_bot",
+        "pvpbot","pvp_bot","combat_bot","combatbot","aurabot",
+        "tokenstealer","token_stealer","discordstealer","grabber",
+        "anchormacro","anchor_macro","crystalmacro","crystal_macro",
+        "macroclient","anchor_bot","anchorbot","crystal_aura","anchor_aura"
     )
     Write-Host ""
     W "  Scanning Python scripts for cheat indicators..." DarkGray
@@ -2642,6 +2745,11 @@ function Run-PCscan {
         try {
             foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
                 [void]$pyRoots.Add($sub)
+                try {
+                    foreach ($sub2 in [System.IO.Directory]::GetDirectories($sub)) {
+                        [void]$pyRoots.Add($sub2)
+                    }
+                } catch {}
             }
         } catch {}
     }
@@ -2650,12 +2758,15 @@ function Run-PCscan {
     foreach ($pyRoot in $pyRoots) {
         if (-not [System.IO.Directory]::Exists($pyRoot)) { continue }
         try {
-            foreach ($pyFile in [System.IO.Directory]::EnumerateFiles($pyRoot, '*.py', [System.IO.SearchOption]::TopDirectoryOnly)) {
+            $pyFiles = [System.Collections.Generic.List[string]]::new()
+            foreach ($pf in [System.IO.Directory]::EnumerateFiles($pyRoot, '*.py',  [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$pyFiles.Add($pf) }
+            foreach ($pf in [System.IO.Directory]::EnumerateFiles($pyRoot, '*.pyw', [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$pyFiles.Add($pf) }
+            foreach ($pyFile in $pyFiles) {
                 if (-not $pySeenPaths.Add($pyFile)) { continue }
                 $pyName     = [System.IO.Path]::GetFileName($pyFile)
                 $pyNameStem = [System.IO.Path]::GetFileNameWithoutExtension($pyFile).ToLower()
                 $pyScanned++
-                Spin "Scanning .py: $pyName"
+                Spin "Scanning $(([System.IO.Path]::GetExtension($pyFile))): $pyName"
                 $reasons = [System.Collections.Generic.List[string]]::new()
                 foreach ($fn in $pyCheatFileNames) {
                     if ($pyNameStem.Contains($fn)) { $reasons.Add("[FILENAME] name contains '$fn'"); break }
@@ -2701,6 +2812,103 @@ function Run-PCscan {
     W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
 
     Write-Host ""
+    W "  Scanning for obfuscated files..." DarkGray
+    $obfFlags = [System.Collections.Generic.List[object]]::new()
+    $obfRoots = [System.Collections.Generic.List[string]]::new()
+    foreach ($base in @(
+        [System.IO.Path]::Combine($env:USERPROFILE, "Downloads"),
+        [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
+        $env:TEMP
+    )) {
+        [void]$obfRoots.Add($base)
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                [void]$obfRoots.Add($sub)
+                try {
+                    foreach ($sub2 in [System.IO.Directory]::GetDirectories($sub)) {
+                        [void]$obfRoots.Add($sub2)
+                    }
+                } catch {}
+            }
+        } catch {}
+    }
+    $obfSeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $pyObfPatterns = @(
+        "exec(base64","eval(base64","exec(compile","eval(compile",
+        "exec(__import__","marshal.loads","__import__('marshal')",
+        "zlib.decompress","lzma.decompress","bz2.decompress",
+        "base64.b64decode","base64.urlsafe_b64decode",
+        "bytes.fromhex","bytearray.fromhex",
+        "compile(base64","compile(zlib","compile(bytes",
+        "lambda _","lambda __","lambda ___",
+        "globals()['__builtins__']","__builtins__.__dict__",
+        "getattr(__builtins__","getattr(globals",
+        "chr("+[char]0x29,"chr(0x","''.join(chr","map(chr",
+        "uu.decode","codecs.decode","rot_13","rot13",
+        "pyc\x00\x00\x00","import sys; sys.exit","PyInstaller"
+    )
+    foreach ($obfRoot in $obfRoots) {
+        if (-not [System.IO.Directory]::Exists($obfRoot)) { continue }
+        try {
+            $obfFiles = [System.Collections.Generic.List[string]]::new()
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.jar', [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.py',  [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.pyw', [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
+            foreach ($obfFile in $obfFiles) {
+                if (-not $obfSeenPaths.Add($obfFile)) { continue }
+                $ext = [System.IO.Path]::GetExtension($obfFile).ToLower()
+                Spin "Obf-scan: $([System.IO.Path]::GetFileName($obfFile))"
+                $reasons = [System.Collections.Generic.List[string]]::new()
+                if ($ext -eq ".jar") {
+                    try {
+                        $oFlags = Invoke-ObfuscationScan -FilePath $obfFile
+                        foreach ($of in $oFlags) { [void]$reasons.Add("[OBFUSCATION] $of") }
+                    } catch {}
+                } elseif ($ext -eq ".py" -or $ext -eq ".pyw") {
+                    try {
+                        $src = [System.IO.File]::ReadAllText($obfFile)
+                        $srcL = $src.ToLower()
+                        $hits = [System.Collections.Generic.List[string]]::new()
+                        foreach ($pat in $pyObfPatterns) {
+                            if ($src.Contains($pat) -or $srcL.Contains($pat.ToLower())) { [void]$hits.Add($pat) }
+                        }
+                        $longBase64 = [regex]::Matches($src, "[A-Za-z0-9+/]{200,}={0,2}")
+                        if ($longBase64.Count -gt 0) { [void]$hits.Add("long base64 blob ($($longBase64.Count) occurrence(s))") }
+                        $hexBlobs = [regex]::Matches($src, "\\x[0-9a-fA-F]{2}(?:\\x[0-9a-fA-F]{2}){19,}")
+                        if ($hexBlobs.Count -gt 0) { [void]$hits.Add("hex-encoded blob ($($hexBlobs.Count) occurrence(s))") }
+                        $chrCalls = [regex]::Matches($src, "chr\(\d+\)")
+                        if ($chrCalls.Count -ge 10) { [void]$hits.Add("chr() obfuscation ($($chrCalls.Count) calls)") }
+                        if ($hits.Count -gt 0) {
+                            $reasons.Add("[OBFUSCATION] $( ($hits | Select-Object -First 5) -join ' | ' )")
+                        }
+                    } catch {}
+                }
+                if ($reasons.Count -gt 0) {
+                    $fi = try { [System.IO.FileInfo]::new($obfFile) } catch { $null }
+                    $meta = if ($fi) { "size: $([math]::Round($fi.Length/1KB,1)) KB  modified: $($fi.LastWriteTime.ToString('yyyy-MM-dd'))" } else { "" }
+                    [void]$obfFlags.Add([PSCustomObject]@{ Path = $obfFile; Reasons = $reasons; Meta = $meta })
+                }
+            }
+        } catch {}
+    }
+    SpinClear
+    $pcIssues += $obfFlags.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) OBFUSCATED FILE SCAN " + "$([char]0x2500)" * 49 + "$([char]0x2510)") DarkCyan
+    if ($obfFlags.Count -eq 0) {
+        W "  $([char]0x2502)   OK $([char]0x2014) no obfuscated files detected                              $([char]0x2502)" DarkCyan
+    } else {
+        foreach ($f in $obfFlags) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  $($f.Path)" Red
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkYellow }
+            if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
+        }
+        Write-Host ""
+        W "  $([char]0x2502)  $($obfFlags.Count) obfuscated file(s) detected $([char]0x2014) review immediately" Red
+    }
+    W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
+
+    Write-Host ""
     W "  Scanning EXE files for cheat indicators..." DarkGray
     $exeCheatTokens = @(
         "autoclicker","autoclick","killaura","aimbot","triggerbot","bhop",
@@ -2711,16 +2919,18 @@ function Run-PCscan {
         "quasar","remcos","njrat","darkcomet","nanocore","netwire","orcus",
         "stealer","grabber","tokenstealer","discordstealer","cookiestealer",
         "crystalaura","autocrystal","autototem","scaffoldhack","nofallhack",
-        "speedhack","flyhack","wallhack","xrayhack","reachhack"
+        "speedhack","flyhack","wallhack","xrayhack","reachhack",
+        "anchormacro","crystalmacro","autoanchor","macroclient","anchoraura"
     )
     $exeCheatStrings = @(
         "autoclicker","killaura","aimbot","triggerbot","cheat client","ghost client",
         "dll inject","process inject","ReadProcessMemory","WriteProcessMemory",
-        "VirtualAllocEx","CreateRemoteThread","GetAsyncKeyState",
+        "VirtualAllocEx","CreateRemoteThread",
         "discord token","webhook url","grab passwords","steal cookies",
         "autocrystal","auto crystal","auto totem","crystal pvp",
         "minhook","easyhook","detours","polyhook","subhook",
-        "xenos injector","extreme injector","process hacker"
+        "xenos injector","extreme injector","process hacker",
+        "anchor macro","crystal macro","auto anchor","macro key","anchor bot"
     )
     $exeSuspiciousDirs = [System.Collections.Generic.List[string]]::new()
     foreach ($base in @(
@@ -2737,6 +2947,9 @@ function Run-PCscan {
         } catch {}
     }
     $exeInstallerPattern = '(?i)(setup|install|uninstall|update|bootstrapper|vcredist|dotnet|ndp|wix|squirrel|CodeSetup|windowsinstaller|msiexec)'
+    $exeGuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$'
+    $exeNameWhitelist = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($w in @("tinytask","obs64","obs32","streamlabs","discord","chrome","firefox","edge","steam","epicgameslauncher","gog galaxy","playnite","geforce","nvidiacontrolpanel","amdradeon","logitech","corsair","razer")) { [void]$exeNameWhitelist.Add($w) }
     $exeFlags   = [System.Collections.Generic.List[object]]::new()
     $exeScanned = 0
     $exeSeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -2749,6 +2962,9 @@ function Run-PCscan {
                 $exeScanned++
                 Spin "Scanning EXE: $([System.IO.Path]::GetFileName($exeFile))"
                 if ($exeName -match $exeInstallerPattern) { continue }
+                if ($exeNameWhitelist.Contains($exeName)) { continue }
+                $exeBaseName = [System.IO.Path]::GetFileName($exeFile)
+                if ($exeBaseName -match $exeGuidPattern) { continue }
                 $reasons = [System.Collections.Generic.List[string]]::new()
                 foreach ($token in $exeCheatTokens) {
                     if ($exeName.Contains($token)) { $reasons.Add("[FILENAME] name contains '$token'"); break }
@@ -2796,9 +3012,9 @@ function Run-PCscan {
     }
     SpinClear
     $pcIssues += $exeFlags.Count
-    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) EXE SCAN " + "$([char]0x2500)" * 59 + "$([char]0x2510)") DarkCyan
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) EXE SCAN " + "$([char]0x2500)" * 61 + "$([char]0x2510)") DarkCyan
     if ($exeFlags.Count -eq 0) {
-        W "  $([char]0x2502)   OK $([char]0x2014) no suspicious EXE files found                               $([char]0x2502)" DarkCyan
+        W ("  $([char]0x2502)   OK $([char]0x2014) no suspicious EXE files found" + (" " * 36) + "$([char]0x2502)") DarkCyan
     } else {
         foreach ($f in $exeFlags) {
             Write-Host ""
@@ -2807,7 +3023,7 @@ function Run-PCscan {
             if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
         }
     }
-    W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
 
     Write-Host ""
     W "  Scanning loaded DLLs in javaw.exe for injection indicators..." DarkGray
@@ -2851,12 +3067,13 @@ function Run-PCscan {
             }
         } catch {}
     }
-    if ($dllScanned -gt 0) { Write-Host "`r  DLL scan done $([char]0x2014) $dllScanned module(s) checked in Java process.                              " }
-    else { Write-Host "`r$(' ' * 80)`r" -NoNewline }
+    Write-Host "`r$(' ' * 80)`r" -NoNewline
     $pcIssues += $dllFlags.Count
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) INJECTABLE DLL SCAN (javaw) " + "$([char]0x2500)" * 42 + "$([char]0x2510)") DarkCyan
+    $dllScannedLine = "  $([char]0x2502)  Scanned $dllScanned module(s) in Java process"
+    W ($dllScannedLine + (" " * [Math]::Max(0, 75 - $dllScannedLine.Length)) + "$([char]0x2502)") DarkGray
     if ($dllFlags.Count -eq 0) {
-        W "  $([char]0x2502)   OK $([char]0x2014) no suspicious DLLs loaded in Java process                  $([char]0x2502)" DarkCyan
+        W ("  $([char]0x2502)   OK $([char]0x2014) no suspicious DLLs loaded in Java process" + (" " * 24) + "$([char]0x2502)") DarkCyan
     } else {
         foreach ($f in $dllFlags) {
             Write-Host ""
@@ -2864,7 +3081,7 @@ function Run-PCscan {
             W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
         }
     }
-    W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
 
     Write-Host ""
     W ("$([char]0x2501)" * 76) Blue
