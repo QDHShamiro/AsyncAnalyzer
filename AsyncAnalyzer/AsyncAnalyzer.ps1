@@ -1,17 +1,12 @@
-﻿#Requires -Version 5.1
-
-param(
-    [string]$ModPath = "",
-    [switch]$SkipSystemCheck,
-    [switch]$SkipModCheck,
-    [switch]$SkipMemoryCheck,
-    [switch]$SkipServiceCheck,
-    [switch]$Silent
-)
+if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
+    Write-Host "  [!] AsyncAnalyzer requires PowerShell 5.1 or newer." -ForegroundColor Red
+    Write-Host "      Your version: $($PSVersionTable.PSVersion)" -ForegroundColor DarkGray
+    return
+}
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $null = chcp 65001
-if ($Host.Name -ne 'Default Host') { Clear-Host }
+$ModPath = ""
 
 $script:Version      = "3.0.0"
 $script:Author       = "QDHShamiro"
@@ -217,6 +212,77 @@ $script:cheatStrings = @(
     "xyz.greaj","com.cheatbreaker"
 )
 
+$script:knownCheatFileTokens = @(
+    "doomsday","doomsdayclient","doomsday-client","doomsday_client",
+    "darik","dariks","dqrkis","dqrk",
+    "vape","vapeclient","vape-client","vape_client","vapelite","vape-lite",
+    "meteor","meteorclient","meteor-client","meteor_client",
+    "liquidbounce","liquid-bounce","liquid_bounce","liquidb",
+    "wurst","wurst-client","wurst_client",
+    "sigma","sigmaclient","sigma-client",
+    "rise","riseclient","rise-client",
+    "future","futureclient","future-client",
+    "konas","konasclient","konas-client",
+    "inertia","inertiaclient","inertia-client",
+    "exhibition","exhibitionclient",
+    "pandaware","panda-ware","panda_ware",
+    "astolfo","astolfoclient","astolfo-client",
+    "rusherhack","rusher-hack","rusher_hack",
+    "novaclient","nova-client","nova_client","novaware",
+    "impact","impactclient","impact-client",
+    "aristois","aristois-client",
+    "azura","azuraclient","azura-client",
+    "moonlight","moonlightclient","moon-client",
+    "intent","intentclient","intent-client","intentstore",
+    "prestige","prestigeclient","prestige-client",
+    "cheatbreaker","cheat-breaker",
+    "kami","kamiclient","kami-client",
+    "meteor-dev","meteordev",
+    "fdp","fdpclient","fdp-client",
+    "xray","xrayclient","xray-mod",
+    "baritone","baritoneclient",
+    "skidfuscator","skid-client","skidclient",
+    "noob","nooby","cheat","hack","hacked","hacker",
+    "inject","injector","loader","payload","bypass","cracked","crack",
+    "stealer","grabber","logger","keylog","token","exploit","malware","rat"
+)
+
+function Get-BigramSimilarity([string]$a, [string]$b) {
+    if ($a.Length -lt 2 -or $b.Length -lt 2) {
+        if ($a -eq $b) { return 1.0 } else { return 0.0 }
+    }
+    $bigramsA = [System.Collections.Generic.HashSet[string]]::new()
+    for ($i = 0; $i -lt $a.Length - 1; $i++) { [void]$bigramsA.Add($a.Substring($i,2)) }
+    $bigramsB = [System.Collections.Generic.HashSet[string]]::new()
+    for ($i = 0; $i -lt $b.Length - 1; $i++) { [void]$bigramsB.Add($b.Substring($i,2)) }
+    $intersection = 0
+    foreach ($bg in $bigramsA) { if ($bigramsB.Contains($bg)) { $intersection++ } }
+    return (2.0 * $intersection) / ($bigramsA.Count + $bigramsB.Count)
+}
+
+function Get-FilenameSimilarityMatch([string]$JarName) {
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($JarName).ToLower()
+    $base = $base -replace '[-_\.\s\d]+', ''
+    if ($base.Length -lt 3) { return $null }
+    $bestToken = $null
+    $bestScore = 0.0
+    foreach ($token in $script:knownCheatFileTokens) {
+        $t = $token -replace '[-_\.\s]+', ''
+        if ($base.Contains($t) -or $t.Contains($base)) {
+            $score = [Math]::Max($base.Length, $t.Length) / [Math]::Max($base.Length, $t.Length)
+            if ($base.Contains($t)) { $score = [double]$t.Length / [double]$base.Length }
+            elseif ($t.Contains($base)) { $score = [double]$base.Length / [double]$t.Length }
+            if ($score -gt $bestScore) { $bestScore = $score; $bestToken = $token }
+        }
+        $sim = Get-BigramSimilarity $base $t
+        if ($sim -gt $bestScore) { $bestScore = $sim; $bestToken = $token }
+    }
+    if ($bestScore -ge 0.25 -and $null -ne $bestToken) {
+        return [PSCustomObject]@{ Token = $bestToken; Score = [Math]::Round($bestScore * 100) }
+    }
+    return $null
+}
+
 $script:suspiciousPatterns = @(
     "AimAssist","AnchorTweaks","AutoAnchor","AutoCrystal","AutoDoubleHand",
     "AutoHitCrystal","AutoPot","AutoTotem","AutoArmor","InventoryTotem",
@@ -322,11 +388,9 @@ function Show-Banner {
     Write-Host ""
     W "                Minecraft Mod Forensics + Cheat Detection Suite" DarkGray
     Write-Host ""
-    W "                Made with " Gray -NoNewline
-    W "$([char]0x2665) " Red -NoNewline
-    W "by " Gray -NoNewline
+    W "                " Gray -NoNewline
     W $script:Author Cyan -NoNewline
-    W "  v$($script:Version)" DarkGray
+    W "  |  AsyncAnalyzer  v$($script:Version)" DarkGray
     Write-Host ""
     W ("$([char]0x2501)" * 76) DarkCyan
     Write-Host ""
@@ -451,10 +515,7 @@ function Ask-ModPath {
     W "auto" Cyan -NoNewline
     W " to auto-detect)" DarkGray
     Write-Host ""
-    Write-Host "  PATH: " -NoNewline
-    $raw = $null
-    try { $raw = $Host.UI.ReadLine() } catch {}
-    if ($null -eq $raw) { try { $raw = [System.Console]::ReadLine() } catch {} }
+    $raw = Read-Host "  PATH"
     $p = ([string]$raw).Trim('"').Trim("'").Trim()
 
     if ($p -ieq "auto") {
@@ -465,10 +526,7 @@ function Ask-ModPath {
             Write-Host ""
             W "  $([char]0x26A0)  No Minecraft mods folders found. Enter path manually." Yellow
             Write-Host ""
-            Write-Host "  PATH: " -NoNewline
-            $raw2 = $null
-            try { $raw2 = $Host.UI.ReadLine() } catch {}
-            if ($null -eq $raw2) { try { $raw2 = [System.Console]::ReadLine() } catch {} }
+            $raw2 = Read-Host "  PATH"
             $p2 = ([string]$raw2).Trim('"').Trim("'").Trim()
             if ([string]::IsNullOrWhiteSpace($p2)) { $p2 = "$env:APPDATA\.minecraft\mods" }
             return $p2
@@ -504,10 +562,7 @@ function Ask-ModPath {
         }
         W ("  $([char]0x2514)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2518)") DarkCyan
         Write-Host ""
-        W "  Select number (Enter = 1): " DarkGray -NoNewline
-        $sel = $null
-        try { $sel = $Host.UI.ReadLine() } catch {}
-        if ($null -eq $sel) { try { $sel = [System.Console]::ReadLine() } catch {} }
+        $sel = Read-Host "  Select number (Enter = 1)"
         $sel = ([string]$sel).Trim()
         $selIdx = 1
         $parsed = 0
@@ -532,10 +587,8 @@ function Ask-ModPath {
 }
 
 function Ask-YesNo([string]$Prompt) {
-    Write-Host "  $Prompt (Y/N): " -NoNewline -ForegroundColor DarkCyan
-    $ans = ""
-    try { $ans = ([string]($Host.UI.ReadLine())).Trim().ToUpper() } catch { try { $ans = ([string]([Console]::ReadLine())).Trim().ToUpper() } catch {} }
-    return $ans -eq "Y"
+    $ans = Read-Host "  $Prompt (Y/N)"
+    return ([string]$ans).Trim().ToUpper() -eq "Y"
 }
 
 function Run-RecentActivity {
@@ -550,20 +603,28 @@ function Run-RecentActivity {
 
     $since = (Get-Date).AddHours(-48)
     $anyFound = $false
-    $cheatExeNames = @($script:cheatProcessNames) + @("cheat","hack","inject","bypass","aimbot","esp","killaura","autoclicker","nofall","freecam","xray","rat","stealer","grabber")
+    $cheatExeNames = @($script:cheatProcessNames) + @("cheat","hack","inject","bypass","aimbot","killaura","autoclicker","nofall","freecam","xray","stealer","grabber")
 
     W "  $([char]0x25CF) Checking currently running processes for suspicious activity..." DarkGray
     Write-Host ""
     $runningProcs = Get-Process -ErrorAction SilentlyContinue
     $suspRunning  = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $tempPathRx   = [regex]::new('(?i)(\\Temp\\|\\AppData\\Roaming\\[^\\]+\.exe$|\\AppData\\Local\\Temp\\)', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+    $tempPathRx     = [regex]::new('(?i)(\\Temp\\|\\AppData\\Roaming\\[^\\]+\.exe$|\\AppData\\Local\\Temp\\)', [System.Text.RegularExpressions.RegexOptions]::Compiled)
+    $trustedPathRx  = [regex]::new('(?i)(\\Windows\\|\\WindowsApps\\|\\Program Files\\|\\Program Files \(x86\)\\|\\ProgramData\\|\\AppData\\Local\\Programs\\|\\AppData\\Roaming\\(?:Avira|Razer|NVIDIA|Intel|Microsoft|Discord|Slack|Spotify|Steam|Epic Games|CefSharp|crashpad|Medal|Claude|cowork)|\\NVIDIA Corporation\\|\\Razer\\|FrameViewSDK|PresentMon)', [System.Text.RegularExpressions.RegexOptions]::Compiled)
     foreach ($proc in $runningProcs) {
         $name      = $proc.Name
         $nameNoExt = [System.IO.Path]::GetFileNameWithoutExtension($name)
         if ($script:processWhitelist.Contains($name) -or $script:processWhitelist.Contains($nameNoExt)) { continue }
         $reasons   = [System.Collections.Generic.List[string]]::new()
         $nameLower = $nameNoExt.ToLower()
-        foreach ($kw in $cheatExeNames) { if ($nameLower.Contains($kw.ToLower())) { $reasons.Add("keyword match [$kw]"); break } }
+        foreach ($kw in $cheatExeNames) {
+            $kwl = $kw.ToLower()
+            if ($kwl.Length -le 4) {
+                if ($nameLower -eq $kwl) { $reasons.Add("keyword match [$kw]"); break }
+            } else {
+                if ($nameLower.Contains($kwl)) { $reasons.Add("keyword match [$kw]"); break }
+            }
+        }
         $procPath = ""
         try { $procPath = $proc.MainModule.FileName } catch {}
         if ($procPath -and $tempPathRx.IsMatch($procPath)) {
@@ -574,7 +635,9 @@ function Run-RecentActivity {
         try { $windowTitle = $proc.MainWindowTitle } catch {}
         try { $companyName = $proc.MainModule.FileVersionInfo.CompanyName } catch {}
         if ([string]::IsNullOrWhiteSpace($windowTitle) -and [string]::IsNullOrWhiteSpace($companyName) -and $procPath -ne "") {
-            $reasons.Add("no window + no company name (hidden/unsigned)")
+            if (-not $trustedPathRx.IsMatch($procPath)) {
+                $reasons.Add("no window + no company name (hidden/unsigned)")
+            }
         }
         if ($nameNoExt.Length -ge 6 -and $nameNoExt.Length -le 12 -and $nameNoExt -cmatch '^[a-z]+$') {
             $vowels = ($nameNoExt.ToCharArray() | Where-Object { $_ -in @('a','e','i','o','u') }).Count
@@ -692,7 +755,7 @@ function Run-RecentActivity {
 
     # Source 1: Security log event 4689 (needs Audit Process Termination policy)
     try {
-        $secEvents = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4689; StartTime = $since } -MaxEvents 300 -ErrorAction Stop
+        $secEvents = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4689; StartTime = $since } -MaxEvents 300 -ErrorAction SilentlyContinue
         foreach ($ev in $secEvents) {
             $msg = $ev.Message
             $procName = if ($msg -match '(?m)Process Name:\s+(.+)') { [System.IO.Path]::GetFileName($matches[1].Trim()) } else { $null }
@@ -706,7 +769,7 @@ function Run-RecentActivity {
 
     # Source 2: Application log — app crashes (event 1000) and WER (event 1001)
     try {
-        $appEvents = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = @(1000,1001); StartTime = $since } -MaxEvents 300 -ErrorAction Stop
+        $appEvents = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = @(1000,1001); StartTime = $since } -MaxEvents 300 -ErrorAction SilentlyContinue
         foreach ($ev in $appEvents) {
             $msg = $ev.Message
             $procName = if ($msg -match '(?m)Faulting application name:\s*([^\r\n,]+)') { $matches[1].Trim() }
@@ -723,7 +786,7 @@ function Run-RecentActivity {
     # Source 3: UserAssist registry — recently run executables (last-run timestamps)
     try {
         $uaKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist"
-        $uaGuids = Get-ChildItem -Path $uaKey -ErrorAction Stop
+        $uaGuids = Get-ChildItem -Path $uaKey -ErrorAction SilentlyContinue
         foreach ($guid in $uaGuids) {
             $countKey = Join-Path $guid.PSPath "Count"
             if (-not (Test-Path $countKey)) { continue }
@@ -794,7 +857,7 @@ function Write-FlaggedCard([string]$FileName, [string]$Hash, [bool]$Verified, [s
     if ($Verified) {
         W ("  $([char]0x2502)  $([char]0x2713) Verified: $VerifiedName".PadRight($w + 2) + "$([char]0x2502)") Green
     } else {
-        W ("  $([char]0x2502)  $([char]0x2717) Not found on Modrinth or Megabase".PadRight($w + 2) + "$([char]0x2502)") Yellow
+        W ("  $([char]0x2502)  $([char]0x2717) Not found on Modrinth, CurseForge or Megabase".PadRight($w + 2) + "$([char]0x2502)") Yellow
     }
     W ("  $([char]0x2502)  " + $srcLine.Substring(2).PadRight($w - 2) + "$([char]0x2502)") DarkGray
     W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") DarkRed
@@ -907,6 +970,50 @@ function Get-FileSHA1([string]$path) {
         $fs.Close()
         return ([BitConverter]::ToString($bytes) -replace '-','').ToLower()
     } catch { return $null }
+}
+
+function Get-FileMurmur2([string]$path) {
+    try {
+        $allBytes = [System.IO.File]::ReadAllBytes($path)
+        $filtered = [System.Collections.Generic.List[byte]]::new($allBytes.Length)
+        foreach ($b in $allBytes) {
+            if ($b -ne 9 -and $b -ne 10 -and $b -ne 13 -and $b -ne 32) { $filtered.Add($b) }
+        }
+        $data = $filtered.ToArray()
+        $len  = $data.Length
+        $seed = [uint32]1
+        $m    = [uint32]0xc6a4a793
+        $r    = 24
+        $h    = $seed -bxor ([uint32]$len * $m)
+        $i    = 0
+        while ($i + 4 -le $len) {
+            $k = [uint32]([uint32]$data[$i] -bor ([uint32]$data[$i+1] -shl 8) -bor ([uint32]$data[$i+2] -shl 16) -bor ([uint32]$data[$i+3] -shl 24))
+            $k = [uint32]($k * $m)
+            $k = [uint32]($k -bxor ($k -shr $r))
+            $k = [uint32]($k * $m)
+            $h = [uint32]($h * $m)
+            $h = [uint32]($h -bxor $k)
+            $i += 4
+        }
+        $rem = $len - $i
+        if ($rem -ge 3) { $h = [uint32]($h -bxor ([uint32]$data[$i+2] -shl 16)) }
+        if ($rem -ge 2) { $h = [uint32]($h -bxor ([uint32]$data[$i+1] -shl 8)) }
+        if ($rem -ge 1) { $h = [uint32]($h -bxor [uint32]$data[$i]); $h = [uint32]($h * $m) }
+        $h = [uint32]($h -bxor ($h -shr 13))
+        $h = [uint32]($h * $m)
+        $h = [uint32]($h -bxor ($h -shr 15))
+        return [long]$h
+    } catch { return $null }
+}
+
+function Get-CurseForgeMeta([long]$fingerprint) {
+    try {
+        $body = "{`"fingerprints`":[" + $fingerprint + "]}"
+        $r = Invoke-RestMethod -Uri "https://api.curseforge.com/v1/fingerprints/432" -Method Post -Body $body -ContentType "application/json" -Headers @{ "x-api-key" = "$2a$10`$bL4bIL5pUWqfcO7KQtnMReakwtfHepBUuxe3G//STEeE0iNHyjPe6" } -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        $match = $r.data.exactMatches | Where-Object { $_.file.fileFingerprint -eq $fingerprint } | Select-Object -First 1
+        if ($match) { return @{ Name = $match.file.displayName; Slug = [string]$match.id } }
+    } catch {}
+    return @{ Name = ""; Slug = "" }
 }
 
 function Get-ModrinthMeta([string]$hash) {
@@ -1603,17 +1710,15 @@ function Run-ServiceCheck {
 
 Show-Banner
 
-if ([string]::IsNullOrWhiteSpace($ModPath)) {
-    $ModPath = Ask-ModPath
-    $ModPath = $ModPath.Trim('"').Trim("'").Trim()
-}
+$ModPath = Ask-ModPath
+$ModPath = $ModPath.Trim('"').Trim("'").Trim()
 
 if (-not (Test-Path $ModPath -PathType Container)) {
     W "" White
     W "  $([char]0x2717) Invalid path $([char]0x2014) directory does not exist:" Red
     W "    $ModPath" DarkGray
     W "" White
-    exit 1
+    return
 }
 
 Write-Host ""
@@ -1629,6 +1734,10 @@ if ($mcProcess) {
         Write-Host ""
     } catch {}
 }
+
+if ($null -eq $SkipSystemCheck)  { $SkipSystemCheck  = $false }
+if ($null -eq $SkipServiceCheck) { $SkipServiceCheck = $false }
+if ($null -eq $SkipModCheck)     { $SkipModCheck     = $false }
 
 if (-not $SkipSystemCheck)  { Run-SystemChecks }
 if (-not $SkipServiceCheck) { Run-ServiceCheck }
@@ -1650,9 +1759,32 @@ if (-not $SkipModCheck) {
         $suspiciousMods = [System.Collections.Generic.List[object]]::new()
         $bypassMods     = [System.Collections.Generic.List[object]]::new()
         $obfuscatedMods = [System.Collections.Generic.List[object]]::new()
+        $filenameFlaggedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+        W "  Checking filenames for cheat client patterns..." DarkGray
+        foreach ($jar in $jarFiles) {
+            $fnMatch = Get-FilenameSimilarityMatch $jar.Name
+            if ($null -ne $fnMatch) {
+                $hash = Get-FileSHA1 $jar.FullName
+                $dl   = Get-DownloadSource $jar.FullName
+                $fnStrings = [System.Collections.Generic.HashSet[string]]::new()
+                [void]$fnStrings.Add("Filename resembles known cheat client: '$($fnMatch.Token)' ($($fnMatch.Score)% match)")
+                [void]$suspiciousMods.Add([PSCustomObject]@{
+                    FileName = $jar.Name; Hash = $hash; Verified = $false; VerifiedName = ""
+                    DownloadSource = $dl
+                    Patterns  = [System.Collections.Generic.HashSet[string]]::new()
+                    Strings   = $fnStrings
+                    Fullwidth = [System.Collections.Generic.HashSet[string]]::new()
+                })
+                [void]$filenameFlaggedSet.Add($jar.Name)
+                [void]$script:FlaggedModsList.Add($jar.Name)
+                $script:Flagged++
+            }
+        }
+        SpinClear
 
         $idx = 0
-        W "  Verifying hashes (Modrinth + Megabase)..." DarkGray
+        W "  Verifying hashes (Modrinth + CurseForge + Megabase)..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
@@ -1663,6 +1795,13 @@ if (-not $SkipModCheck) {
             if ($hash) {
                 $mr = Get-ModrinthMeta $hash
                 if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name }
+                if (-not $verified) {
+                    $fp = Get-FileMurmur2 $jar.FullName
+                    if ($null -ne $fp) {
+                        $cf = Get-CurseForgeMeta $fp
+                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name }
+                    }
+                }
                 if (-not $verified) {
                     $mb = Get-MegabaseMeta $hash
                     if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name }
@@ -1685,19 +1824,28 @@ if (-not $SkipModCheck) {
             $result = Invoke-ModScan -FilePath $jar.FullName
 
             if ($result.Patterns.Count -gt 0 -or $result.Strings.Count -gt 0 -or $result.Fullwidth.Count -gt 0) {
-                $isVer = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
-                $verName = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Select-Object -First 1).ModName
-                $hash    = ($jarFiles | Where-Object { $_.Name -eq $jar.Name } | ForEach-Object { Get-FileSHA1 $_.FullName } | Select-Object -First 1)
-                $dl      = Get-DownloadSource $jar.FullName
+                if ($filenameFlaggedSet.Contains($jar.Name)) {
+                    $existing = $suspiciousMods | Where-Object { $_.FileName -eq $jar.Name } | Select-Object -First 1
+                    if ($null -ne $existing) {
+                        foreach ($p in $result.Patterns) { [void]$existing.Patterns.Add($p) }
+                        foreach ($s in $result.Strings)  { [void]$existing.Strings.Add($s) }
+                        foreach ($f in $result.Fullwidth) { [void]$existing.Fullwidth.Add($f) }
+                    }
+                } else {
+                    $isVer = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
+                    $verName = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Select-Object -First 1).ModName
+                    $hash    = ($jarFiles | Where-Object { $_.Name -eq $jar.Name } | ForEach-Object { Get-FileSHA1 $_.FullName } | Select-Object -First 1)
+                    $dl      = Get-DownloadSource $jar.FullName
 
-                [void]$suspiciousMods.Add([PSCustomObject]@{
-                    FileName = $jar.Name; Hash = $hash; Verified = $isVer; VerifiedName = $verName
-                    DownloadSource = $dl
-                    Patterns = $result.Patterns; Strings = $result.Strings; Fullwidth = $result.Fullwidth
-                })
-                $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
-                [void]$script:FlaggedModsList.Add($jar.Name)
-                $script:Flagged++
+                    [void]$suspiciousMods.Add([PSCustomObject]@{
+                        FileName = $jar.Name; Hash = $hash; Verified = $isVer; VerifiedName = $verName
+                        DownloadSource = $dl
+                        Patterns = $result.Patterns; Strings = $result.Strings; Fullwidth = $result.Fullwidth
+                    })
+                    $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
+                    [void]$script:FlaggedModsList.Add($jar.Name)
+                    $script:Flagged++
+                }
             }
         }
         SpinClear
@@ -1715,8 +1863,10 @@ if (-not $SkipModCheck) {
                     [void]$bypassMods.Add([PSCustomObject]@{ FileName = $jar.Name; Flags = $bFlags })
                     $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
                     $unknownMods  = [System.Collections.Generic.List[object]]($unknownMods  | Where-Object { $_.FileName -ne $jar.Name })
-                    [void]$script:FlaggedModsList.Add($jar.Name)
-                    $script:Flagged++
+                    if (-not $filenameFlaggedSet.Contains($jar.Name)) {
+                        [void]$script:FlaggedModsList.Add($jar.Name)
+                        $script:Flagged++
+                    }
                 }
             }
         }
@@ -1734,8 +1884,10 @@ if (-not $SkipModCheck) {
                 if (-not $alreadyFlagged) {
                     [void]$obfuscatedMods.Add([PSCustomObject]@{ FileName = $jar.Name; Flags = $oFlags })
                     $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
-                    [void]$script:FlaggedModsList.Add($jar.Name)
-                    $script:Flagged++
+                    if (-not $filenameFlaggedSet.Contains($jar.Name)) {
+                        [void]$script:FlaggedModsList.Add($jar.Name)
+                        $script:Flagged++
+                    }
                 }
             }
         }
@@ -1895,7 +2047,38 @@ $script:processWhitelist = [System.Collections.Generic.HashSet[string]]::new([Sy
     "DataExchangeHost","DiscordSystemHelper","endpointprotection","GameBarPresenceWriter",
     "GameInputRedistService","GameManagerService3","gamingservicesnet","RtkAudUService64",
     "SearchFilterHost","SearchProtocolHost","SystemSettings","WifiAutoInstallSrv",
-    "XboxGameBarSpotify"
+    "XboxGameBarSpotify",
+    "Avira.OptimizerHost","Avira.VpnService","Avira.ServiceHost","Avira.Spotlight","AviraOptimizerHost","AviraVpnService",
+    "CefSharp.BrowserSubprocess","CefSharp","cef","cefsharp",
+    "chrome-native-host","ChromeNativeHost",
+    "cowork-svc","cowork",
+    "crashpad_handler","CrashpadHandler","crashpad",
+    "dasHost","DeviceAssociationService",
+    "DCIService",
+    "EdgeGameAssist","MicrosoftEdgeGameAssist",
+    "FvContainer","FvContainer.System","FrameViewSDK",
+    "FortniteLauncher","EpicGamesLauncher","EpicWebHelper",
+    "gamingservices","gamingservicesnet","GamingServices",
+    "LsaIso",
+    "Memory Compression","MemoryCompression",
+    "MoUsoCoreWorker","musNotification","MusNotification","MusNotificationUx",
+    "NVDisplay.Container.exe","nvcontainer",
+    "PhoneExperienceHost","YourPhone","YourPhoneServer",
+    "RtkAudUService64","RtkAudioService64","RtkNGUI64","RtkUWP",
+    "SearchFilterHost","SearchProtocolHost",
+    "SgrmBroker","SgrmHost",
+    "sppsvc","SppExtComObj",
+    "TiWorker","TrustedInstaller",
+    "UserOOBEBroker",
+    "WifiAutoInstallSrv",
+    "WerFault","WerFaultSecure","wermgr",
+    "ClaudeDesktop","claude-desktop","Claude",
+    "nvfvsdksvc_x64","nvfvsdksvc","NvFVSDKSvc","FrameViewSDK","FvContainer","FvContainer.System","PresentMon_x64","PresentMon",
+    "razer_elevation_service","RazerElevationService","RazerCentralService","RazerIngameEngine","rzsd","RzDeviceQuery","Razer",
+    "Registry","Secure System","SecureSystem",
+    "SentryEye","sentryeye",
+    "servicehost","ServiceHost",
+    "VSSrv","VSS","vssvc","vss"
 ) | ForEach-Object { [void]$script:processWhitelist.Add($_) }
 
 $script:cheatProcessNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -2425,43 +2608,84 @@ function Run-PCscan {
         "killaura","kill_aura","forcefield","force_field",
         "antiknockback","anti_knockback","velocity_hack",
         "wallhack","wall_hack","flyhack","fly_hack",
-        "esp_hack","player_esp",
-        "dll_inject","dll_injector",
-        "keyboard.hook","GetAsyncKeyState",
+        "esp_hack","player_esp","nofall","no_fall",
+        "bunnyhop","speed_hack","speedhack","xray","x_ray",
+        "critaura","crit_aura","reach_hack","reachhack",
+        "dll_inject","dll_injector","process_inject","processinjector",
+        "keyboard.hook","pynput","pywin32","win32api",
+        "GetAsyncKeyState","GetForegroundWindow","SetForegroundWindow",
         "pymem","ReadProcessMemory","WriteProcessMemory",
-        "VirtualAllocEx","CreateRemoteThread","bhop","bunny_hop"
+        "VirtualAllocEx","CreateRemoteThread","OpenProcess",
+        "bhop","bunny_hop","scaffold_walk","scaffoldwalk",
+        "crystal_pvp","crystalpvp","surroundaura","surround_aura"
+    )
+    $pyCheatKeywordsCritical = @(
+        "pymem","ReadProcessMemory","WriteProcessMemory",
+        "VirtualAllocEx","CreateRemoteThread","OpenProcess",
+        "keyboard.hook","GetAsyncKeyState"
+    )
+    $pyCheatFileNames = @(
+        "cheat","hack","inject","aimbot","killaura","autoclicker",
+        "triggerbot","bhop","esp","xray","wallhack","stealer","grabber",
+        "autocrystal","autototem","ghostclient","cheatclient"
     )
     Write-Host ""
     W "  Scanning Python scripts for cheat indicators..." DarkGray
     $pyFlags = [System.Collections.Generic.List[object]]::new()
-    $pyRoots = @(
+    $pyRoots = [System.Collections.Generic.List[string]]::new()
+    foreach ($base in @(
         [System.IO.Path]::Combine($env:USERPROFILE, "Downloads"),
         [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
         $env:TEMP
-    )
+    )) {
+        [void]$pyRoots.Add($base)
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                [void]$pyRoots.Add($sub)
+            }
+        } catch {}
+    }
     $pyScanned = 0
+    $pySeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($pyRoot in $pyRoots) {
         if (-not [System.IO.Directory]::Exists($pyRoot)) { continue }
         try {
             foreach ($pyFile in [System.IO.Directory]::EnumerateFiles($pyRoot, '*.py', [System.IO.SearchOption]::TopDirectoryOnly)) {
-                $pyName = [System.IO.Path]::GetFileName($pyFile)
-                $pyShort = if ($pyName.Length -gt 45) { $pyName.Substring(0,42) + "..." } else { $pyName }
-                Write-Host "`r  Scanning .py: $($pyShort.PadRight(47))  found: $($pyFlags.Count)  " -NoNewline
+                if (-not $pySeenPaths.Add($pyFile)) { continue }
+                $pyName     = [System.IO.Path]::GetFileName($pyFile)
+                $pyNameStem = [System.IO.Path]::GetFileNameWithoutExtension($pyFile).ToLower()
                 $pyScanned++
+                Spin "Scanning .py: $pyName"
+                $reasons = [System.Collections.Generic.List[string]]::new()
+                foreach ($fn in $pyCheatFileNames) {
+                    if ($pyNameStem.Contains($fn)) { $reasons.Add("[FILENAME] name contains '$fn'"); break }
+                }
                 try {
                     $content = [System.IO.File]::ReadAllText($pyFile).ToLower()
-                    $matched = [System.Collections.Generic.List[string]]::new()
+                    $critHits = [System.Collections.Generic.List[string]]::new()
+                    foreach ($kw in $pyCheatKeywordsCritical) {
+                        if ($content.Contains($kw.ToLower())) { [void]$critHits.Add($kw) }
+                    }
+                    if ($critHits.Count -gt 0) {
+                        $reasons.Add("[CRITICAL] $($critHits -join ', ')")
+                    }
+                    $highHits = [System.Collections.Generic.List[string]]::new()
                     foreach ($kw in $pyCheatKeywordsHigh) {
-                        if ($content.Contains($kw)) { [void]$matched.Add($kw) }
+                        if ($content.Contains($kw.ToLower())) { [void]$highHits.Add($kw) }
                     }
-                    if ($matched.Count -ge 2) {
-                        $pyFlags.Add([PSCustomObject]@{ Path = $pyFile; Hits = ($matched | Select-Object -First 5) -join ", " })
+                    if ($highHits.Count -ge 2) {
+                        $reasons.Add("[CONTENT] $( ($highHits | Select-Object -First 6) -join ', ' )")
                     }
-                } catch {}
+                    $fi = [System.IO.FileInfo]::new($pyFile)
+                    $meta = "size: $([math]::Round($fi.Length/1KB,1)) KB  modified: $($fi.LastWriteTime.ToString('yyyy-MM-dd'))"
+                } catch { $meta = "" }
+                if ($reasons.Count -gt 0) {
+                    [void]$pyFlags.Add([PSCustomObject]@{ Path = $pyFile; Reasons = $reasons; Meta = $meta })
+                }
             }
         } catch {}
     }
-    if ($pyScanned -gt 0) { Write-Host "`r  Python scan done $([char]0x2014) $pyScanned file(s) checked.                                            " }
+    SpinClear
     $pcIssues += $pyFlags.Count
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) PYTHON SCRIPT SCAN " + "$([char]0x2500)" * 51 + "$([char]0x2510)") DarkCyan
     if ($pyFlags.Count -eq 0) {
@@ -2470,49 +2694,107 @@ function Run-PCscan {
         foreach ($f in $pyFlags) {
             Write-Host ""
             W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  $($f.Path)" Red
-            W "  $([char]0x2502)    Hits : $($f.Hits)" DarkYellow
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkYellow }
+            if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
         }
     }
     W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
 
     Write-Host ""
     W "  Scanning EXE files for cheat indicators..." DarkGray
-    $exeCheatNames = @(
+    $exeCheatTokens = @(
         "autoclicker","autoclick","killaura","aimbot","triggerbot","bhop",
-        "cheatengine","artmoney","cheatclient","ghostclient",
-        "dllinjector","dll_injector","xenos","extremeinjector",
-        "ollydbg","x64dbg","x32dbg",
+        "cheatengine","artmoney","cheatclient","ghostclient","ghosthack",
+        "dllinjector","dll_injector","xenos","extremeinjector","xenosinjector",
+        "ollydbg","x64dbg","x32dbg","processhacker","dnspy","reshacker",
         "keylogger","ratclient","ratlauncher","ratserver","dcrat","asyncrat",
-        "quasar","remcos","njrat","darkcomet","nanocore","netwire","orcus"
+        "quasar","remcos","njrat","darkcomet","nanocore","netwire","orcus",
+        "stealer","grabber","tokenstealer","discordstealer","cookiestealer",
+        "crystalaura","autocrystal","autototem","scaffoldhack","nofallhack",
+        "speedhack","flyhack","wallhack","xrayhack","reachhack"
     )
-    $exeSuspiciousDirs = @(
+    $exeCheatStrings = @(
+        "autoclicker","killaura","aimbot","triggerbot","cheat client","ghost client",
+        "dll inject","process inject","ReadProcessMemory","WriteProcessMemory",
+        "VirtualAllocEx","CreateRemoteThread","GetAsyncKeyState",
+        "discord token","webhook url","grab passwords","steal cookies",
+        "autocrystal","auto crystal","auto totem","crystal pvp",
+        "minhook","easyhook","detours","polyhook","subhook",
+        "xenos injector","extreme injector","process hacker"
+    )
+    $exeSuspiciousDirs = [System.Collections.Generic.List[string]]::new()
+    foreach ($base in @(
         $env:TEMP,
         [System.IO.Path]::Combine($env:USERPROFILE, "Downloads"),
         [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
         [System.IO.Path]::Combine($env:APPDATA, ".minecraft")
-    )
-    $exeInstallerPattern = '(?i)(setup|install|uninstall|update|bootstrapper|vcredist|dotnet|ndp|wix|squirrel|CodeSetup)'
-    $exeFlags = [System.Collections.Generic.List[object]]::new()
+    )) {
+        [void]$exeSuspiciousDirs.Add($base)
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                [void]$exeSuspiciousDirs.Add($sub)
+            }
+        } catch {}
+    }
+    $exeInstallerPattern = '(?i)(setup|install|uninstall|update|bootstrapper|vcredist|dotnet|ndp|wix|squirrel|CodeSetup|windowsinstaller|msiexec)'
+    $exeFlags   = [System.Collections.Generic.List[object]]::new()
     $exeScanned = 0
+    $exeSeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($exeRoot in $exeSuspiciousDirs) {
         if (-not [System.IO.Directory]::Exists($exeRoot)) { continue }
         try {
             foreach ($exeFile in [System.IO.Directory]::EnumerateFiles($exeRoot, '*.exe', [System.IO.SearchOption]::TopDirectoryOnly)) {
+                if (-not $exeSeenPaths.Add($exeFile)) { continue }
                 $exeName = [System.IO.Path]::GetFileNameWithoutExtension($exeFile).ToLower()
                 $exeScanned++
-                Write-Host "`r  Scanning EXE: $($exeName.Substring(0, [Math]::Min($exeName.Length,40)).PadRight(40))  checked: $exeScanned  flagged: $($exeFlags.Count)" -NoNewline -ForegroundColor DarkGray
+                Spin "Scanning EXE: $([System.IO.Path]::GetFileName($exeFile))"
                 if ($exeName -match $exeInstallerPattern) { continue }
-                foreach ($cheat in $exeCheatNames) {
-                    if ($exeName.Contains($cheat)) {
-                        $exeFlags.Add([PSCustomObject]@{ Path = $exeFile; Reason = "Cheat-related EXE name: $cheat" })
-                        break
+                $reasons = [System.Collections.Generic.List[string]]::new()
+                foreach ($token in $exeCheatTokens) {
+                    if ($exeName.Contains($token)) { $reasons.Add("[FILENAME] name contains '$token'"); break }
+                }
+                if ($reasons.Count -eq 0) {
+                    $fuzzyHit = Get-FilenameSimilarityMatch -JarName $exeFile
+                    if ($null -ne $fuzzyHit) { $reasons.Add("[FILENAME~] '$($fuzzyHit.Token)' ($($fuzzyHit.Score)% match)") }
+                }
+                try {
+                    $bytes   = [System.IO.File]::ReadAllBytes($exeFile)
+                    $maxRead = [Math]::Min($bytes.Length, 2MB)
+                    $sb      = [System.Text.StringBuilder]::new()
+                    $run     = 0
+                    for ($bi = 0; $bi -lt $maxRead; $bi++) {
+                        $b = $bytes[$bi]
+                        if ($b -ge 32 -and $b -le 126) {
+                            [void]$sb.Append([char]$b); $run++
+                        } else {
+                            if ($run -ge 5) {
+                                [void]$sb.Append(' ')
+                            } else {
+                                $sb.Length = [Math]::Max(0, $sb.Length - $run)
+                            }
+                            $run = 0
+                        }
                     }
+                    $exeText = $sb.ToString().ToLower()
+                    $strHits = [System.Collections.Generic.List[string]]::new()
+                    foreach ($s in $exeCheatStrings) {
+                        if ($exeText.Contains($s.ToLower())) { [void]$strHits.Add($s) }
+                    }
+                    if ($strHits.Count -gt 0) {
+                        $reasons.Add("[STRINGS] $( ($strHits | Select-Object -First 5) -join ', ' )")
+                    }
+                    $fi   = [System.IO.FileInfo]::new($exeFile)
+                    $sig  = Get-AuthenticodeSignature -FilePath $exeFile -ErrorAction SilentlyContinue
+                    $signed = if ($sig -and $sig.Status -eq 'Valid') { "signed:YES" } else { "signed:NO" }
+                    $meta = "size: $([math]::Round($fi.Length/1KB,1)) KB  $signed  modified: $($fi.LastWriteTime.ToString('yyyy-MM-dd'))"
+                } catch { $meta = "" }
+                if ($reasons.Count -gt 0) {
+                    [void]$exeFlags.Add([PSCustomObject]@{ Path = $exeFile; Reasons = $reasons; Meta = $meta })
                 }
             }
         } catch {}
     }
-    if ($exeScanned -gt 0) { Write-Host "`r  EXE scan done $([char]0x2014) $exeScanned file(s) checked.                                                  " }
-    else { Write-Host "`r$(' ' * 80)`r" -NoNewline }
+    SpinClear
     $pcIssues += $exeFlags.Count
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) EXE SCAN " + "$([char]0x2500)" * 59 + "$([char]0x2510)") DarkCyan
     if ($exeFlags.Count -eq 0) {
@@ -2521,7 +2803,8 @@ function Run-PCscan {
         foreach ($f in $exeFlags) {
             Write-Host ""
             W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  $($f.Path)" Red
-            W "  $([char]0x2502)    Reason : $($f.Reason)" DarkYellow
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkYellow }
+            if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
         }
     }
     W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
