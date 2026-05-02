@@ -913,7 +913,7 @@ function Run-RecentActivity {
     }
 }
 
-function Write-FlaggedCard([string]$FileName, [string]$Hash, [bool]$Verified, [string]$VerifiedName, [string]$DlSource, [object]$Patterns, [object]$Strings, [object]$Fullwidth) {
+function Write-FlaggedCard([string]$FileName, [string]$Hash, [bool]$Verified, [string]$VerifiedName, [string]$DlSource, [string]$DlUrl, [object]$Patterns, [object]$Strings, [object]$Fullwidth) {
     $w = 72
     $titleText = " FLAGGED  $FileName"
     $pad = [Math]::Max(0, $w - $titleText.Length - 2)
@@ -930,6 +930,11 @@ function Write-FlaggedCard([string]$FileName, [string]$Hash, [bool]$Verified, [s
         W ("  $([char]0x2502)  $([char]0x2717) Not found on Modrinth, CurseForge or Megabase".PadRight($w + 2) + "$([char]0x2502)") Yellow
     }
     W ("  $([char]0x2502)  " + $srcLine.Substring(2).PadRight($w - 2) + "$([char]0x2502)") DarkGray
+    if ($DlUrl) {
+        $urlDisplay = if ($DlUrl.Length -gt ($w - 8)) { $DlUrl.Substring(0, $w - 11) + "..." } else { $DlUrl }
+        $urlLine = "  URL: $urlDisplay"
+        W ("  $([char]0x2502)  " + $urlLine.Substring(2).PadRight($w - 2) + "$([char]0x2502)") DarkGray
+    }
     W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") DarkRed
 
     if ($Patterns -and $Patterns.Count -gt 0) {
@@ -1110,23 +1115,25 @@ function Get-DownloadSource([string]$path) {
         $zoneData = Get-Content -Raw -Stream Zone.Identifier $path -ErrorAction SilentlyContinue
         if ($zoneData -match "HostUrl=(.+)") {
             $url = $matches[1].Trim()
-            if ($url -match "mediafire\.com")                                        { return "MediaFire" }
-            elseif ($url -match "discord\.com|discordapp\.com|cdn\.discordapp\.com") { return "Discord" }
-            elseif ($url -match "dropbox\.com")                                      { return "Dropbox" }
-            elseif ($url -match "drive\.google\.com")                                { return "Google Drive" }
-            elseif ($url -match "mega\.nz|mega\.co\.nz")                             { return "MEGA" }
-            elseif ($url -match "github\.com")                                       { return "GitHub" }
-            elseif ($url -match "modrinth\.com")                                     { return "Modrinth" }
-            elseif ($url -match "curseforge\.com")                                   { return "CurseForge" }
-            elseif ($url -match "anydesk\.com")                                      { return "AnyDesk" }
-            elseif ($url -match "doomsdayclient\.com")                               { return "DoomsdayClient" }
-            elseif ($url -match "prestigeclient\.vip")                               { return "PrestigeClient" }
-            elseif ($url -match "198macros\.com")                                    { return "198Macros" }
-            elseif ($url -match "dqrkis\.xyz")                                       { return "Dqrkis" }
+            $name = $null
+            if ($url -match "mediafire\.com")                                        { $name = "MediaFire" }
+            elseif ($url -match "discord\.com|discordapp\.com|cdn\.discordapp\.com") { $name = "Discord" }
+            elseif ($url -match "dropbox\.com")                                      { $name = "Dropbox" }
+            elseif ($url -match "drive\.google\.com")                                { $name = "Google Drive" }
+            elseif ($url -match "mega\.nz|mega\.co\.nz")                             { $name = "MEGA" }
+            elseif ($url -match "github\.com")                                       { $name = "GitHub" }
+            elseif ($url -match "modrinth\.com")                                     { $name = "Modrinth" }
+            elseif ($url -match "curseforge\.com")                                   { $name = "CurseForge" }
+            elseif ($url -match "anydesk\.com")                                      { $name = "AnyDesk" }
+            elseif ($url -match "doomsdayclient\.com")                               { $name = "DoomsdayClient" }
+            elseif ($url -match "prestigeclient\.vip")                               { $name = "PrestigeClient" }
+            elseif ($url -match "198macros\.com")                                    { $name = "198Macros" }
+            elseif ($url -match "dqrkis\.xyz")                                       { $name = "Dqrkis" }
             else {
-                if ($url -match "https?://(?:www\.)?([^/]+)") { return $matches[1] }
-                return $url
+                if ($url -match "https?://(?:www\.)?([^/]+)") { $name = $matches[1] }
+                else { $name = $url }
             }
+            return [PSCustomObject]@{ Name = $name; RawUrl = $url }
         }
     } catch {}
     return $null
@@ -1332,6 +1339,142 @@ function Invoke-ObfuscationScan([string]$FilePath) {
         }
     } catch {}
     return $flags
+}
+
+function Get-ShannonEntropy([byte[]]$data) {
+    if ($data.Length -eq 0) { return 0.0 }
+    $freq = @{}
+    foreach ($b in $data) { if ($freq.ContainsKey($b)) { $freq[$b]++ } else { $freq[$b] = 1 } }
+    $entropy = 0.0
+    $len = $data.Length
+    foreach ($c in $freq.Values) {
+        $p = $c / $len
+        $entropy -= $p * [Math]::Log($p, 2)
+    }
+    return [Math]::Round($entropy, 4)
+}
+
+function Invoke-DeepScan([string]$FilePath) {
+    $findings = [System.Collections.Generic.List[object]]::new()
+
+    $reflectionPatterns = @(
+        "Class\.forName\s*\(", "getMethod\s*\(", "getDeclaredMethod\s*\(",
+        "invoke\s*\(", "getDeclaredField\s*\(", "setAccessible\s*\(",
+        "java/lang/reflect", "MethodHandle", "Unsafe\.", "sun/misc/Unsafe",
+        "ClassLoader", "defineClass", "ByteBuddy", "javassist", "ASM\d"
+    )
+    $extendedCheatStrings = @(
+        "aimbot","autoclick","autoclicker","killaura","reach","hitbox","blink","phase",
+        "scaffold","speed hack","bhop","bunny","triggerbot","xray","wallhack","esp",
+        "freecam","noclip","antiknockback","nofall","fly hack","criticals hack",
+        "velocity","jesus","waterwalking","step hack","longJump","autoSprint",
+        "noSlowdown","nuker","regen","autoeat","fullbright","zoomhack",
+        "desync","pingspoof","lagback","packetfly","inventory hack",
+        "autotool","fastbreak","fastplace","antifire","antidrown",
+        "cheatbreaker","watchdog bypass","ncp bypass","aac bypass",
+        "grim bypass","matrix bypass","vulcan bypass","sentinel bypass",
+        "ares client","meteor client","impact client","wurst client",
+        "sigma client","future client","liquidbounce","aristois",
+        "xaero's map hack","baritone","inertia","wolfram","criticals"
+    )
+
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($FilePath)
+        $allText = [System.Text.StringBuilder]::new()
+        $highEntropyCount = 0
+        $reflectionHits = [System.Collections.Generic.HashSet[string]]::new()
+        $cheatHits      = [System.Collections.Generic.HashSet[string]]::new()
+        $fakeMeta = $false; $metaName = ""; $fakedModid = $false; $modidValue = ""
+        $classCount = 0; $totalEntropy = 0.0; $entropyCount = 0
+
+        foreach ($entry in $archive.Entries) {
+            $n = $entry.FullName
+            if ($n -match "fabric\.mod\.json|mods\.toml|mcmod\.info|quilt\.mod\.json") {
+                try {
+                    $s = $entry.Open(); $ms = New-Object System.IO.MemoryStream
+                    $s.CopyTo($ms); $s.Close()
+                    $text = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
+                    $ms.Dispose()
+                    if ($text -match '"name"\s*:\s*"([^"]{2,60})"') { $metaName = $matches[1] }
+                    if ($text -match '"modid"\s*:\s*"([^"]{2,60})"') { $modidValue = $matches[1] }
+                    $jarBase = [System.IO.Path]::GetFileNameWithoutExtension($FilePath).ToLower() -replace '[^a-z0-9]',''
+                    $mnClean = $metaName.ToLower() -replace '[^a-z0-9]',''
+                    $knownMods = @("optifine","optifabric","sodium","lithium","iris","create","jei","jade","rei","appleskin","journeymap","xaerosminimap","xaerosworld","mousetweak","inventoryprofiles","cloth","modmenu","fabricapi","forgeconfig")
+                    foreach ($km in $knownMods) {
+                        if ($jarBase -notmatch $km -and $mnClean -match "^$km") { $fakeMeta = $true; break }
+                    }
+                    if ($modidValue -match "(optifine|sodium|iris|lithium|create)" -and $jarBase -notmatch $matches[1]) { $fakedModid = $true }
+                } catch {}
+            }
+
+            if ($n -match "\.class$") {
+                $classCount++
+                if ($entry.Length -gt 200 -and $entry.Length -lt 500000) {
+                    try {
+                        $s = $entry.Open(); $ms = New-Object System.IO.MemoryStream
+                        $s.CopyTo($ms); $s.Close()
+                        $bytes = $ms.ToArray(); $ms.Dispose()
+                        $entropy = Get-ShannonEntropy $bytes
+                        $totalEntropy += $entropy; $entropyCount++
+                        if ($entropy -gt 7.2) { $highEntropyCount++ }
+                        $ascii = [System.Text.Encoding]::ASCII.GetString($bytes) -replace "[^\x20-\x7E\n]"," "
+                        [void]$allText.Append($ascii)
+                        if ($allText.Length -gt 500000) { $allText = [System.Text.StringBuilder]::new($allText.ToString().Substring($allText.Length - 200000)) }
+                    } catch {}
+                }
+            }
+        }
+        $archive.Dispose()
+
+        $textStr = $allText.ToString()
+        foreach ($pat in $reflectionPatterns) {
+            if ($textStr -match $pat) { [void]$reflectionHits.Add(($pat -replace '\\s\*\\\(','()' -replace '\\','')) }
+        }
+        foreach ($cs in $extendedCheatStrings) {
+            if ($textStr -imatch [regex]::Escape($cs)) { [void]$cheatHits.Add($cs) }
+        }
+
+        $avgEntropy = if ($entropyCount -gt 0) { [Math]::Round($totalEntropy / $entropyCount, 3) } else { 0 }
+        $highEntropyPct = if ($classCount -gt 0) { [Math]::Round(($highEntropyCount / [Math]::Max(1,$entropyCount)) * 100) } else { 0 }
+
+        if ($fakeMeta)   { $findings.Add([PSCustomObject]@{ Severity = "CONFIRMED"; Text = "Fake mod identity $([char]0x2014) metadata claims to be '$metaName' but filename does not match" }) }
+        if ($fakedModid) { $findings.Add([PSCustomObject]@{ Severity = "CONFIRMED"; Text = "Faked modid '$modidValue' does not match JAR filename" }) }
+
+        if ($cheatHits.Count -ge 3) { $findings.Add([PSCustomObject]@{ Severity = "CONFIRMED"; Text = "Cheat strings ($($cheatHits.Count) hits): $( ($cheatHits | Select-Object -First 5) -join ', ')" }) }
+        elseif ($cheatHits.Count -ge 1) { $findings.Add([PSCustomObject]@{ Severity = "LIKELY"; Text = "Cheat-related strings found: $( ($cheatHits | Sort-Object) -join ', ')" }) }
+
+        if ($reflectionHits.Count -ge 4) { $findings.Add([PSCustomObject]@{ Severity = "LIKELY"; Text = "Heavy reflection usage ($($reflectionHits.Count) APIs): $( ($reflectionHits | Select-Object -First 4) -join ', ')" }) }
+        elseif ($reflectionHits.Count -ge 2) { $findings.Add([PSCustomObject]@{ Severity = "SUSPICIOUS"; Text = "Reflection APIs present: $( ($reflectionHits | Sort-Object) -join ', ')" }) }
+
+        if ($highEntropyPct -ge 40) { $findings.Add([PSCustomObject]@{ Severity = "CONFIRMED"; Text = "Extreme class entropy $([char]0x2014) $highEntropyPct% of classes above 7.2 bits (avg $avgEntropy)" }) }
+        elseif ($highEntropyPct -ge 20) { $findings.Add([PSCustomObject]@{ Severity = "LIKELY"; Text = "High class entropy $([char]0x2014) $highEntropyPct% of classes above 7.2 bits (avg $avgEntropy)" }) }
+        elseif ($avgEntropy -gt 6.8) { $findings.Add([PSCustomObject]@{ Severity = "SUSPICIOUS"; Text = "Elevated average class entropy: $avgEntropy bits" }) }
+
+    } catch {}
+    return $findings
+}
+
+function Write-DeepScanCard([string]$FileName, [object]$Findings) {
+    $w = 72
+    $sev = if ($Findings | Where-Object { $_.Severity -eq "CONFIRMED" }) { "CONFIRMED THREAT" }
+           elseif ($Findings | Where-Object { $_.Severity -eq "LIKELY" }) { "LIKELY THREAT" }
+           else { "SUSPICIOUS" }
+    $sevColor = switch ($sev) { "CONFIRMED THREAT" { "Red" } "LIKELY THREAT" { "DarkYellow" } default { "Yellow" } }
+    W ("  $([char]0x250C)$([char]0x2500) DEEP SCAN  $FileName " + "$([char]0x2500)" * [Math]::Max(0, $w - 14 - $FileName.Length) + "$([char]0x2510)") $sevColor
+    W "  $([char]0x2502)" $sevColor -NoNewline; W " DEEP SCAN $([char]0x2014) $sev " White -NoNewline; W (" " * [Math]::Max(0,$w - 16 - $sev.Length)) $sevColor -NoNewline; W "$([char]0x2502)" $sevColor
+    W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") $sevColor
+    foreach ($f in $Findings) {
+        $sc = switch ($f.Severity) { "CONFIRMED" { "Red" } "LIKELY" { "DarkYellow" } default { "Yellow" } }
+        $tag = "[$($f.Severity)]"
+        W "  $([char]0x2502)" $sevColor -NoNewline
+        W ("  $tag " ) $sc -NoNewline
+        $txt = $f.Text
+        if ($txt.Length -gt ($w - $tag.Length - 4)) { $txt = $txt.Substring(0, $w - $tag.Length - 7) + "..." }
+        W $txt White
+    }
+    W "  $([char]0x2502)" $sevColor
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2518)") $sevColor
+    Write-Host ""
 }
 
 function Invoke-BypassScan([string]$FilePath) {
@@ -1841,7 +1984,8 @@ if (-not $SkipModCheck) {
                 [void]$fnStrings.Add("Filename resembles known cheat client: '$($fnMatch.Token)' ($($fnMatch.Score)% match)")
                 [void]$suspiciousMods.Add([PSCustomObject]@{
                     FileName = $jar.Name; Hash = $hash; Verified = $false; VerifiedName = ""
-                    DownloadSource = $dl
+                    DownloadSource = if ($dl) { $dl.Name } else { $null }
+                    DownloadUrl    = if ($dl) { $dl.RawUrl } else { $null }
                     Patterns  = [System.Collections.Generic.HashSet[string]]::new()
                     Strings   = $fnStrings
                     Fullwidth = [System.Collections.Generic.HashSet[string]]::new()
@@ -1859,7 +2003,9 @@ if (-not $SkipModCheck) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
             $hash     = Get-FileSHA1 $jar.FullName
-            $dlSource = Get-DownloadSource $jar.FullName
+            $dlObj    = Get-DownloadSource $jar.FullName
+            $dlSource = if ($dlObj) { $dlObj.Name } else { $null }
+            $dlUrl    = if ($dlObj) { $dlObj.RawUrl } else { $null }
             $verified = $false; $verifiedName = ""
 
             if ($hash) {
@@ -1881,7 +2027,7 @@ if (-not $SkipModCheck) {
             if ($verified) {
                 [void]$verifiedMods.Add([PSCustomObject]@{ ModName = $verifiedName; FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash })
             } else {
-                [void]$unknownMods.Add([PSCustomObject]@{ FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash; DownloadSource = $dlSource })
+                [void]$unknownMods.Add([PSCustomObject]@{ FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash; DownloadSource = $dlSource; DownloadUrl = $dlUrl })
             }
         }
         SpinClear
@@ -1905,11 +2051,12 @@ if (-not $SkipModCheck) {
                     $isVer = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
                     $verName = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Select-Object -First 1).ModName
                     $hash    = ($jarFiles | Where-Object { $_.Name -eq $jar.Name } | ForEach-Object { Get-FileSHA1 $_.FullName } | Select-Object -First 1)
-                    $dl      = Get-DownloadSource $jar.FullName
+                    $dlO     = Get-DownloadSource $jar.FullName
 
                     [void]$suspiciousMods.Add([PSCustomObject]@{
                         FileName = $jar.Name; Hash = $hash; Verified = $isVer; VerifiedName = $verName
-                        DownloadSource = $dl
+                        DownloadSource = if ($dlO) { $dlO.Name } else { $null }
+                        DownloadUrl    = if ($dlO) { $dlO.RawUrl } else { $null }
                         Patterns = $result.Patterns; Strings = $result.Strings; Fullwidth = $result.Fullwidth
                     })
                     $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
@@ -1998,7 +2145,7 @@ if (-not $SkipModCheck) {
             Write-Rule "$([char]0x2500)" 76 DarkGray
             Write-Host ""
             foreach ($mod in $suspiciousMods) {
-                Write-FlaggedCard $mod.FileName $mod.Hash $mod.Verified $mod.VerifiedName $mod.DownloadSource $mod.Patterns $mod.Strings $mod.Fullwidth
+                Write-FlaggedCard $mod.FileName $mod.Hash $mod.Verified $mod.VerifiedName $mod.DownloadSource $mod.DownloadUrl $mod.Patterns $mod.Strings $mod.Fullwidth
             }
         }
 
@@ -2014,6 +2161,34 @@ if (-not $SkipModCheck) {
             Write-Rule "$([char]0x2500)" 76 DarkGray
             Write-Host ""
             foreach ($mod in $obfuscatedMods) { Write-ObfuscationCard $mod.FileName $mod.Flags }
+        }
+
+        $deepScanTargets = [System.Collections.Generic.List[object]]::new()
+        foreach ($jar in $jarFiles) {
+            $isFlagged = ($suspiciousMods + $bypassMods + $obfuscatedMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
+            if ($isFlagged) { [void]$deepScanTargets.Add($jar) }
+        }
+
+        if ($deepScanTargets.Count -gt 0) {
+            Write-Host ""
+            Write-SectionHeader "DEEP SCAN RESULTS" $deepScanTargets.Count DarkRed Red
+            Write-Rule "$([char]0x2500)" 76 DarkGray
+            Write-Host ""
+            $idx = 0
+            $deepResults = [System.Collections.Generic.List[object]]::new()
+            foreach ($jar in $deepScanTargets) {
+                $idx++
+                Spin "[$idx/$($deepScanTargets.Count)] Deep-scanning $($jar.Name)"
+                $df = Invoke-DeepScan -FilePath $jar.FullName
+                if ($df.Count -gt 0) { [void]$deepResults.Add([PSCustomObject]@{ FileName = $jar.Name; Findings = $df }) }
+            }
+            SpinClear
+            if ($deepResults.Count -gt 0) {
+                foreach ($dr in $deepResults) { Write-DeepScanCard $dr.FileName $dr.Findings }
+            } else {
+                W "  $([char]0x2713) Deep scan complete $([char]0x2014) no additional threats confirmed." Green
+                Write-Host ""
+            }
         }
     }
 }
@@ -3158,6 +3333,13 @@ Write-Host ""
 W "  Run anywhere:" DarkGray
 $runCmd = '  powershell -ExecutionPolicy Bypass -Command "iex (irm ''https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1'')"'
 W $runCmd DarkGray
+Write-Host ""
+W ("$([char]0x2500)" * 76) DarkGray
+Write-Host ""
+W "  Also check out NicModAnalyzer by Nickk196 $([char]0x2014) another great mod scanner:" DarkGray
+$nicCmd = '  powershell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-RestMethod ''https://raw.githubusercontent.com/Nickk196/NicModAnalyzer/main/NicModAnalyzer.ps1'')"'
+W $nicCmd DarkGray
+W "  https://github.com/Nickk196/NicModAnalyzer" DarkGray
 Write-Host ""
 if (Ask-YesNo "Check recently deleted files, new JARs and terminated processes?") { Run-RecentActivity }
 Write-Host ""
