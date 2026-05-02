@@ -931,9 +931,11 @@ function Write-FlaggedCard([string]$FileName, [string]$Hash, [bool]$Verified, [s
     }
     W ("  $([char]0x2502)  " + $srcLine.Substring(2).PadRight($w - 2) + "$([char]0x2502)") DarkGray
     if ($DlUrl) {
-        $urlDisplay = if ($DlUrl.Length -gt ($w - 8)) { $DlUrl.Substring(0, $w - 11) + "..." } else { $DlUrl }
-        $urlLine = "  URL: $urlDisplay"
-        W ("  $([char]0x2502)  " + $urlLine.Substring(2).PadRight($w - 2) + "$([char]0x2502)") DarkGray
+        $urlDisplay = if ($DlUrl.Length -gt ($w - 10)) { $DlUrl.Substring(0, $w - 13) + "..." } else { $DlUrl }
+        $urlLabel = "[URL] $urlDisplay"
+        $Host.UI.Write("DarkGray", $Host.UI.RawUI.BackgroundColor, "  $([char]0x2502)  ")
+        $Host.UI.Write("DarkYellow", $Host.UI.RawUI.BackgroundColor, $urlLabel)
+        $Host.UI.WriteLine("DarkGray", $Host.UI.RawUI.BackgroundColor, (" " * ($w - 2 - $urlLabel.Length)) + "$([char]0x2502)")
     }
     W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") DarkRed
 
@@ -2008,24 +2010,25 @@ if (-not $SkipModCheck) {
             $dlUrl    = if ($dlObj) { $dlObj.RawUrl } else { $null }
             $verified = $false; $verifiedName = ""
 
+            $modUrl = ""
             if ($hash) {
                 $mr = Get-ModrinthMeta $hash
-                if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name }
+                if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)" }
                 if (-not $verified) {
                     $fp = Get-FileMurmur2 $jar.FullName
                     if ($null -ne $fp) {
                         $cf = Get-CurseForgeMeta $fp
-                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name }
+                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name; $modUrl = "https://www.curseforge.com/minecraft/mc-mods/$($cf.Slug)" }
                     }
                 }
                 if (-not $verified) {
                     $mb = Get-MegabaseMeta $hash
-                    if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name }
+                    if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name; $modUrl = if ($mb.modrinth_id) { "https://modrinth.com/mod/$($mb.modrinth_id)" } else { "" } }
                 }
             }
 
             if ($verified) {
-                [void]$verifiedMods.Add([PSCustomObject]@{ ModName = $verifiedName; FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash })
+                [void]$verifiedMods.Add([PSCustomObject]@{ ModName = $verifiedName; FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash; ModUrl = $modUrl })
             } else {
                 [void]$unknownMods.Add([PSCustomObject]@{ FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash; DownloadSource = $dlSource; DownloadUrl = $dlUrl })
             }
@@ -2116,13 +2119,22 @@ if (-not $SkipModCheck) {
         if ($verifiedMods.Count -gt 0) {
             Write-SectionHeader "VERIFIED MODS" $verifiedMods.Count Green Green
             Write-Rule "$([char]0x2500)" 76 DarkGray
-            foreach ($mod in $verifiedMods) {
-                W "  $([char]0x2713) " Green -NoNewline
-                W $mod.ModName White -NoNewline
-                W " $([char]0x2192) " DarkGray -NoNewline
-                W $mod.FileName DarkGray
-            }
             Write-Host ""
+            $vw = 70
+            foreach ($mod in $verifiedMods) {
+                $nameLine  = "$([char]0x2022) $($mod.ModName)"
+                $fileLine  = "  $([char]0x2192) $($mod.FileName)"
+                $sep = "$([char]0x2550)" * ($vw + 1)
+                W ("  $([char]0x2554)$sep$([char]0x2557)") Green
+                W ("  $([char]0x2551)  " + $nameLine.PadRight($vw - 1) + "$([char]0x2551)") Green
+                W ("  $([char]0x2551)  " + $fileLine.PadRight($vw - 1) + "$([char]0x2551)") DarkGray
+                if ($mod.ModUrl) {
+                    $urlTxt = "[URL] $($mod.ModUrl)"
+                    W ("  $([char]0x2551)  " + $urlTxt.PadRight($vw - 1) + "$([char]0x2551)") Cyan
+                }
+                W ("  $([char]0x255A)$sep$([char]0x255D)") Green
+                Write-Host ""
+            }
         }
 
         if ($unknownMods.Count -gt 0) {
@@ -2133,9 +2145,18 @@ if (-not $SkipModCheck) {
                 $fname = if ($mod.FileName.Length -gt 50) { $mod.FileName.Substring(0,47) + "..." } else { $mod.FileName }
                 $src = if ($mod.DownloadSource) { "Source: $($mod.DownloadSource)" } else { "Source: unknown" }
                 $padT = "$([char]0x2500)" * [Math]::Max(0, 65 - $fname.Length)
-                $padB = "$([char]0x2500)" * [Math]::Max(0, 67 - $src.Length)
                 W ("  $([char]0x2554)$([char]0x2550) ? " + $fname + " " + $padT + "$([char]0x2557)") Yellow
-                W ("  $([char]0x255A)$([char]0x2550) " + $src + " " + $padB + "$([char]0x255D)") Yellow
+                if ($mod.DownloadUrl) {
+                    $uDisp = if ($mod.DownloadUrl.Length -gt 63) { $mod.DownloadUrl.Substring(0,60) + "..." } else { $mod.DownloadUrl }
+                    $uLabel = "[URL] $uDisp"
+                    $padU = "$([char]0x2500)" * [Math]::Max(0, 67 - $uLabel.Length)
+                    $Host.UI.Write("Yellow", $Host.UI.RawUI.BackgroundColor, "  $([char]0x255A)$([char]0x2550) ")
+                    $Host.UI.Write("DarkYellow", $Host.UI.RawUI.BackgroundColor, $uLabel)
+                    $Host.UI.WriteLine("Yellow", $Host.UI.RawUI.BackgroundColor, " $padU$([char]0x255D)")
+                } else {
+                    $padB = "$([char]0x2500)" * [Math]::Max(0, 67 - $src.Length)
+                    W ("  $([char]0x255A)$([char]0x2550) " + $src + " " + $padB + "$([char]0x255D)") Yellow
+                }
                 Write-Host ""
             }
         }
@@ -3334,12 +3355,20 @@ W "  Run anywhere:" DarkGray
 $runCmd = '  powershell -ExecutionPolicy Bypass -Command "iex (irm ''https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1'')"'
 W $runCmd DarkGray
 Write-Host ""
-W ("$([char]0x2500)" * 76) DarkGray
 Write-Host ""
-W "  Also check out NicModAnalyzer by Nickk196 $([char]0x2014) another great mod scanner:" DarkGray
-$nicCmd = '  powershell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-RestMethod ''https://raw.githubusercontent.com/Nickk196/NicModAnalyzer/main/NicModAnalyzer.ps1'')"'
-W $nicCmd DarkGray
-W "  https://github.com/Nickk196/NicModAnalyzer" DarkGray
+$nw = 72
+$nsep = "$([char]0x2550)" * ($nw + 1)
+W ("  $([char]0x2554)$nsep$([char]0x2557)") DarkGray
+W ("  $([char]0x2551)  $([char]0x2022) NicModAnalyzer  by Nickk196 $([char]0x2014) another great mod scanner".PadRight($nw + 1) + "$([char]0x2551)") White
+W ("  $([char]0x2551)" + " " * ($nw + 2) + "$([char]0x2551)") DarkGray
+$nicRunLine = "  $([char]0x2022) Run:"
+W ("  $([char]0x2551)  " + $nicRunLine.Substring(2).PadRight($nw - 1) + "$([char]0x2551)") DarkGray
+$nicCmdInner = 'powershell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-RestMethod ''https://raw.githubusercontent.com/Nickk196/NicModAnalyzer/main/NicModAnalyzer.ps1'')"'
+$nicCmdDisplay = if ($nicCmdInner.Length -gt $nw - 3) { $nicCmdInner.Substring(0, $nw - 6) + "..." } else { $nicCmdInner }
+W ("  $([char]0x2551)    " + $nicCmdDisplay.PadRight($nw - 1) + "$([char]0x2551)") DarkGray
+W ("  $([char]0x2551)" + " " * ($nw + 2) + "$([char]0x2551)") DarkGray
+W ("  $([char]0x2551)  [URL] https://github.com/Nickk196/NicModAnalyzer".PadRight($nw + 2) + "$([char]0x2551)") Cyan
+W ("  $([char]0x255A)$nsep$([char]0x255D)") DarkGray
 Write-Host ""
 if (Ask-YesNo "Check recently deleted files, new JARs and terminated processes?") { Run-RecentActivity }
 Write-Host ""
