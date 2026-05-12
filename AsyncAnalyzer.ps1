@@ -333,21 +333,21 @@ function Get-BigramSimilarity([string]$a, [string]$b) {
 function Get-FilenameSimilarityMatch([string]$JarName) {
     $base = [System.IO.Path]::GetFileNameWithoutExtension($JarName).ToLower()
     $base = $base -replace '[-_\.\s\d]+', ''
-    if ($base.Length -lt 3) { return $null }
+    if ($base.Length -lt 4) { return $null }
     $bestToken = $null
     $bestScore = 0.0
     foreach ($token in $script:knownCheatFileTokens) {
         $t = $token -replace '[-_\.\s]+', ''
-        if ($base.Contains($t) -or $t.Contains($base)) {
-            $score = [Math]::Max($base.Length, $t.Length) / [Math]::Max($base.Length, $t.Length)
-            if ($base.Contains($t)) { $score = [double]$t.Length / [double]$base.Length }
-            elseif ($t.Contains($base)) { $score = [double]$base.Length / [double]$t.Length }
+        if ($t.Length -ge 8 -and ($base -eq $t -or $base.StartsWith($t) -or $base.EndsWith($t))) {
+            $score = [double]$t.Length / [double]$base.Length
             if ($score -gt $bestScore) { $bestScore = $score; $bestToken = $token }
+        } elseif ($base -eq $t) {
+            if (1.0 -gt $bestScore) { $bestScore = 1.0; $bestToken = $token }
         }
         $sim = Get-BigramSimilarity $base $t
         if ($sim -gt $bestScore) { $bestScore = $sim; $bestToken = $token }
     }
-    if ($bestScore -ge 0.45 -and $null -ne $bestToken) {
+    if ($bestScore -ge 0.80 -and $null -ne $bestToken) {
         return [PSCustomObject]@{ Token = $bestToken; Score = [Math]::Round($bestScore * 100) }
     }
     return $null
@@ -3434,19 +3434,6 @@ $runCmd = '  powershell -ExecutionPolicy Bypass -Command "iex (irm ''https://raw
 W $runCmd DarkGray
 Write-Host ""
 Write-Host ""
-$nw = 72
-$nsep = "$([char]0x2550)" * ($nw + 1)
-W ("  $([char]0x2554)$nsep$([char]0x2557)") DarkGray
-W ("  $([char]0x2551)  $([char]0x2022) NicModAnalyzer  by Nickk196 $([char]0x2014) another great mod scanner".PadRight($nw + 1) + "$([char]0x2551)") White
-W ("  $([char]0x2551)" + " " * ($nw + 2) + "$([char]0x2551)") DarkGray
-$nicRunLine = "  $([char]0x2022) Run:"
-W ("  $([char]0x2551)  " + $nicRunLine.Substring(2).PadRight($nw - 1) + "$([char]0x2551)") DarkGray
-$nicCmdInner = 'powershell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-RestMethod ''https://raw.githubusercontent.com/Nickk196/NicModAnalyzer/main/NicModAnalyzer.ps1'')"'
-$nicCmdDisplay = if ($nicCmdInner.Length -gt $nw - 3) { $nicCmdInner.Substring(0, $nw - 6) + "..." } else { $nicCmdInner }
-W ("  $([char]0x2551)    " + $nicCmdDisplay.PadRight($nw - 1) + "$([char]0x2551)") DarkGray
-W ("  $([char]0x2551)" + " " * ($nw + 2) + "$([char]0x2551)") DarkGray
-W ("  $([char]0x2551)  [URL] https://github.com/Nickk196/NicModAnalyzer".PadRight($nw + 2) + "$([char]0x2551)") Cyan
-W ("  $([char]0x255A)$nsep$([char]0x255D)") DarkGray
 Write-Host ""
 if (Ask-YesNo "Check recently deleted files, new JARs and terminated processes?") { Run-RecentActivity }
 Write-Host ""
