@@ -499,22 +499,39 @@ function Get-LauncherName([string]$path) {
     if ($path -match 'curseforge') { return "CurseForge" }
     if ($path -match '\.technic') { return "Technic" }
     if ($path -match 'PolyMC') { return "PolyMC" }
-    if ($path -match 'modrinth|theseus') { return "Modrinth" }
+    if ($path -match 'modrinth|theseus|ModrinthApp') { return "Modrinth" }
     return "Unknown"
 }
 
 function Find-MinecraftModFolders {
     $runningJava = @(Get-Process javaw,java -ErrorAction SilentlyContinue)
-    $runningPaths = [System.Collections.Generic.List[string]]::new()
-    foreach ($proc in $runningJava) {
-        try { $rp = $proc.MainModule.FileName; if ($rp) { [void]$runningPaths.Add($rp) } } catch {}
+
+    $script:javaProcessInfos = [System.Collections.Generic.List[PSCustomObject]]::new()
+    if ($runningJava.Count -gt 0) {
+        foreach ($proc in $runningJava) {
+            try {
+                $wp = Get-WmiObject Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
+                if ($wp) {
+                    [void]$script:javaProcessInfos.Add([PSCustomObject]@{
+                        CommandLine = if ($wp.CommandLine) { $wp.CommandLine } else { "" }
+                        WorkingDir  = if ($wp.ExecutablePath) { [System.IO.Path]::GetDirectoryName($wp.ExecutablePath) } else { "" }
+                    })
+                }
+            } catch {}
+        }
     }
+
     $results = [System.Collections.Generic.List[object]]::new()
     $seen    = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     function IsJavaRunningIn([string]$dir) {
-        foreach ($rp in $runningPaths) {
-            if ($rp -and $rp.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        $dirNorm = $dir.TrimEnd('\')
+        foreach ($info in $script:javaProcessInfos) {
+            $cl = $info.CommandLine
+            if ($cl) {
+                if ($cl.IndexOf($dirNorm, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+            }
+            if ($info.WorkingDir -and $info.WorkingDir.StartsWith($dirNorm, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
         return $false
     }
@@ -550,7 +567,8 @@ function Find-MinecraftModFolders {
         "$env:APPDATA\.technic\modpacks",
         "$env:APPDATA\PolyMC\instances",
         "$env:APPDATA\Modrinth\profiles",
-        "$env:APPDATA\com.modrinth.theseus\profiles"
+        "$env:APPDATA\com.modrinth.theseus\profiles",
+        "$env:APPDATA\ModrinthApp\profiles"
     )
     foreach ($root in $launcherRoots) {
         if (-not [System.IO.Directory]::Exists($root)) { continue }
@@ -575,6 +593,53 @@ function Find-MinecraftModFolders {
             }
         }
     }
+
+    $lunarRunning = @(Get-Process "lunar-launcher","lunarclient","Lunar Client" -ErrorAction SilentlyContinue).Count -gt 0
+    $lunarOffline = "$env:USERPROFILE\.lunarclient\offline"
+    if ([System.IO.Directory]::Exists($lunarOffline)) {
+        foreach ($verDir in [System.IO.Directory]::GetDirectories($lunarOffline)) {
+            $modsDir = [System.IO.Path]::Combine($verDir, "mods")
+            if ([System.IO.Directory]::Exists($modsDir) -and $seen.Add($modsDir)) {
+                $jars  = @([System.IO.Directory]::GetFiles($modsDir, "*.jar"))
+                $lastW = if ($jars.Count -gt 0) { ($jars | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($modsDir) }
+                [void]$results.Add([PSCustomObject]@{ Path=$modsDir; Launcher="LunarClient"; Instance=[System.IO.Path]::GetFileName($verDir); JarCount=$jars.Count; LastWrite=$lastW; IsRunning=$lunarRunning })
+            }
+        }
+    }
+
+    $badlionRunning = @(Get-Process "BadlionClient","badlionclient" -ErrorAction SilentlyContinue).Count -gt 0
+    $badlionDirs = @(
+        "$env:APPDATA\Badlion Client\.minecraft\mods",
+        "$env:APPDATA\.badlion\.minecraft\mods",
+        "$env:APPDATA\.minecraft\mods"
+    )
+    foreach ($bd in $badlionDirs) {
+        if ([System.IO.Directory]::Exists($bd) -and $seen.Add($bd)) {
+            $jars  = @([System.IO.Directory]::GetFiles($bd, "*.jar"))
+            $lastW = if ($jars.Count -gt 0) { ($jars | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($bd) }
+            [void]$results.Add([PSCustomObject]@{ Path=$bd; Launcher="Badlion"; Instance=""; JarCount=$jars.Count; LastWrite=$lastW; IsRunning=$badlionRunning })
+            break
+        }
+    }
+
+    $featherRunning = @(Get-Process "feather-launcher","featherclient","Feather Client" -ErrorAction SilentlyContinue).Count -gt 0
+    $featherDirs = @(
+        "$env:APPDATA\feather\instances",
+        "$env:LOCALAPPDATA\feather\instances",
+        "$env:APPDATA\.feather\instances"
+    )
+    foreach ($fr in $featherDirs) {
+        if (-not [System.IO.Directory]::Exists($fr)) { continue }
+        foreach ($inst in [System.IO.Directory]::GetDirectories($fr)) {
+            $modsDir = [System.IO.Path]::Combine($inst, "mods")
+            if ([System.IO.Directory]::Exists($modsDir) -and $seen.Add($modsDir)) {
+                $jars  = @([System.IO.Directory]::GetFiles($modsDir, "*.jar"))
+                $lastW = if ($jars.Count -gt 0) { ($jars | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($modsDir) }
+                [void]$results.Add([PSCustomObject]@{ Path=$modsDir; Launcher="Feather"; Instance=[System.IO.Path]::GetFileName($inst); JarCount=$jars.Count; LastWrite=$lastW; IsRunning=$featherRunning })
+            }
+        }
+    }
+
     $sorted = $results | Sort-Object @{e={[int]$_.IsRunning};Descending=$true}, @{e='JarCount';Descending=$true}, @{e='LastWrite';Descending=$true}
     return @($sorted)
 }
@@ -601,6 +666,17 @@ function Ask-ModPath {
             if ([string]::IsNullOrWhiteSpace($p2)) { $p2 = "$env:APPDATA\.minecraft\mods" }
             return $p2
         }
+        $runningInstances = @($found | Where-Object { $_.IsRunning })
+        if ($runningInstances.Count -eq 1) {
+            $e = $runningInstances[0]
+            Write-Host ""
+            W "  $([char]0x2713) Auto-selected (currently running): " Green -NoNewline
+            W "$($e.Launcher)" Cyan -NoNewline
+            if ($e.Instance) { W " / $($e.Instance)" White -NoNewline }
+            W "  ($($e.JarCount) mods)  $([char]0x25CF) RUNNING" Green
+            Write-Host ""
+            return $e.Path
+        }
         if ($found.Count -eq 1) {
             $e   = $found[0]
             $tag = if ($e.IsRunning) { "  $([char]0x25CF) RUNNING" } else { "" }
@@ -612,13 +688,15 @@ function Ask-ModPath {
             Write-Host ""
             return $e.Path
         }
+        $displayList = if ($runningInstances.Count -gt 1) { $runningInstances } else { $found }
         $w = 72
         Write-Host ""
-        W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) FOUND INSTALLATIONS " + "$([char]0x2500)" * 51 + "$([char]0x2510)") DarkCyan
+        $header = if ($runningInstances.Count -gt 1) { "RUNNING INSTANCES" } else { "FOUND INSTALLATIONS" }
+        W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) $header " + "$([char]0x2500)" * (69 - $header.Length) + "$([char]0x2510)") DarkCyan
         W "  $([char]0x2502)   #   Launcher        Instance                   Mods  Last Used    $([char]0x2502)" DarkCyan
         W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") DarkCyan
         $idx = 1
-        foreach ($e in $found) {
+        foreach ($e in $displayList) {
             $runMark = if ($e.IsRunning) { "$([char]0x25CF) " } else { "  " }
             $inst    = if ($e.Instance) { $e.Instance } else { "-" }
             $inst    = if ($inst.Length -gt 26) { $inst.Substring(0,26) } else { $inst.PadRight(26) }
@@ -636,8 +714,8 @@ function Ask-ModPath {
         $sel = ([string]$sel).Trim()
         $selIdx = 1
         $parsed = 0
-        if (-not [string]::IsNullOrWhiteSpace($sel) -and [int]::TryParse($sel, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $found.Count) { $selIdx = $parsed }
-        $chosen = $found[$selIdx - 1]
+        if (-not [string]::IsNullOrWhiteSpace($sel) -and [int]::TryParse($sel, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $displayList.Count) { $selIdx = $parsed }
+        $chosen = $displayList[$selIdx - 1]
         Write-Host ""
         W "  $([char]0x2713) Selected: " Green -NoNewline
         W "$($chosen.Launcher)" Cyan -NoNewline
