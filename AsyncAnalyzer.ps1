@@ -2675,7 +2675,7 @@ function Run-BamScan {
 
         $reportPath = Join-Path $env:TEMP "AsyncAnalyzer_Report.html"
         $reportHtml | Out-File -FilePath $reportPath -Encoding UTF8
-        Start-Process $reportPath
+        Invoke-Item $reportPath
         W "  $([char]0x2713) Scan report saved and opened: $reportPath" Green
         Write-Host ""
         return
