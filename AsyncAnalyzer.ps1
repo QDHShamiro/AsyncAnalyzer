@@ -2626,10 +2626,12 @@ function Run-BamScan {
 
         $flaggedRows = ""
         foreach ($m in $script:FlaggedModsList) {
-            $flaggedRows += "<tr><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
+            $ext = [System.IO.Path]::GetExtension($m).TrimStart('.').ToLower()
+            $flaggedRows += "<tr data-ext=`"$ext`"><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
         }
         $flaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
-            "<table><thead><tr><th>Flagged / Suspicious Mod</th></tr></thead><tbody>$flaggedRows</tbody></table>"
+            $filterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
+            "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious Mod</th></tr></thead><tbody>$flaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$filterJs"
         } else {
             "<p class='ok'>No flagged mods detected.</p>"
         }
@@ -2661,6 +2663,11 @@ function Run-BamScan {
     .status { margin-top:24px; padding:16px 20px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$statusColor; background:var(--surface); }
     .bam-note { margin-top:16px; padding:12px 16px; border-radius:8px; background:var(--surface); border:1px solid var(--warn); color:var(--warn); font-size:0.85em; }
     .ok { color:#2ecc71; padding:12px 0; }
+    .filter-bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+    #modSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
+    #modSearch:focus { border-color:#238636; }
+    .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
+    .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
     footer { margin-top:40px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
   </style>
 </head>
