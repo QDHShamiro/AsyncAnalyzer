@@ -330,6 +330,30 @@ function Get-BigramSimilarity([string]$a, [string]$b) {
     return (2.0 * $intersection) / ($bigramsA.Count + $bigramsB.Count)
 }
 
+function Test-RandomFilename([string]$JarName) {
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($JarName).ToLower()
+    if ($base.Length -lt 4 -or $base.Length -gt 24) { return $false }
+    $knownPrefixes = @("fabric","forge","optifine","sodium","lithium","iris","indium","ferrite","starlight","phosphor",
+                       "lazydfu","ksyxis","smoothboot","entityculling","memoryleakfix","badoptimizations",
+                       "c2me","moonrise","noisium","raknetify","immediatelyfast","dynamic","continuity",
+                       "viaversion","viafabric","essential","replay","journeymap","xaeros","xaero",
+                       "jei","rei","emi","waystones","ftb","create","mekanism","thermal","botania",
+                       "appleskin","inventory","item","chunk","render","better","fast","simple","easy",
+                       "quark","charm","supplementaries","farmers","autumnity","upgrade","twigs")
+    foreach ($pfx in $knownPrefixes) { if ($base.StartsWith($pfx)) { return $false } }
+    $vowels = ($base.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
+    $ratio  = if ($base.Length -gt 0) { $vowels / $base.Length } else { 0 }
+    $hasDigitBlock = $base -match '[0-9]{3,}'
+    $allAlpha = $base -replace '[^a-z]',''
+    $uniqueChars = ($allAlpha.ToCharArray() | Sort-Object -Unique).Count
+    $repetitionRatio = if ($allAlpha.Length -gt 0) { $uniqueChars / $allAlpha.Length } else { 1 }
+    $looksRandom = ($ratio -lt 0.15 -and $base.Length -ge 5) -or
+                   ($hasDigitBlock -and $ratio -lt 0.20) -or
+                   ($repetitionRatio -lt 0.30 -and $base.Length -ge 6) -or
+                   ($base -match '^[a-z0-9]{6,}$' -and $ratio -lt 0.18 -and $base -notmatch '[aeiou]{2}')
+    return $looksRandom
+}
+
 function Get-FilenameSimilarityMatch([string]$JarName) {
     $base = [System.IO.Path]::GetFileNameWithoutExtension($JarName).ToLower()
     $base = $base -replace '[-_\.\s\d]+', ''
@@ -2073,6 +2097,22 @@ if (-not $SkipModCheck) {
                 [void]$filenameFlaggedSet.Add($jar.Name)
                 [void]$script:FlaggedModsList.Add($jar.Name)
                 $script:Flagged++
+            } elseif (Test-RandomFilename $jar.Name) {
+                $hash = Get-FileSHA1 $jar.FullName
+                $dl   = Get-DownloadSource $jar.FullName
+                $rnStrings = [System.Collections.Generic.HashSet[string]]::new()
+                [void]$rnStrings.Add("Suspicious filename $([char]0x2014) randomly generated name pattern")
+                [void]$suspiciousMods.Add([PSCustomObject]@{
+                    FileName = $jar.Name; Hash = $hash; Verified = $false; VerifiedName = ""
+                    DownloadSource = if ($dl) { $dl.Name } else { $null }
+                    DownloadUrl    = if ($dl) { $dl.RawUrl } else { $null }
+                    Patterns  = [System.Collections.Generic.HashSet[string]]::new()
+                    Strings   = $rnStrings
+                    Fullwidth = [System.Collections.Generic.HashSet[string]]::new()
+                })
+                [void]$filenameFlaggedSet.Add($jar.Name)
+                [void]$script:FlaggedModsList.Add($jar.Name)
+                $script:Flagged++
             }
         }
         SpinClear
@@ -2556,6 +2596,268 @@ $script:knownCheatFolders = @(
     "$env:TEMP\prestige",
     "$env:TEMP\prestigeclient"
 )
+
+function Run-BamScan {
+    Write-Host ""
+    W ("$([char]0x2501)" * 76) Blue
+    Write-Host ""
+    W "  BAM SCAN $([char]0x2014) Background Activity Monitor" Cyan
+    Write-Host ""
+
+    if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        W "  $([char]0x26A0)  Administrator privileges required for BAM scan. Skipping." Yellow
+        Write-Host ""
+
+        $flaggedRows = ""
+        foreach ($m in $script:FlaggedModsList) {
+            $flaggedRows += "<tr><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
+        }
+        $flaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
+            "<table><thead><tr><th>Flagged / Suspicious Mod</th></tr></thead><tbody>$flaggedRows</tbody></table>"
+        } else {
+            "<p class='ok'>No flagged mods detected.</p>"
+        }
+        $statusColor  = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) { "#e74c3c" } else { "#2ecc71" }
+        $statusText   = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
+        $scanDate     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+        $reportHtml = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AsyncAnalyzer $($script:Version) &mdash; Scan Report</title>
+  <style>
+    :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#238636; --danger:#e74c3c; --warn:#e3b341; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:32px 24px; }
+    h1 { font-size:1.6em; margin-bottom:4px; }
+    .sub { color:var(--muted); font-size:0.9em; margin-bottom:32px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:32px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px 16px; text-align:center; }
+    .card .num { font-size:2.4em; font-weight:700; line-height:1; }
+    .card .lbl { color:var(--muted); font-size:0.8em; margin-top:6px; }
+    .green { color:#2ecc71; } .yellow { color:#e3b341; } .red { color:#e74c3c; }
+    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+    th { background:#1c2128; color:var(--muted); font-size:0.8em; text-transform:uppercase; letter-spacing:.06em; padding:10px 16px; text-align:left; }
+    td { padding:10px 16px; border-top:1px solid var(--border); font-size:0.9em; }
+    .status { margin-top:24px; padding:16px 20px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$statusColor; background:var(--surface); }
+    .bam-note { margin-top:16px; padding:12px 16px; border-radius:8px; background:var(--surface); border:1px solid var(--warn); color:var(--warn); font-size:0.85em; }
+    .ok { color:#2ecc71; padding:12px 0; }
+    footer { margin-top:40px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
+  </style>
+</head>
+<body>
+  <h1>AsyncAnalyzer $($script:Version) &mdash; Scan Report</h1>
+  <p class="sub">Generated: $scanDate &nbsp;&bull;&nbsp; Mod path: $([System.Net.WebUtility]::HtmlEncode($ModPath))</p>
+
+  <div class="grid">
+    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Mods</div></div>
+    <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
+    <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
+    <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
+    <div class="card"><div class="num $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="lbl">System Issues</div></div>
+  </div>
+
+  $flaggedTable
+
+  <div class="status">$statusText</div>
+  <div class="bam-note">&#9888; BAM scan skipped &mdash; Administrator privileges required. Re-run as Administrator for full history.</div>
+
+  <footer>
+    <span>AsyncAnalyzer by $($script:Author)</span>
+    <span>github.com/QDHShamiro &nbsp;&bull;&nbsp; discord.gg/asyncstudios</span>
+  </footer>
+</body>
+</html>
+"@
+
+        $reportPath = Join-Path $env:TEMP "AsyncAnalyzer_Report.html"
+        $reportHtml | Out-File -FilePath $reportPath -Encoding UTF8
+        Start-Process $reportPath
+        W "  $([char]0x2713) Scan report saved and opened: $reportPath" Green
+        Write-Host ""
+        return
+    }
+
+    $oldestLogon = Get-CimInstance -ClassName Win32_LogonSession -ErrorAction SilentlyContinue |
+        Where-Object { $_.LogonType -eq 2 -or $_.LogonType -eq 10 } |
+        Sort-Object -Property StartTime |
+        Select-Object -First 1
+    $bamConnectTime = if ($oldestLogon) { $oldestLogon.StartTime } else { $null }
+
+    $bamDynAssembly = New-Object System.Reflection.AssemblyName('BamSysUtils')
+    $bamAssemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($bamDynAssembly, [Reflection.Emit.AssemblyBuilderAccess]::Run)
+    $bamModuleBuilder = $bamAssemblyBuilder.DefineDynamicModule('BamSysUtils', $False)
+    $bamTypeBuilder = $bamModuleBuilder.DefineType('BamKernel32', 'Public, Class')
+    $bamPInvoke = $bamTypeBuilder.DefinePInvokeMethod('QueryDosDevice', 'kernel32.dll', ([Reflection.MethodAttributes]::Public -bor [Reflection.MethodAttributes]::Static), [Reflection.CallingConventions]::Standard, [UInt32], [Type[]]@([String], [Text.StringBuilder], [UInt32]), [Runtime.InteropServices.CallingConvention]::Winapi, [Runtime.InteropServices.CharSet]::Auto)
+    $bamDllCtor = [Runtime.InteropServices.DllImportAttribute].GetConstructor(@([String]))
+    $bamSetLastError = [Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')
+    $bamAttr = New-Object Reflection.Emit.CustomAttributeBuilder($bamDllCtor, @('kernel32.dll'), [Reflection.FieldInfo[]]@($bamSetLastError), @($true))
+    $bamPInvoke.SetCustomAttribute($bamAttr)
+    $bamKernel32 = $bamTypeBuilder.CreateType()
+    $bamSb = New-Object System.Text.StringBuilder(65536)
+    $bamMappings = Get-WmiObject Win32_Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter } | ForEach-Object {
+        if ($bamKernel32::QueryDosDevice($_.DriveLetter, $bamSb, 65536)) {
+            @{ DriveLetter = $_.DriveLetter; DevicePath = $bamSb.ToString().ToLower() }
+        }
+    }
+
+    $bamBias = -([convert]::ToInt32([Convert]::ToString(
+        (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" -ErrorAction SilentlyContinue).ActiveTimeBias, 2), 2))
+
+    $bamUsers = @()
+    foreach ($ii in @("bam","bam\State")) {
+        $bamUsers += Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\$ii\UserSettings\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSChildName
+    }
+
+    if ($bamUsers.Count -eq 0) {
+        W "  $([char]0x26A0)  No BAM entries found on this system." Yellow
+        Write-Host ""
+        return
+    }
+
+    $bamRaw     = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $bamOldPref = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    foreach ($sid in $bamUsers) {
+        foreach ($rp in @("HKLM:\SYSTEM\CurrentControlSet\Services\bam\","HKLM:\SYSTEM\CurrentControlSet\Services\bam\state\")) {
+            $bamItems = Get-Item "$($rp)UserSettings\$sid" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Property
+            foreach ($item in $bamItems) {
+                $ext = [System.IO.Path]::GetExtension($item).ToLower()
+                if ($ext -ne ".exe" -and $ext -ne ".jar") { continue }
+                $k = Get-ItemProperty "$($rp)UserSettings\$sid" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $item
+                if ($k.Length -eq 24) {
+                    $hex = [System.BitConverter]::ToString($k[7..0]) -replace "-",""
+                    $ts  = Get-Date ([DateTime]::FromFileTimeUtc([Convert]::ToInt64($hex,16))).AddMinutes($bamBias) -Format "yyyy-MM-dd HH:mm:ss"
+                    if ($bamConnectTime -and ([DateTime]::ParseExact($ts,"yyyy-MM-dd HH:mm:ss",$null) -ge $bamConnectTime)) {
+                        $devPath = $item
+                        foreach ($m in $bamMappings) {
+                            if ($devPath -like ($m.DevicePath + "*")) { $devPath = $devPath -replace [regex]::Escape($m.DevicePath), $m.DriveLetter; break }
+                        }
+                        $bamRaw.Add([PSCustomObject]@{ Time=$ts; Path=$devPath; FileName=[System.IO.Path]::GetFileName($devPath) })
+                    }
+                }
+            }
+        }
+    }
+    $ErrorActionPreference = $bamOldPref
+
+    $existingPaths = $bamRaw | Where-Object { Test-Path $_.Path } | Select-Object -ExpandProperty Path
+    $sigMap = @{}
+    if ($existingPaths.Count -gt 0) {
+        Get-AuthenticodeSignature -LiteralPath $existingPaths | ForEach-Object {
+            $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
+                if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
+                elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
+                else { "Signed" }
+            } else { "Not signed" }
+        }
+    }
+
+    $bamEntries = [System.Collections.Generic.List[PSCustomObject]]::new()
+    foreach ($r in $bamRaw) {
+        $sig = if ($sigMap.ContainsKey($r.Path)) { $sigMap[$r.Path] } else { "Deleted" }
+        $bamEntries.Add([PSCustomObject]@{ Time=$r.Time; Path=$r.Path; Signature=$sig; FileName=$r.FileName })
+    }
+
+    if ($bamEntries.Count -eq 0) {
+        W "  $([char]0x2713) BAM $([char]0x2014) no .exe/.jar executions found since last logon." DarkGray
+        Write-Host ""
+        return
+    }
+
+    W "  Generating HTML report..." DarkGray
+
+    $bamHtml = @'
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BAM Signature</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet" />
+    <style>
+      :root { --background-color:#121212;--surface-color:#1e1e1e;--primary-color:#64b5f6;--text-color:#e0e0e0;--hover-color:#2196f3; }
+      body { font-family:"Roboto",sans-serif;background-color:var(--background-color);color:var(--text-color);margin:0;padding:0px 20px; }
+      .search-container { position:fixed;top:20px;left:20px;right:20px;z-index:1000;background-color:var(--surface-color);padding:15px;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1); }
+      #search { width:calc(100% - 30px);padding:10px 15px;border:none;border-radius:4px;background-color:var(--background-color);color:var(--text-color);font-family:"Roboto",sans-serif; }
+      #search:hover { outline:none;box-shadow:0 0 0 2px #64b4f6d8; }
+      #search:focus { outline:none;box-shadow:0 0 0 2px var(--primary-color); }
+      table { width:100%;border-collapse:separate;border-spacing:0 8px;margin-top:90px; }
+      th,td { padding:15px;text-align:left;transition:all 0.24s ease; }
+      th { background-color:var(--surface-color);color:var(--primary-color);font-weight:700;text-transform:uppercase;letter-spacing:1px;cursor:pointer;position:relative; }
+      th:hover { background-color:var(--hover-color);color:var(--background-color); }
+      th.asc::after { content:"▲";position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.8em; }
+      th.desc::after { content:"▼";position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.8em; }
+      tr { background-color:var(--surface-color);transition:all 0.24s ease; }
+      tr:hover { transform:translateY(-2px);scale:1.013;box-shadow:0 4px 12px rgba(0,0,0,0.2); }
+      html,body { height:100%;margin:0; }
+      body { display:flex;flex-direction:column; }
+      main { flex:1; }
+      footer { font-size:0.9em;color:var(--text-color);display:flex;justify-content:space-between;width:100%;background-color:var(--background-color);padding:10px 0; }
+      footer a { color:var(--primary-color);text-decoration:none;transition:color 0.18s ease-in-out; }
+      footer a:hover { color:#33a3ff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="search-container">
+        <input type="text" id="search" placeholder="Search..." />
+      </div>
+      <table id="entriesTable">
+        <thead>
+          <tr>
+            <th data-sort="time">Last Execution</th>
+            <th data-sort="path">Path</th>
+            <th data-sort="signature">Digital Signature</th>
+            <th data-sort="fileName">File Name</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </main>
+    <footer>
+      Made by espouken
+      <span>
+        <a href="https://discordapp.com/users/1149799913727721485" target="_blank">Discord</a>
+        &nbsp;&nbsp;
+        <a href="https://github.com/spokwn" target="_blank">Github</a>
+      </span>
+    </footer>
+    <script>
+      const entries = [
+'@
+
+    foreach ($e in $bamEntries) {
+        $et = $e.Time.Replace("\","\\").Replace('"','\"')
+        $ep = $e.Path.Replace("\","\\").Replace('"','\"')
+        $es = $e.Signature.Replace("\","\\").Replace('"','\"')
+        $ef = $e.FileName.Replace("\","\\").Replace('"','\"')
+        $bamHtml += "        {time:`"$et`",path:`"$ep`",signature:`"$es`",fileName:`"$ef`"},`n"
+    }
+
+    $bamHtml += @'
+      ];
+      let currentSort={column:"time",direction:"asc"};
+      function populateTable(data){const tbody=document.querySelector("#entriesTable tbody");tbody.innerHTML="";data.forEach((entry,index)=>{const row=document.createElement("tr");row.innerHTML=`<td>${entry.time}</td><td>${entry.path}</td><td>${entry.signature}</td><td>${entry.fileName}</td>`;tbody.appendChild(row);});}
+      function applyFilters(){let f=[...entries];const t=document.getElementById("search").value.toLowerCase();f=f.filter(e=>Object.values(e).some(v=>v.toLowerCase().includes(t)));f.sort((a,b)=>{const av=a[currentSort.column],bv=b[currentSort.column];return currentSort.direction==="asc"?av.localeCompare(bv):bv.localeCompare(av);});populateTable(f);document.querySelectorAll("th[data-sort]").forEach(th=>{th.classList.remove("asc","desc");if(th.dataset.sort===currentSort.column)th.classList.add(currentSort.direction);});}
+      document.getElementById("search").addEventListener("input",applyFilters);
+      document.querySelectorAll("th[data-sort]").forEach(th=>{th.addEventListener("click",()=>{const col=th.dataset.sort;if(currentSort.column===col){currentSort.direction=currentSort.direction==="asc"?"desc":"asc";}else{currentSort.column=col;currentSort.direction="asc";}applyFilters();});});
+      applyFilters();
+    </script>
+  </body>
+</html>
+'@
+
+    $bamPath = Join-Path $env:TEMP "BAMKeyEntries.html"
+    $bamHtml | Out-File -FilePath $bamPath -Encoding UTF8
+    Invoke-Item $bamPath
+
+    W "  $([char]0x2713) BAM report opened in browser ($($bamEntries.Count) entries)" Green
+    Write-Host ""
+}
 
 function Run-PCscan {
     Write-Host ""
@@ -3435,6 +3737,11 @@ W $runCmd DarkGray
 Write-Host ""
 Write-Host ""
 Write-Host ""
-if (Ask-YesNo "Check recently deleted files, new JARs and terminated processes?") { Run-RecentActivity }
+Run-RecentActivity
+Run-PCscan
+Run-BamScan
+
 Write-Host ""
-if (Ask-YesNo "Run full PC scan (processes, registry, DLLs, filesystem)?") { Run-PCscan }
+W "  Done." Green
+Write-Host ""
+Read-Host "  Press Enter to exit"
