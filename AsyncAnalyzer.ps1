@@ -306,7 +306,7 @@ $script:knownCheatFileTokens = @(
     "autoclicker","auto-clicker","auto_clicker","clickbot","clicker",
     "killaura","kill-aura","kill_aura","aurabot",
     "aimbot","aim-bot","aim_bot","aimassist","triggerbot",
-    "esp","wallhack","wall-hack","nofallhack",
+    "wallhack","wall-hack","nofallhack",
     "bhop","bunny-hop","speedhack","speed-hack","flyhack","fly-hack",
     "scaffold","scaffoldhack","scaffold-hack",
     "dllinjector","dll-injector","dll_injector","injectorpro",
@@ -332,25 +332,40 @@ function Get-BigramSimilarity([string]$a, [string]$b) {
 
 function Test-RandomFilename([string]$JarName) {
     $base = [System.IO.Path]::GetFileNameWithoutExtension($JarName).ToLower()
-    if ($base.Length -lt 4 -or $base.Length -gt 24) { return $false }
-    $knownPrefixes = @("fabric","forge","optifine","sodium","lithium","iris","indium","ferrite","starlight","phosphor",
-                       "lazydfu","ksyxis","smoothboot","entityculling","memoryleakfix","badoptimizations",
-                       "c2me","moonrise","noisium","raknetify","immediatelyfast","dynamic","continuity",
-                       "viaversion","viafabric","essential","replay","journeymap","xaeros","xaero",
-                       "jei","rei","emi","waystones","ftb","create","mekanism","thermal","botania",
-                       "appleskin","inventory","item","chunk","render","better","fast","simple","easy",
-                       "quark","charm","supplementaries","farmers","autumnity","upgrade","twigs")
-    foreach ($pfx in $knownPrefixes) { if ($base.StartsWith($pfx)) { return $false } }
-    $vowels = ($base.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
-    $ratio  = if ($base.Length -gt 0) { $vowels / $base.Length } else { 0 }
-    $hasDigitBlock = $base -match '[0-9]{3,}'
-    $allAlpha = $base -replace '[^a-z]',''
+    $stripped = $base -replace '\+.*$','' -replace '[-_]v?\d[\d\.\-\+]*$',''
+    $analyze = if ($stripped.Length -ge 4) { $stripped } else { $base }
+    if ($analyze.Length -lt 4 -or $analyze.Length -gt 32) { return $false }
+    $knownPrefixes = @(
+        "fabric","forge","optifine","sodium","lithium","iris","indium","ferrite","starlight","phosphor",
+        "lazydfu","ksyxis","smoothboot","entityculling","memoryleakfix","badoptimizations",
+        "c2me","moonrise","noisium","raknetify","immediatelyfast","dynamic","continuity",
+        "viaversion","viafabric","essential","replay","journeymap","xaeros","xaero",
+        "jei","rei","emi","waystones","ftb","create","mekanism","thermal","botania",
+        "appleskin","inventory","item","chunk","render","better","fast","simple","easy",
+        "quark","charm","supplementaries","farmers","autumnity","upgrade","twigs",
+        "bobby","krypton","modmenu","worldedit","spark","collective","carpet",
+        "tweakeroo","minihud","litematica","malilib","modernfix","optifabric",
+        "no","void","cloth","player","chat","tab","skin","sound","music","biome",
+        "structure","terrain","world","server","client","api","lib","core","compat",
+        "config","data","resource","texture","shader","particle","block","entity",
+        "fluid","tool","armor","weapon","mouse","key","hud","map","mini","zoom",
+        "distance","view","fps","performance","memory","cache","network","ping",
+        "recipe","crafting","storage","chest","container","slot","damage","health",
+        "potion","effect","enchant","anvil","repair","dye","color","palette",
+        "ambient","atmosphere","weather","season","time","clock","compass","level",
+        "xp","experience","hunger","saturation","breath","death","respawn","spawn"
+    )
+    foreach ($pfx in $knownPrefixes) { if ($analyze.StartsWith($pfx)) { return $false } }
+    $vowels = ($analyze.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
+    $ratio  = if ($analyze.Length -gt 0) { $vowels / $analyze.Length } else { 0 }
+    $hasDigitBlock = $analyze -match '[0-9]{3,}'
+    $allAlpha = $analyze -replace '[^a-z]',''
     $uniqueChars = ($allAlpha.ToCharArray() | Sort-Object -Unique).Count
     $repetitionRatio = if ($allAlpha.Length -gt 0) { $uniqueChars / $allAlpha.Length } else { 1 }
-    $looksRandom = ($ratio -lt 0.15 -and $base.Length -ge 5) -or
+    $looksRandom = ($ratio -lt 0.15 -and $analyze.Length -ge 5) -or
                    ($hasDigitBlock -and $ratio -lt 0.20) -or
-                   ($repetitionRatio -lt 0.30 -and $base.Length -ge 6) -or
-                   ($base -match '^[a-z0-9]{6,}$' -and $ratio -lt 0.18 -and $base -notmatch '[aeiou]{2}')
+                   ($repetitionRatio -lt 0.30 -and $analyze.Length -ge 6) -or
+                   ($analyze -match '^[a-z0-9]{6,}$' -and $ratio -lt 0.18 -and $analyze -notmatch '[aeiou]{2}')
     return $looksRandom
 }
 
@@ -1535,7 +1550,8 @@ function Invoke-DeepScan([string]$FilePath) {
             if ($textStr -match $pat) { [void]$reflectionHits.Add(($pat -replace '\\s\*\\\(','()' -replace '\\','')) }
         }
         foreach ($cs in $extendedCheatStrings) {
-            if ($textStr -imatch [regex]::Escape($cs)) { [void]$cheatHits.Add($cs) }
+            $pat = if ($cs -match '^[a-zA-Z]+$' -and $cs.Length -le 8) { "\b$([regex]::Escape($cs))\b" } else { [regex]::Escape($cs) }
+            if ($textStr -imatch $pat) { [void]$cheatHits.Add($cs) }
         }
 
         $avgEntropy = if ($entropyCount -gt 0) { [Math]::Round($totalEntropy / $entropyCount, 3) } else { 0 }
@@ -2856,6 +2872,8 @@ function Run-BamScan {
     Invoke-Item $bamPath
 
     W "  $([char]0x2713) BAM report opened in browser ($($bamEntries.Count) entries)" Green
+    W "  $([char]0x2192) Report saved to: $bamPath" DarkGray
+    Start-Process explorer.exe -ArgumentList "/select,`"$bamPath`""
     Write-Host ""
 }
 
