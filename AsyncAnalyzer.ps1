@@ -1,3 +1,9 @@
+[CmdletBinding()]
+param(
+    [switch]$Dev,
+    [string]$DevPath = ""
+)
+
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
     Write-Host "  [!] AsyncAnalyzer requires PowerShell 5.1 or newer." -ForegroundColor Red
     Write-Host "      Your version: $($PSVersionTable.PSVersion)" -ForegroundColor DarkGray
@@ -332,14 +338,20 @@ function Get-BigramSimilarity([string]$a, [string]$b) {
 
 function Test-RandomFilename([string]$JarName) {
     $base = [System.IO.Path]::GetFileNameWithoutExtension($JarName).ToLower()
-    $stripped = $base -replace '\+.*$','' -replace '[-_]v?\d[\d\.\-\+]*$',''
-    $analyze = if ($stripped.Length -ge 4) { $stripped } else { $base }
-    if ($analyze.Length -lt 4 -or $analyze.Length -gt 32) { return $false }
+    $base = $base -replace '\.(temp|disabled|bak|old|backup)$',''
+    $stripped = $base -replace '\+.*$',''
+    $prev = ''
+    while ($stripped -ne $prev) {
+        $prev = $stripped
+        $stripped = $stripped -replace '[-_](?:v?\d[\d\.\-]*|mc\d[\d\.]*|fabric|forge|neoforge|neo|quilt|rift|liteloader|spigot|paper|bukkit|release|snapshot|alpha|beta|rc\d*|pre\d*|build\d*|final|stable|dev|test)$',''
+    }
+    $analyze = if ($stripped.Length -ge 3) { $stripped } else { $base }
+    if ($analyze.Length -lt 4) { return $false }
     $knownPrefixes = @(
         "fabric","forge","optifine","sodium","lithium","iris","indium","ferrite","starlight","phosphor",
         "lazydfu","ksyxis","smoothboot","entityculling","memoryleakfix","badoptimizations",
         "c2me","moonrise","noisium","raknetify","immediatelyfast","dynamic","continuity",
-        "viaversion","viafabric","essential","replay","journeymap","xaeros","xaero",
+        "viaversion","viafabric","viafabricplus","essential","replay","journeymap","xaeros","xaero",
         "jei","rei","emi","waystones","ftb","create","mekanism","thermal","botania",
         "appleskin","inventory","item","chunk","render","better","fast","simple","easy",
         "quark","charm","supplementaries","farmers","autumnity","upgrade","twigs",
@@ -352,20 +364,40 @@ function Test-RandomFilename([string]$JarName) {
         "distance","view","fps","performance","memory","cache","network","ping",
         "recipe","crafting","storage","chest","container","slot","damage","health",
         "potion","effect","enchant","anvil","repair","dye","color","palette",
-        "ambient","atmosphere","weather","season","time","clock","compass","level",
-        "xp","experience","hunger","saturation","breath","death","respawn","spawn"
+        "ambient","ambience","atmosphere","weather","season","time","clock","compass","level",
+        "xp","experience","hunger","saturation","breath","death","respawn","spawn",
+        "animatica","capes","cicada","autoreconnect","cicadalib","ambiencesounds",
+        "voice","voicechat","free","freelook","anchor","zoom","cam","look","hold","toggle",
+        "auto","custom","enhanced","advanced","tweaked","improved","extra","plus","smooth",
+        "real","true","ultra","super","hyper","mega","max","pro","anti","counter",
+        "border","full","screen","window","frame","display","mouse","cursor","cross",
+        "ping","latency","motion","speed","fly","sprint","jump","sneak","crawl",
+        "cape","cloak","cosmetic","emote","gesture","trail","wing","hat","head",
+        "night","light","dark","glow","bright","dim","fog","blur","bloom",
+        "reach","range","distance","angle","fov","sens","sensitivity","aim",
+        "sleep","wake","idle","afk","presence","status","activity","rich",
+        "discord","twitch","optim","perf","boost","improve","fix","patch","compat",
+        "voxel","height","depth","layer","level","floor","ceil","bound","limit",
+        "border","region","area","zone","claim","protect","safe","guard","shield",
+        "horse","mount","ride","tame","pet","animal","mob","creature","entity",
+        "chest","barrel","hopper","dropper","dispenser","shulker","ender","crafting",
+        "furnace","blast","smoker","campfire","anvil","beacon","enchant","brew",
+        "book","sign","banner","painting","frame","armor","stand","boat","cart",
+        "portal","gate","door","trap","pressure","button","lever","redstone",
+        "piston","sticky","observer","comparator","repeater","note","jukebox",
+        "ladder","scaffold","slab","stair","fence","wall","glass","pane","iron",
+        "oak","spruce","birch","jungle","acacia","dark","warped","crimson","cherry",
+        "copper","gold","diamond","netherite","emerald","lapis","quartz","amethyst"
     )
-    foreach ($pfx in $knownPrefixes) { if ($analyze.StartsWith($pfx)) { return $false } }
-    $vowels = ($analyze.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
-    $ratio  = if ($analyze.Length -gt 0) { $vowels / $analyze.Length } else { 0 }
-    $hasDigitBlock = $analyze -match '[0-9]{3,}'
+    $firstWord = ($analyze -split '[-_]')[0]
+    foreach ($pfx in $knownPrefixes) {
+        if ($analyze.StartsWith($pfx) -or $firstWord -eq $pfx) { return $false }
+    }
     $allAlpha = $analyze -replace '[^a-z]',''
-    $uniqueChars = ($allAlpha.ToCharArray() | Sort-Object -Unique).Count
-    $repetitionRatio = if ($allAlpha.Length -gt 0) { $uniqueChars / $allAlpha.Length } else { 1 }
-    $looksRandom = ($ratio -lt 0.15 -and $analyze.Length -ge 5) -or
-                   ($hasDigitBlock -and $ratio -lt 0.20) -or
-                   ($repetitionRatio -lt 0.30 -and $analyze.Length -ge 6) -or
-                   ($analyze -match '^[a-z0-9]{6,}$' -and $ratio -lt 0.18 -and $analyze -notmatch '[aeiou]{2}')
+    if ($allAlpha.Length -lt 4) { return $false }
+    $vowels = ($allAlpha.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
+    $ratio  = $vowels / $allAlpha.Length
+    $looksRandom = ($ratio -lt 0.12 -and $allAlpha.Length -ge 5)
     return $looksRandom
 }
 
@@ -920,10 +952,12 @@ function Run-RecentActivity {
     }
     if ($recentJars.Count -gt 0) {
         $anyFound = $true
+        $recentJarsCapped = if ($script:_DevMode) { $recentJars | Select-Object -First 10 } else { $recentJars }
+        $capNote = if ($script:_DevMode -and $recentJars.Count -gt 10) { " (showing 10 of $($recentJars.Count))" } else { "" }
         W ("  $([char]0x250C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2510)") DarkYellow
-        W ("  $([char]0x2502)  $([char]0x26A0)  New / modified JARs in the last 48h:" + " " * [Math]::Max(0,$w - 37) + "$([char]0x2502)") DarkYellow
+        W ("  $([char]0x2502)  $([char]0x26A0)  New / modified JARs in the last 48h$capNote" + (" " * [Math]::Max(0,$w - 37 - $capNote.Length)) + "$([char]0x2502)") DarkYellow
         W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") DarkYellow
-        foreach ($jar in ($recentJars | Sort-Object Modified -Descending)) {
+        foreach ($jar in ($recentJarsCapped | Sort-Object Modified -Descending)) {
             $ts   = $jar.Modified.ToString("yyyy-MM-dd HH:mm")
             $kb   = [Math]::Round($jar.Size / 1KB, 0)
             $line = "    $([char]0x25BA) $($jar.Name)  [$ts]  ${kb} KB"
@@ -1707,6 +1741,83 @@ function Invoke-BypassScan([string]$FilePath) {
     return $flags
 }
 
+function Invoke-ExeScan([string]$FilePath) {
+    $flags = [System.Collections.Generic.List[string]]::new()
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($FilePath)
+        $ascii = [System.Text.Encoding]::ASCII.GetString($bytes) -replace '[^\x20-\x7E]', ' '
+        $tokens = $ascii -split '\s+' | Where-Object { $_.Length -ge 5 }
+
+        foreach ($tok in $tokens) {
+            if ($script:cheatStringSet.Contains($tok)) {
+                [void]$flags.Add("Cheat string match: '$tok'")
+            }
+        }
+        foreach ($pat in $script:patternRegex) {
+            foreach ($tok in $tokens) {
+                if ($tok -match $pat.Key) {
+                    [void]$flags.Add("Cheat pattern ($($pat.Key)): '$tok'")
+                    break
+                }
+            }
+        }
+
+        $injectApis = @("CreateRemoteThread","VirtualAllocEx","WriteProcessMemory","NtWriteVirtualMemory","RtlCreateUserThread","SetWindowsHookEx","OpenProcess")
+        foreach ($api in $injectApis) {
+            if ($ascii -match [regex]::Escape($api)) { [void]$flags.Add("PE injection API: $api") }
+        }
+        $netApis = @("WinHttpOpen","InternetOpenA","InternetOpenW","socket","WSAStartup","HttpSendRequest","URLDownloadToFile")
+        foreach ($api in $netApis) {
+            if ($ascii -match [regex]::Escape($api)) { [void]$flags.Add("Network API: $api") }
+        }
+
+        if ($bytes.Count -ge 256) {
+            $freq = @{}
+            foreach ($b in $bytes) { $freq[$b] = ($freq[$b] -as [int]) + 1 }
+            $entropy = 0.0
+            foreach ($kv in $freq.GetEnumerator()) {
+                $p = $kv.Value / $bytes.Count
+                if ($p -gt 0) { $entropy -= $p * [Math]::Log($p, 2) }
+            }
+            if ($entropy -gt 7.2) { [void]$flags.Add("High entropy ($([Math]::Round($entropy,2))) $([char]0x2014) likely packed/encrypted payload") }
+        }
+    } catch {}
+    return $flags
+}
+
+function Invoke-PyScan([string]$FilePath) {
+    $flags = [System.Collections.Generic.List[string]]::new()
+    try {
+        $src = [System.IO.File]::ReadAllText($FilePath, [System.Text.Encoding]::UTF8)
+
+        foreach ($entry in $script:cheatStringSet) {
+            if ($src -match [regex]::Escape($entry)) { [void]$flags.Add("Cheat string match: '$entry'") }
+        }
+        foreach ($pat in $script:patternRegex) {
+            if ($src -match $pat.Key) { [void]$flags.Add("Cheat pattern ($($pat.Key))") }
+        }
+
+        $suspImports = @("pyautogui","pynput","ctypes","win32api","win32con","keyboard","mouse","mss","pyscreeze","subprocess","socket","requests","urllib","paramiko","ftplib","smtplib")
+        foreach ($imp in $suspImports) {
+            if ($src -match "(?:import|from)\s+$([regex]::Escape($imp))") { [void]$flags.Add("Suspicious import: $imp") }
+        }
+
+        $dash = [char]0x2014
+        $obfPatterns = @(
+            @{ R = 'exec\s*\(';        D = "exec() call $dash dynamic code execution" },
+            @{ R = 'eval\s*\(';        D = "eval() call $dash dynamic expression evaluation" },
+            @{ R = '__import__\s*\(';  D = "__import__() $dash hidden dynamic import" },
+            @{ R = 'base64\.b64decode'; D = "base64 decode $dash encoded payload" },
+            @{ R = 'compile\s*\(';     D = "compile() $dash runtime bytecode construction" },
+            @{ R = 'marshal\.loads';   D = "marshal.loads $dash raw bytecode deserialization" }
+        )
+        foreach ($op in $obfPatterns) {
+            if ($src -match $op.R) { [void]$flags.Add($op.D) }
+        }
+    } catch {}
+    return $flags
+}
+
 function Run-JVMScan {
     $jvmFlags = [System.Collections.Generic.List[string]]::new()
 
@@ -2043,41 +2154,74 @@ function Run-ServiceCheck {
 
 Show-Banner
 
-$ModPath = Ask-ModPath
-$ModPath = $ModPath.Trim('"').Trim("'").Trim()
-
-if (-not (Test-Path $ModPath -PathType Container)) {
-    W "" White
-    W "  $([char]0x2717) Invalid path $([char]0x2014) directory does not exist:" Red
-    W "    $ModPath" DarkGray
-    W "" White
-    return
-}
-
-Write-Host ""
-W "  Target : " DarkGray -NoNewline; W $ModPath White
-Write-Host ""
-
-$mcProcess = Get-Process javaw -ErrorAction SilentlyContinue
-if (-not $mcProcess) { $mcProcess = Get-Process java -ErrorAction SilentlyContinue }
-if ($mcProcess) {
-    try {
-        $uptime = (Get-Date) - $mcProcess.StartTime
-        W "  $([char]0x25CF) Minecraft running $([char]0x2014) PID $($mcProcess.Id)  uptime $($uptime.Hours)h $($uptime.Minutes)m $($uptime.Seconds)s" DarkCyan
+if ($Dev) {
+    W "  [DEV MODE] Quick scan $([char]0x2014) max 10 items per category, heavy checks skipped." DarkYellow
+    Write-Host ""
+    $ModPath = if ([string]::IsNullOrWhiteSpace($DevPath)) { "$env:APPDATA\.minecraft\mods" } else { $DevPath.Trim('"').Trim("'").Trim() }
+    if (-not (Test-Path $ModPath -PathType Container)) {
+        W "  $([char]0x2717) Dev path does not exist: $ModPath" Red
         Write-Host ""
-    } catch {}
+        return
+    }
+    W "  Target : " DarkGray -NoNewline; W $ModPath White
+    Write-Host ""
+    $SkipSystemCheck  = $true
+    $SkipServiceCheck = $true
+    $SkipMemoryCheck  = $true
+    $SkipModCheck     = $false
+    $script:_DevMode  = $true
+    $script:_DevLimit = 10
+} else {
+    $ModPath = Ask-ModPath
+    $ModPath = $ModPath.Trim('"').Trim("'").Trim()
+
+    if (-not (Test-Path $ModPath -PathType Container)) {
+        W "" White
+        W "  $([char]0x2717) Invalid path $([char]0x2014) directory does not exist:" Red
+        W "    $ModPath" DarkGray
+        W "" White
+        return
+    }
+
+    Write-Host ""
+    W "  Target : " DarkGray -NoNewline; W $ModPath White
+    Write-Host ""
+
+    $mcProcess = Get-Process javaw -ErrorAction SilentlyContinue
+    if (-not $mcProcess) { $mcProcess = Get-Process java -ErrorAction SilentlyContinue }
+    if ($mcProcess) {
+        try {
+            $uptime = (Get-Date) - $mcProcess.StartTime
+            W "  $([char]0x25CF) Minecraft running $([char]0x2014) PID $($mcProcess.Id)  uptime $($uptime.Hours)h $($uptime.Minutes)m $($uptime.Seconds)s" DarkCyan
+            Write-Host ""
+        } catch {}
+    }
+
+    $SkipSystemCheck  = $false
+    $SkipServiceCheck = $false
+    $SkipMemoryCheck  = $false
+    $script:_DevMode  = $false
 }
 
 if ($null -eq $SkipSystemCheck)  { $SkipSystemCheck  = $false }
 if ($null -eq $SkipServiceCheck) { $SkipServiceCheck = $false }
 if ($null -eq $SkipModCheck)     { $SkipModCheck     = $false }
+if ($null -eq $SkipMemoryCheck)  { $SkipMemoryCheck  = $false }
 
 if (-not $SkipSystemCheck)  { Run-SystemChecks }
 if (-not $SkipServiceCheck) { Run-ServiceCheck }
 
 if (-not $SkipModCheck) {
     $jarFiles = Get-ChildItem -Path $ModPath -Filter "*.jar" -ErrorAction SilentlyContinue
+    if ($script:_DevLimit) { $jarFiles = @($jarFiles | Select-Object -First $script:_DevLimit) }
     $script:TotalMods = @($jarFiles).Count
+
+    $exeFiles = @()
+    $pyFiles  = @()
+    if ($script:_DevMode) {
+        $exeFiles = @(Get-ChildItem -Path $ModPath -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 10)
+        $pyFiles  = @(Get-ChildItem -Path $ModPath -Filter "*.py"  -Recurse -ErrorAction SilentlyContinue | Select-Object -First 10)
+    }
 
     if ($script:TotalMods -eq 0) {
         Write-Host ""
@@ -2096,7 +2240,8 @@ if (-not $SkipModCheck) {
 
         W "  Checking filenames for cheat client patterns..." DarkGray
         foreach ($jar in $jarFiles) {
-            $fnMatch = Get-FilenameSimilarityMatch $jar.Name
+            $checkName = $jar.Name -replace '\.(temp|disabled|bak|old|backup)(\.jar)$','$2'
+            $fnMatch = Get-FilenameSimilarityMatch $checkName
             if ($null -ne $fnMatch) {
                 $hash = Get-FileSHA1 $jar.FullName
                 $dl   = Get-DownloadSource $jar.FullName
@@ -2113,7 +2258,7 @@ if (-not $SkipModCheck) {
                 [void]$filenameFlaggedSet.Add($jar.Name)
                 [void]$script:FlaggedModsList.Add($jar.Name)
                 $script:Flagged++
-            } elseif (Test-RandomFilename $jar.Name) {
+            } elseif (Test-RandomFilename $checkName) {
                 $hash = Get-FileSHA1 $jar.FullName
                 $dl   = Get-DownloadSource $jar.FullName
                 $rnStrings = [System.Collections.Generic.HashSet[string]]::new()
@@ -2343,6 +2488,42 @@ if (-not $SkipModCheck) {
             } else {
                 W "  $([char]0x2713) Deep scan complete $([char]0x2014) no additional threats confirmed." Green
                 Write-Host ""
+            }
+        }
+    }
+
+    if ($script:_DevMode -and ($exeFiles.Count -gt 0 -or $pyFiles.Count -gt 0)) {
+        Write-Host ""
+        W "  $([char]0x25CF) Dev mode: scanning $($exeFiles.Count) .exe and $($pyFiles.Count) .py file(s)..." Cyan
+        Write-Host ""
+
+        foreach ($exeFile in $exeFiles) {
+            $exeFlags = Invoke-ExeScan -FilePath $exeFile.FullName
+            if ($exeFlags.Count -gt 0) {
+                $hash = Get-FileSHA1 $exeFile.FullName
+                $emptySet = [System.Collections.Generic.HashSet[string]]::new()
+                $strSet   = [System.Collections.Generic.HashSet[string]]::new()
+                foreach ($f in $exeFlags) { [void]$strSet.Add($f) }
+                Write-FlaggedCard $exeFile.Name $hash $false "" $null $null $emptySet $strSet $emptySet
+                [void]$script:FlaggedModsList.Add($exeFile.Name)
+                $script:Flagged++
+            } else {
+                W "  $([char]0x2713) $($exeFile.Name) $([char]0x2014) clean" Green
+            }
+        }
+
+        foreach ($pyFile in $pyFiles) {
+            $pyFlags = Invoke-PyScan -FilePath $pyFile.FullName
+            if ($pyFlags.Count -gt 0) {
+                $hash = Get-FileSHA1 $pyFile.FullName
+                $emptySet = [System.Collections.Generic.HashSet[string]]::new()
+                $strSet   = [System.Collections.Generic.HashSet[string]]::new()
+                foreach ($f in $pyFlags) { [void]$strSet.Add($f) }
+                Write-FlaggedCard $pyFile.Name $hash $false "" $null $null $emptySet $strSet $emptySet
+                [void]$script:FlaggedModsList.Add($pyFile.Name)
+                $script:Flagged++
+            } else {
+                W "  $([char]0x2713) $($pyFile.Name) $([char]0x2014) clean" Green
             }
         }
     }
@@ -2631,10 +2812,28 @@ function Run-BamScan {
         }
         $flaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
             $filterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
-            "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious Mod</th></tr></thead><tbody>$flaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$filterJs"
+            "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button><button class='fbtn' onclick='_setExt(this,`"py`")'>.py</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious File</th></tr></thead><tbody>$flaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$filterJs"
         } else {
             "<p class='ok'>No flagged mods detected.</p>"
         }
+        $allFilesRows = ""
+        $allFilesCombined = @()
+        $afSeen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($f in $jarFiles) { if ($afSeen.Add($f.Name)) { $allFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "jar" } } }
+        foreach ($f in $exeFiles) { if ($afSeen.Add($f.Name)) { $allFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "exe" } } }
+        foreach ($f in $pyFiles)  { if ($afSeen.Add($f.Name)) { $allFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "py"  } } }
+        if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { if ($afSeen.Add($n)) { $allFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "exe" } } } }
+        if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { if ($afSeen.Add($n)) { $allFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "py"  } } } }
+        foreach ($af in $allFilesCombined) {
+            $afFlagged  = $script:FlaggedModsList.Contains($af.Name)
+            $afVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $af.Name } | Measure-Object).Count -gt 0)
+            $afStatus   = if ($afFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($afVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#e3b341;'>Unknown</span>" }
+            $allFilesRows += "<tr data-ext=`"$($af.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($af.Name))</td><td style='color:var(--muted);'>.$($af.Ext)</td><td>$afStatus</td></tr>`n"
+        }
+        $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active")});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();document.querySelectorAll("#afTable tbody tr").forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");r.style.display=(_afExt==="all"||e===_afExt)&&n.includes(q)?"":"none";});}</script>'
+        $allFilesTable = if ($allFilesCombined.Count -gt 0) {
+            "<style>.afbtn{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 14px;color:var(--muted);cursor:pointer;font-size:0.85em;transition:border-color .15s,color .15s}.afbtn.active,.afbtn:hover{border-color:#238636;color:#2ecc71}</style><h2 style='margin:32px 0 10px;font-size:1.05em;'>File Result ($($allFilesCombined.Count))</h2><div class='filter-bar'><input type='text' id='afSearch' placeholder='Search files...' oninput='_afFilter()' style='flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:0.9em;outline:none;' /><button class='afbtn active' onclick='_afSetExt(this,`"all`")'>All</button><button class='afbtn' onclick='_afSetExt(this,`"jar`")'>.jar</button><button class='afbtn' onclick='_afSetExt(this,`"exe`")'>.exe</button><button class='afbtn' onclick='_afSetExt(this,`"py`")'>.py</button></div><table id='afTable'><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allFilesRows</tbody></table>$afScript"
+        } else { "" }
         $statusColor  = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) { "#e74c3c" } else { "#2ecc71" }
         $statusText   = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
         $scanDate     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -2668,6 +2867,10 @@ function Run-BamScan {
     #modSearch:focus { border-color:#238636; }
     .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
     .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
+    #afSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
+    #afSearch:focus { border-color:#238636; }
+    .afbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
+    .afbtn.active,.afbtn:hover { border-color:#238636; color:#2ecc71; }
     footer { margin-top:40px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
   </style>
 </head>
@@ -2676,7 +2879,7 @@ function Run-BamScan {
   <p class="sub">Generated: $scanDate &nbsp;&bull;&nbsp; Mod path: $([System.Net.WebUtility]::HtmlEncode($ModPath))</p>
 
   <div class="grid">
-    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Mods</div></div>
+    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
     <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
     <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
     <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
@@ -2684,6 +2887,7 @@ function Run-BamScan {
   </div>
 
   $flaggedTable
+  $allFilesTable
 
   <div class="status">$statusText</div>
   <div class="bam-note">&#9888; BAM scan skipped &mdash; Administrator privileges required. Re-run as Administrator for full history.</div>
@@ -2696,9 +2900,10 @@ function Run-BamScan {
 </html>
 "@
 
-        $reportPath = Join-Path $env:TEMP "AsyncAnalyzer_Report.html"
+        $reportPath = Join-Path $env:TEMP "AsyncAnalyzer_Files_Result.html"
         $reportHtml | Out-File -FilePath $reportPath -Encoding UTF8
         Invoke-Item $reportPath
+        Start-Process explorer.exe -ArgumentList "/select,`"$reportPath`""
         W "  $([char]0x2713) Scan report saved and opened: $reportPath" Green
         Write-Host ""
         return
@@ -2785,102 +2990,117 @@ function Run-BamScan {
         $bamEntries.Add([PSCustomObject]@{ Time=$r.Time; Path=$r.Path; Signature=$sig; FileName=$r.FileName })
     }
 
+    $deletedEntries = @($bamEntries | Where-Object { $_.Signature -eq "Deleted" })
+    $rFlaggedRows = ""
+    foreach ($m in $script:FlaggedModsList) {
+        $rExt = [System.IO.Path]::GetExtension($m).TrimStart('.').ToLower()
+        $rFlaggedRows += "<tr data-ext=`"$rExt`"><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
+    }
+    $rFlaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
+        $rFilterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
+        "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button><button class='fbtn' onclick='_setExt(this,`"py`")'>.py</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious File</th></tr></thead><tbody>$rFlaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$rFilterJs"
+    } else { "<p class='ok'>No flagged mods detected.</p>" }
+    $rBamDelRows = ""
+    foreach ($de in $deletedEntries) {
+        $rBamDelRows += "<tr><td>$([System.Net.WebUtility]::HtmlEncode($de.FileName))</td><td style='color:var(--muted);font-size:0.82em;word-break:break-all;'>$([System.Net.WebUtility]::HtmlEncode($de.Path))</td><td>$([System.Net.WebUtility]::HtmlEncode($de.Time))</td></tr>`n"
+    }
+    $rBamDelSection = if ($deletedEntries.Count -gt 0) {
+        "<h2 style='margin:32px 0 10px;font-size:1.05em;color:#e3b341;'>&#9888; BAM &mdash; Deleted Files ($($deletedEntries.Count))</h2><p style='color:var(--muted);font-size:0.83em;margin-bottom:10px;'>Files executed on this PC but no longer present on disk (BAM registry).</p><table><thead><tr><th>File Name</th><th>Path</th><th>Last Executed</th></tr></thead><tbody>$rBamDelRows</tbody></table>"
+    } else { "<h2 style='margin:32px 0 10px;font-size:1.05em;'>BAM &mdash; Deleted Files</h2><p class='ok'>No deleted executables found in BAM history.</p>" }
+    $rAllFilesRows = ""
+    $rAllFilesCombined = @()
+    $rSeenNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($f in $jarFiles) { if ($rSeenNames.Add($f.Name)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "jar" } } }
+    foreach ($f in $exeFiles) { if ($rSeenNames.Add($f.Name)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "exe" } } }
+    foreach ($f in $pyFiles)  { if ($rSeenNames.Add($f.Name)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "py"  } } }
+    foreach ($be in ($bamEntries | Where-Object { $_.Signature -ne "Deleted" -and $_.FileName -match '\.(exe|py)$' })) {
+        if ($rSeenNames.Add($be.FileName)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $be.FileName; Ext = ([System.IO.Path]::GetExtension($be.FileName).TrimStart('.').ToLower()) } }
+    }
+    if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { if ($rSeenNames.Add($n)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "exe" } } } }
+    if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { if ($rSeenNames.Add($n)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "py"  } } } }
+    foreach ($raf in $rAllFilesCombined) {
+        $rafFlagged  = $script:FlaggedModsList.Contains($raf.Name)
+        $rafVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $raf.Name } | Measure-Object).Count -gt 0)
+        $rafStatus   = if ($rafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($rafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#e3b341;'>Unknown</span>" }
+        $rAllFilesRows += "<tr data-ext=`"$($raf.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($raf.Name))</td><td style='color:var(--muted);'>.$($raf.Ext)</td><td>$rafStatus</td></tr>`n"
+    }
+    $rAllFilesTable = if ($rAllFilesCombined.Count -gt 0) {
+        $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();var rows=document.querySelectorAll("#afTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_afExt==="all"||e===_afExt)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noAf").style.display=v===0?"":"none";}</script>'
+        "<h2 style='margin:32px 0 10px;font-size:1.05em;'>File Result ($($rAllFilesCombined.Count))</h2><div class='filter-bar'><input type='text' id='afSearch' placeholder='Search files...' oninput='_afFilter()' /><button class='afbtn active' onclick='_afSetExt(this,`"all`")'>All</button><button class='afbtn' onclick='_afSetExt(this,`"jar`")'>.jar</button><button class='afbtn' onclick='_afSetExt(this,`"exe`")'>.exe</button><button class='afbtn' onclick='_afSetExt(this,`"py`")'>.py</button></div><table id='afTable'><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$rAllFilesRows</tbody></table><p id='noAf' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$afScript"
+    } else { "" }
+    $rStatusColor = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0 -or $deletedEntries.Count -gt 0) { "#e74c3c" } else { "#2ecc71" }
+    $rStatusText  = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0 -or $deletedEntries.Count -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
+    $rScanDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $reportHtml2 = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AsyncAnalyzer $($script:Version) &mdash; Scan Report</title>
+  <style>
+    :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#238636; --danger:#e74c3c; --warn:#e3b341; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:32px 24px; }
+    h1 { font-size:1.6em; margin-bottom:4px; }
+    .sub { color:var(--muted); font-size:0.9em; margin-bottom:32px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:32px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px 16px; text-align:center; }
+    .card .num { font-size:2.4em; font-weight:700; line-height:1; }
+    .card .lbl { color:var(--muted); font-size:0.8em; margin-top:6px; }
+    .green { color:#2ecc71; } .yellow { color:#e3b341; } .red { color:#e74c3c; }
+    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:8px; }
+    th { background:#1c2128; color:var(--muted); font-size:0.8em; text-transform:uppercase; letter-spacing:.06em; padding:10px 16px; text-align:left; }
+    td { padding:10px 16px; border-top:1px solid var(--border); font-size:0.9em; }
+    .status { margin-top:24px; padding:16px 20px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$rStatusColor; background:var(--surface); }
+    .ok { color:#2ecc71; padding:12px 0; }
+    .filter-bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+    #modSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
+    #modSearch:focus { border-color:#238636; }
+    .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
+    .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
+    #afSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
+    #afSearch:focus { border-color:#238636; }
+    .afbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
+    .afbtn.active,.afbtn:hover { border-color:#238636; color:#2ecc71; }
+    footer { margin-top:40px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
+  </style>
+</head>
+<body>
+  <h1>AsyncAnalyzer $($script:Version) &mdash; Scan Report</h1>
+  <p class="sub">Generated: $rScanDate &nbsp;&bull;&nbsp; Mod path: $([System.Net.WebUtility]::HtmlEncode($ModPath))</p>
+  <div class="grid">
+    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
+    <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
+    <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
+    <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
+    <div class="card"><div class="num $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="lbl">System Issues</div></div>
+    <div class="card"><div class="num $(if($deletedEntries.Count -gt 0){'yellow'}else{'green'})">$($deletedEntries.Count)</div><div class="lbl">BAM Deleted</div></div>
+  </div>
+  $rFlaggedTable
+  $rBamDelSection
+  $rAllFilesTable
+  <div class="status">$rStatusText</div>
+  <footer>
+    <span>AsyncAnalyzer by $($script:Author)</span>
+    <span>github.com/QDHShamiro &nbsp;&bull;&nbsp; discord.gg/asyncstudios</span>
+  </footer>
+</body>
+</html>
+"@
+    $rPath = Join-Path $env:TEMP "AsyncAnalyzer_Files_Result.html"
+    $reportHtml2 | Out-File -FilePath $rPath -Encoding UTF8
+    Invoke-Item $rPath
+    Start-Process explorer.exe -ArgumentList "/select,`"$rPath`""
+    W "  $([char]0x2713) Main report opened: $rPath" Green
+    Write-Host ""
+
     if ($bamEntries.Count -eq 0) {
         W "  $([char]0x2713) BAM $([char]0x2014) no .exe/.jar executions found since last logon." DarkGray
         Write-Host ""
         return
     }
 
-    W "  Generating HTML report..." DarkGray
-
-    $bamHtml = @'
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BAM Signature</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet" />
-    <style>
-      :root { --background-color:#121212;--surface-color:#1e1e1e;--primary-color:#64b5f6;--text-color:#e0e0e0;--hover-color:#2196f3; }
-      body { font-family:"Roboto",sans-serif;background-color:var(--background-color);color:var(--text-color);margin:0;padding:0px 20px; }
-      .search-container { position:fixed;top:20px;left:20px;right:20px;z-index:1000;background-color:var(--surface-color);padding:15px;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1); }
-      #search { width:calc(100% - 30px);padding:10px 15px;border:none;border-radius:4px;background-color:var(--background-color);color:var(--text-color);font-family:"Roboto",sans-serif; }
-      #search:hover { outline:none;box-shadow:0 0 0 2px #64b4f6d8; }
-      #search:focus { outline:none;box-shadow:0 0 0 2px var(--primary-color); }
-      table { width:100%;border-collapse:separate;border-spacing:0 8px;margin-top:90px; }
-      th,td { padding:15px;text-align:left;transition:all 0.24s ease; }
-      th { background-color:var(--surface-color);color:var(--primary-color);font-weight:700;text-transform:uppercase;letter-spacing:1px;cursor:pointer;position:relative; }
-      th:hover { background-color:var(--hover-color);color:var(--background-color); }
-      th.asc::after { content:"▲";position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.8em; }
-      th.desc::after { content:"▼";position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.8em; }
-      tr { background-color:var(--surface-color);transition:all 0.24s ease; }
-      tr:hover { transform:translateY(-2px);scale:1.013;box-shadow:0 4px 12px rgba(0,0,0,0.2); }
-      html,body { height:100%;margin:0; }
-      body { display:flex;flex-direction:column; }
-      main { flex:1; }
-      footer { font-size:0.9em;color:var(--text-color);display:flex;justify-content:space-between;width:100%;background-color:var(--background-color);padding:10px 0; }
-      footer a { color:var(--primary-color);text-decoration:none;transition:color 0.18s ease-in-out; }
-      footer a:hover { color:#33a3ff; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <div class="search-container">
-        <input type="text" id="search" placeholder="Search..." />
-      </div>
-      <table id="entriesTable">
-        <thead>
-          <tr>
-            <th data-sort="time">Last Execution</th>
-            <th data-sort="path">Path</th>
-            <th data-sort="signature">Digital Signature</th>
-            <th data-sort="fileName">File Name</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </main>
-    <footer>
-      Made by espouken
-      <span>
-        <a href="https://discordapp.com/users/1149799913727721485" target="_blank">Discord</a>
-        &nbsp;&nbsp;
-        <a href="https://github.com/spokwn" target="_blank">Github</a>
-      </span>
-    </footer>
-    <script>
-      const entries = [
-'@
-
-    foreach ($e in $bamEntries) {
-        $et = $e.Time.Replace("\","\\").Replace('"','\"')
-        $ep = $e.Path.Replace("\","\\").Replace('"','\"')
-        $es = $e.Signature.Replace("\","\\").Replace('"','\"')
-        $ef = $e.FileName.Replace("\","\\").Replace('"','\"')
-        $bamHtml += "        {time:`"$et`",path:`"$ep`",signature:`"$es`",fileName:`"$ef`"},`n"
-    }
-
-    $bamHtml += @'
-      ];
-      let currentSort={column:"time",direction:"asc"};
-      function populateTable(data){const tbody=document.querySelector("#entriesTable tbody");tbody.innerHTML="";data.forEach((entry,index)=>{const row=document.createElement("tr");row.innerHTML=`<td>${entry.time}</td><td>${entry.path}</td><td>${entry.signature}</td><td>${entry.fileName}</td>`;tbody.appendChild(row);});}
-      function applyFilters(){let f=[...entries];const t=document.getElementById("search").value.toLowerCase();f=f.filter(e=>Object.values(e).some(v=>v.toLowerCase().includes(t)));f.sort((a,b)=>{const av=a[currentSort.column],bv=b[currentSort.column];return currentSort.direction==="asc"?av.localeCompare(bv):bv.localeCompare(av);});populateTable(f);document.querySelectorAll("th[data-sort]").forEach(th=>{th.classList.remove("asc","desc");if(th.dataset.sort===currentSort.column)th.classList.add(currentSort.direction);});}
-      document.getElementById("search").addEventListener("input",applyFilters);
-      document.querySelectorAll("th[data-sort]").forEach(th=>{th.addEventListener("click",()=>{const col=th.dataset.sort;if(currentSort.column===col){currentSort.direction=currentSort.direction==="asc"?"desc":"asc";}else{currentSort.column=col;currentSort.direction="asc";}applyFilters();});});
-      applyFilters();
-    </script>
-  </body>
-</html>
-'@
-
-    $bamPath = Join-Path $env:TEMP "BAMKeyEntries.html"
-    $bamHtml | Out-File -FilePath $bamPath -Encoding UTF8
-    Invoke-Item $bamPath
-
-    W "  $([char]0x2713) BAM report opened in browser ($($bamEntries.Count) entries)" Green
-    W "  $([char]0x2192) Report saved to: $bamPath" DarkGray
-    Start-Process explorer.exe -ArgumentList "/select,`"$bamPath`""
     Write-Host ""
 }
 
@@ -3123,7 +3343,8 @@ function Run-PCscan {
     $allJars  = [System.Collections.Generic.List[string]]::new()
     $seenJars = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $jarCollectCount = 0
-    foreach ($root in $scanRoots) {
+    $devJarLimit = if ($script:_DevMode) { 10 } else { [int]::MaxValue }
+    :jarCollect foreach ($root in $scanRoots) {
         if (-not [System.IO.Directory]::Exists($root)) { continue }
         $queue = [System.Collections.Generic.Queue[string]]::new()
         $queue.Enqueue($root)
@@ -3136,7 +3357,10 @@ function Run-PCscan {
                     $skip = $false
                     foreach ($sd in $skipDirsList) { if ($f.StartsWith($sd, [System.StringComparison]::OrdinalIgnoreCase)) { $skip = $true; break } }
                     if (-not $skip) { foreach ($seg in $skipSegments) { if ($f.IndexOf($seg, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { $skip = $true; break } } }
-                    if (-not $skip -and $seenJars.Add($f)) { $allJars.Add($f); $jarCollectCount++ }
+                    if (-not $skip -and $seenJars.Add($f)) {
+                        $allJars.Add($f); $jarCollectCount++
+                        if ($jarCollectCount -ge $devJarLimit) { break jarCollect }
+                    }
                 }
             } catch {}
             try {
@@ -3355,7 +3579,28 @@ function Run-PCscan {
         } catch {}
     }
     $pyScanned = 0
+    $script:PCScannedPyNames = [System.Collections.Generic.List[string]]::new()
+    $pyAllNamesSeen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $pySeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $pyDevLimit = if ($script:_DevMode) { 10 } else { [int]::MaxValue }
+    $pyDevCount = 0
+    :pyDrvLoop foreach ($drv in ([System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady })) {
+        try {
+            foreach ($pf in [System.IO.Directory]::EnumerateFiles($drv.RootDirectory.FullName, '*.py',  [System.IO.SearchOption]::AllDirectories)) {
+                $pfn = [System.IO.Path]::GetFileName($pf)
+                if ($pyAllNamesSeen.Add($pfn)) { [void]$script:PCScannedPyNames.Add($pfn); $pyDevCount++ }
+                Spin "Scanning .py: $pfn"
+                if ($pyDevCount -ge $pyDevLimit) { break pyDrvLoop }
+            }
+            foreach ($pf in [System.IO.Directory]::EnumerateFiles($drv.RootDirectory.FullName, '*.pyw', [System.IO.SearchOption]::AllDirectories)) {
+                $pfn = [System.IO.Path]::GetFileName($pf)
+                if ($pyAllNamesSeen.Add($pfn)) { [void]$script:PCScannedPyNames.Add($pfn); $pyDevCount++ }
+                Spin "Scanning .pyw: $pfn"
+                if ($pyDevCount -ge $pyDevLimit) { break pyDrvLoop }
+            }
+        } catch {}
+    }
+    SpinClear
     foreach ($pyRoot in $pyRoots) {
         if (-not [System.IO.Directory]::Exists($pyRoot)) { continue }
         try {
@@ -3433,7 +3678,9 @@ function Run-PCscan {
             }
         } catch {}
     }
-    $obfSeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $obfSeenPaths  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $obfScanTotal  = 0
+    $obfDevLimit   = if ($script:_DevMode) { 10 } else { [int]::MaxValue }
     $pyObfPatterns = @(
         "exec(base64","eval(base64","exec(compile","eval(compile",
         "exec(__import__","marshal.loads","__import__('marshal')",
@@ -3457,6 +3704,8 @@ function Run-PCscan {
             foreach ($f in [System.IO.Directory]::EnumerateFiles($obfRoot, '*.pyw', [System.IO.SearchOption]::TopDirectoryOnly)) { [void]$obfFiles.Add($f) }
             foreach ($obfFile in $obfFiles) {
                 if (-not $obfSeenPaths.Add($obfFile)) { continue }
+                if ($obfScanTotal -ge $obfDevLimit) { break }
+                $obfScanTotal++
                 $ext = [System.IO.Path]::GetExtension($obfFile).ToLower()
                 Spin "Obf-scan: $([System.IO.Path]::GetFileName($obfFile))"
                 $reasons = [System.Collections.Generic.List[string]]::new()
@@ -3554,6 +3803,21 @@ function Run-PCscan {
     $exeFlags   = [System.Collections.Generic.List[object]]::new()
     $exeScanned = 0
     $exeSeenPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $script:PCScannedExeNames = [System.Collections.Generic.List[string]]::new()
+    $exeAllNamesSeen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $exeDevLimit = if ($script:_DevMode) { 10 } else { [int]::MaxValue }
+    $exeDevCount = 0
+    :exeDrvLoop foreach ($drv in ([System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady })) {
+        try {
+            foreach ($ef in [System.IO.Directory]::EnumerateFiles($drv.RootDirectory.FullName, '*.exe', [System.IO.SearchOption]::AllDirectories)) {
+                $efn = [System.IO.Path]::GetFileName($ef)
+                if ($exeAllNamesSeen.Add($efn)) { [void]$script:PCScannedExeNames.Add($efn); $exeDevCount++ }
+                Spin "Scanning EXE: $efn"
+                if ($exeDevCount -ge $exeDevLimit) { break exeDrvLoop }
+            }
+        } catch {}
+    }
+    SpinClear
     foreach ($exeRoot in $exeSuspiciousDirs) {
         if (-not [System.IO.Directory]::Exists($exeRoot)) { continue }
         try {
@@ -3764,7 +4028,107 @@ Write-Host ""
 Write-Host ""
 Run-RecentActivity
 Run-PCscan
-Run-BamScan
+if (-not $script:_DevMode) {
+    Run-BamScan
+}
+
+if ($script:_DevMode) {
+    $flaggedRows = ""
+    foreach ($m in $script:FlaggedModsList) {
+        $ext = [System.IO.Path]::GetExtension($m).TrimStart('.').ToLower()
+        $flaggedRows += "<tr data-ext=`"$ext`"><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
+    }
+    $flaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
+        $filterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
+        "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button><button class='fbtn' onclick='_setExt(this,`"py`")'>.py</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious File</th></tr></thead><tbody>$flaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$filterJs"
+    } else {
+        "<p class='ok'>No flagged mods detected.</p>"
+    }
+    $devAllFilesRows = ""
+    $devAllFilesCombined = @()
+    $devSeenNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($f in $jarFiles) { if ($devSeenNames.Add($f.Name)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "jar" } } }
+    foreach ($f in $exeFiles) { if ($devSeenNames.Add($f.Name)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "exe" } } }
+    foreach ($f in $pyFiles)  { if ($devSeenNames.Add($f.Name)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "py"  } } }
+    if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { if ($devSeenNames.Add($n)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "exe" } } } }
+    if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { if ($devSeenNames.Add($n)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "py"  } } } }
+    foreach ($daf in $devAllFilesCombined) {
+        $dafFlagged  = $script:FlaggedModsList.Contains($daf.Name)
+        $dafVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $daf.Name } | Measure-Object).Count -gt 0)
+        $dafStatus   = if ($dafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($dafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#e3b341;'>Unknown</span>" }
+        $devAllFilesRows += "<tr data-ext=`"$($daf.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($daf.Name))</td><td style='color:var(--muted);'>.$($daf.Ext)</td><td>$dafStatus</td></tr>`n"
+    }
+    $devAllFilesTable = if ($devAllFilesCombined.Count -gt 0) {
+        $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();var rows=document.querySelectorAll("#afTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_afExt==="all"||e===_afExt)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noAf").style.display=v===0?"":"none";}</script>'
+        "<h2 style='margin:32px 0 10px;font-size:1.05em;'>File Result ($($devAllFilesCombined.Count))</h2><div class='filter-bar'><input type='text' id='afSearch' placeholder='Search files...' oninput='_afFilter()' /><button class='afbtn active' onclick='_afSetExt(this,`"all`")'>All</button><button class='afbtn' onclick='_afSetExt(this,`"jar`")'>.jar</button><button class='afbtn' onclick='_afSetExt(this,`"exe`")'>.exe</button><button class='afbtn' onclick='_afSetExt(this,`"py`")'>.py</button></div><table id='afTable'><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$devAllFilesRows</tbody></table><p id='noAf' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$afScript"
+    } else { "" }
+    $statusColor = if ($script:Flagged -gt 0) { "#e74c3c" } else { "#2ecc71" }
+    $statusText  = if ($script:Flagged -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
+    $scanDate    = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $devHtml = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AsyncAnalyzer $($script:Version) &mdash; Dev Result</title>
+  <style>
+    :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e; --warn:#e3b341; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:32px 24px; }
+    h1 { font-size:1.6em; margin-bottom:4px; }
+    .sub { color:var(--muted); font-size:0.9em; margin-bottom:24px; }
+    .dev-badge { display:inline-block; background:#e3b341; color:#0d1117; font-size:0.75em; font-weight:700; padding:3px 10px; border-radius:4px; margin-left:10px; vertical-align:middle; letter-spacing:.06em; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; text-align:center; }
+    .card .num { font-size:2.2em; font-weight:700; line-height:1; }
+    .card .lbl { color:var(--muted); font-size:0.8em; margin-top:6px; }
+    .green { color:#2ecc71; } .yellow { color:#e3b341; } .red { color:#e74c3c; }
+    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+    th { background:#1c2128; color:var(--muted); font-size:0.8em; text-transform:uppercase; letter-spacing:.06em; padding:10px 16px; text-align:left; }
+    td { padding:10px 16px; border-top:1px solid var(--border); font-size:0.9em; }
+    .status { margin-top:24px; padding:14px 18px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$statusColor; background:var(--surface); }
+    .ok { color:#2ecc71; padding:10px 0; }
+    .filter-bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+    #modSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
+    #modSearch:focus { border-color:#238636; }
+    .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; }
+    .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
+    #afSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
+    #afSearch:focus { border-color:#238636; }
+    .afbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; }
+    .afbtn.active,.afbtn:hover { border-color:#238636; color:#2ecc71; }
+    footer { margin-top:36px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
+  </style>
+</head>
+<body>
+  <h1>AsyncAnalyzer $($script:Version) <span class="dev-badge">DEV</span></h1>
+  <p class="sub">Generated: $scanDate &nbsp;&bull;&nbsp; Quick dev scan &mdash; all heavy checks skipped</p>
+  <div class="grid">
+    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
+    <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
+    <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
+    <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged</div></div>
+  </div>
+  $flaggedTable
+  $devAllFilesTable
+  <div class="status">$statusText</div>
+  <footer>
+    <span>AsyncAnalyzer by $($script:Author) &mdash; DEV MODE</span>
+    <span>$scanDate</span>
+  </footer>
+</body>
+</html>
+"@
+    $devPath = Join-Path $env:TEMP "AsyncAnalyzer_Files_Result.html"
+    $devHtml | Out-File -FilePath $devPath -Encoding UTF8
+    Invoke-Item $devPath
+    Start-Process explorer.exe -ArgumentList "/select,`"$devPath`""
+    Write-Host ""
+    W "  $([char]0x2713) Dev report opened: $devPath" DarkYellow
+    Write-Host ""
+    return
+}
 
 Write-Host ""
 W "  Done." Green
