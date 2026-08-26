@@ -1,0 +1,26 @@
+$script:mlIntercept = -3.219757
+$script:mlFeatureOrder = @('pkgpath','cheatsite','strong_sig','weak_sig','fullwidth_str','fullwidth_cls','japanese_cls','singlechar_cls','numeric_cls','novowel_cls','avg_entropy','high_entropy','reflection','runtime_exec','http_download','http_exfil','nested_hollow','fake_identity','filename_client','random_name','verified','legit_modid')
+$script:mlWeights = @{
+    'pkgpath' = 1.440886
+    'cheatsite' = 1.556854
+    'strong_sig' = 3.285124
+    'weak_sig' = 2.306401
+    'fullwidth_str' = 1.294708
+    'fullwidth_cls' = 0.475573
+    'japanese_cls' = 0.292676
+    'singlechar_cls' = 1.860623
+    'numeric_cls' = 0.532612
+    'novowel_cls' = -1.021783
+    'avg_entropy' = 0.597337
+    'high_entropy' = 3.085401
+    'reflection' = -1.654962
+    'runtime_exec' = 1.281016
+    'http_download' = 1.319186
+    'http_exfil' = -0.25809
+    'nested_hollow' = 2.686399
+    'fake_identity' = 2.116857
+    'filename_client' = 2.595668
+    'random_name' = 0.0
+    'verified' = -2.650275
+    'legit_modid' = -3.02182
+}
