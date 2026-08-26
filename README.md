@@ -17,14 +17,20 @@
 
 ---
 
-## ⚡ Run it (no install)
+## ⚡ Run it (no install, no typing)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1')"
 ```
 
-Type `auto` to auto-detect your mods folder, or press **Enter** for `.minecraft\mods`.
-Want to read the whole script first? Open the raw URL in your browser — it's all there.
+**That's it — it finds your Minecraft by itself.** No path to type, no Enter to press. It
+auto-detects every install (all launchers + a deep scan of your drives for portable /
+renamed installs), picks the right one (the running instance, else the one with the most
+mods), and scans it.
+
+- Want to pick manually or paste a path? Add `-Ask`.
+- Know the exact folder? Add `-Path "C:\...\mods"`.
+- Want to read the whole script first? Open the raw URL in your browser — it's all there.
 
 ---
 
@@ -122,7 +128,9 @@ The dashboard shows who scanned whom, when, the verdict, and every flagged mod w
 
 | Flag | Does |
 |---|---|
-| *(none)* | Fast, **mods-folder-only** scan. Recommended. |
+| *(none)* | **Auto-detects** your Minecraft and scans it. Recommended. |
+| `-Ask` | Pick the install from a list / paste a path manually. |
+| `-Path "C:\…\mods"` | Scan an exact folder. |
 | `-SelfTest` | Verify the AI + verdict logic on your machine, then exit. |
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
 | `-DeepMemory` | Also read live Minecraft memory for loaded cheats. |

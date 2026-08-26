@@ -9,7 +9,9 @@ param(
     [switch]$NoUpdate,
     [switch]$NoLearn,
     [switch]$Reset,
-    [switch]$Share
+    [switch]$Share,
+    [switch]$Ask,
+    [string]$Path = ""
 )
 
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
@@ -38,6 +40,7 @@ $script:NoUpdate     = [bool]$NoUpdate
 $script:NoLearn      = [bool]$NoLearn
 $script:Reset        = [bool]$Reset
 $script:Share        = [bool]$Share
+$script:Ask          = [bool]$Ask
 $script:shareHashes  = [System.Collections.Generic.List[string]]::new()
 $script:sessionGood  = [System.Collections.Generic.List[string]]::new()
 $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
@@ -1444,8 +1447,63 @@ function Find-MinecraftModFolders {
         }
     }
 
+    # deep scan: find .minecraft folders anywhere on fixed drives (portable / renamed installs)
+    # skipped when a running instance is already found (that is the target anyway)
+    if (-not ($results | Where-Object { $_.IsRunning })) {
+    try {
+        $skipDeep = @('windows','program files','program files (x86)','programdata','$recycle.bin','system volume information','windows.old','node_modules','.git')
+        foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed -or -not $drive.IsReady) { continue }
+            $queue = [System.Collections.Generic.Queue[object]]::new()
+            $queue.Enqueue([PSCustomObject]@{ P = $drive.RootDirectory.FullName; D = 0 })
+            $checked = 0
+            while ($queue.Count -gt 0 -and $checked -lt 6000) {
+                $node = $queue.Dequeue(); $checked++
+                try {
+                    foreach ($sub in [System.IO.Directory]::GetDirectories($node.P)) {
+                        $nm = [System.IO.Path]::GetFileName($sub).ToLower()
+                        if ($skipDeep -contains $nm) { continue }
+                        if ($nm -eq '.minecraft') {
+                            $md = [System.IO.Path]::Combine($sub, 'mods')
+                            if ([System.IO.Directory]::Exists($md) -and $seen.Add($md)) {
+                                $jars = @([System.IO.Directory]::GetFiles($md, '*.jar'))
+                                $lastW = if ($jars.Count -gt 0) { ($jars | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($md) }
+                                $inst = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($sub))
+                                [void]$results.Add([PSCustomObject]@{ Path=$md; Launcher="Detected"; Instance=$inst; JarCount=$jars.Count; LastWrite=$lastW; IsRunning=(IsJavaRunningIn $sub) })
+                            }
+                        } elseif ($node.D -lt 4) {
+                            $queue.Enqueue([PSCustomObject]@{ P = $sub; D = $node.D + 1 })
+                        }
+                    }
+                } catch {}
+            }
+        }
+    } catch {}
+    }
+
     $sorted = $results | Sort-Object @{e={[int]$_.IsRunning};Descending=$true}, @{e='JarCount';Descending=$true}, @{e='LastWrite';Descending=$true}
     return @($sorted)
+}
+
+function Get-BestModFolder {
+    W "  $([char]0x25CF) Auto-detecting your Minecraft..." DarkGray
+    $found = @(Find-MinecraftModFolders)
+    if ($found.Count -eq 0) {
+        $def = "$env:APPDATA\.minecraft\mods"
+        Write-Host ""
+        W "  $([char]0x26A0)  No Minecraft mods folder detected $([char]0x2014) trying the default." Yellow
+        return $def
+    }
+    $best = $found[0]
+    $tag = if ($best.IsRunning) { "   $([char]0x25CF) RUNNING" } else { "" }
+    Write-Host ""
+    W "  $([char]0x2713) Detected: " Green -NoNewline
+    W "$($best.Launcher)" Cyan -NoNewline
+    if ($best.Instance) { W " / $($best.Instance)" White -NoNewline }
+    W "  ($($best.JarCount) mods)$tag" DarkGray
+    if ($found.Count -gt 1) { W "    $($found.Count) installs found $([char]0x2014) picked the most likely one (use -Ask to choose)." DarkGray }
+    Write-Host ""
+    return $best.Path
 }
 
 function Ask-ModPath {
@@ -2933,8 +2991,10 @@ if ($Dev) {
     $script:_DevMode  = $true
     $script:_DevLimit = 10
 } else {
-    $ModPath = Ask-ModPath
-    $ModPath = $ModPath.Trim('"').Trim("'").Trim()
+    if (-not [string]::IsNullOrWhiteSpace($Path)) { $ModPath = $Path }
+    elseif ($script:Ask) { $ModPath = Ask-ModPath }
+    else { $ModPath = Get-BestModFolder }
+    $ModPath = ([string]$ModPath).Trim('"').Trim("'").Trim()
 
     if (-not (Test-Path $ModPath -PathType Container)) {
         W "" White
