@@ -1,0 +1,38 @@
+{
+  "version": 2,
+  "note": "Community cheat-intelligence list. AsyncAnalyzer auto-downloads this on start (unless -NoUpdate). Add confirmed cheat SHA1 hashes to knownCheatHashes, known-legit hashes to knownGoodHashes, distinctive cheat-client package paths to packagePaths, and cheat-client filename tokens to clientTokens. Everyone who runs the tool then benefits.",
+  "knownCheatHashes": [],
+  "knownGoodHashes": [],
+  "packagePaths": [
+    "net/ccbluex",
+    "meteordevelopment",
+    "org/chainlibs",
+    "wtf/moonlight",
+    "today/opai",
+    "cc/novoline",
+    "com/alan/clients",
+    "club/maxstats",
+    "me/zeroeightsix/kami",
+    "net/minecraft/injection",
+    "xyz/greaj",
+    "com/cheatbreaker",
+    "dev/krypton",
+    "dev/gambleclient",
+    "doomsdayclient"
+  ],
+  "clientTokens": [
+    "doomsday",
+    "liquidbounce",
+    "meteorclient",
+    "wurstclient",
+    "sigmaclient",
+    "vapeclient",
+    "novoline",
+    "rusherhack",
+    "impactclient",
+    "aristois",
+    "prestigeclient",
+    "fdpclient",
+    "salwyrrclient"
+  ]
+}

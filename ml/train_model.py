@@ -118,8 +118,19 @@ def main():
             print(f"  {src[5:]:22s} p(cheat)={p:.3f}{flag}")
     print(f"  worst real-jar score: {worst:.3f}")
 
+    # bump the version on every retrain so clients can auto-update to a newer
+    # model (the number only ever needs to go up)
+    version = 2
+    prev = os.path.join(HERE, "model.json")
+    if os.path.exists(prev):
+        try:
+            version = int(json.load(open(prev)).get("version", 1)) + 1
+        except Exception:
+            version = 2
+
     model = {
         "type": "logistic_regression",
+        "version": version,
         "feature_order": FEATURE_NAMES,
         "intercept": round(b, 6),
         "weights": {n: round(wi, 6) for n, wi in zip(FEATURE_NAMES, w)},
@@ -128,6 +139,7 @@ def main():
         "test_recall": round(rec, 4),
         "n_train": len(train_rows),
         "n_test": len(test_rows),
+        "n_real_jars": sum(1 for _, _, s in rows if s.startswith("real:")) // 3,
     }
     with open(os.path.join(HERE, "model.json"), "w") as f:
         json.dump(model, f, indent=2)

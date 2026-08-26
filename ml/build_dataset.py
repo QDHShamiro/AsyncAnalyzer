@@ -58,6 +58,22 @@ MAVEN = [
     ("commons-io", "commons-io", "2.16.1"),
     ("org.slf4j", "slf4j-api", "2.0.13"),
     ("org.apache.commons", "commons-compress", "1.26.1"),
+    # more real Minecraft-ecosystem libraries that mods bundle (stronger negatives)
+    ("org.apache.commons", "commons-text", "1.11.0"),
+    ("org.apache.commons", "commons-collections4", "4.4"),
+    ("com.electronwill.night-config", "core", "3.6.7"),
+    ("com.electronwill.night-config", "toml", "3.6.7"),
+    ("org.ow2.asm", "asm-util", "9.7"),
+    ("org.ow2.asm", "asm-analysis", "9.7"),
+    ("io.netty", "netty-codec", "4.1.108.Final"),
+    ("io.netty", "netty-handler", "4.1.108.Final"),
+    ("io.netty", "netty-transport", "4.1.108.Final"),
+    ("net.sf.jopt-simple", "jopt-simple", "5.0.4"),
+    ("org.jline", "jline", "3.25.1"),
+    ("com.fasterxml.jackson.core", "jackson-core", "2.17.0"),
+    ("com.fasterxml.jackson.core", "jackson-annotations", "2.17.0"),
+    ("org.checkerframework", "checker-qual", "3.42.0"),
+    ("com.mojang", "brigadier", "1.0.18"),
 ]
 
 
