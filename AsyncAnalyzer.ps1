@@ -39,6 +39,10 @@ $script:NoLearn      = [bool]$NoLearn
 $script:Reset        = [bool]$Reset
 $script:Share        = [bool]$Share
 $script:shareHashes  = [System.Collections.Generic.List[string]]::new()
+$script:sessionGood  = [System.Collections.Generic.List[string]]::new()
+$script:sessionCheat = [System.Collections.Generic.List[string]]::new()
+$script:sessionSamples = [System.Collections.Generic.List[object]]::new()
+$script:Telemetry    = $null
 $script:CurseForgeApiKey = if ($env:CURSEFORGE_API_KEY) { $env:CURSEFORGE_API_KEY } else { "" }
 $verifiedMods = [System.Collections.Generic.List[object]]::new()
 $unknownMods  = [System.Collections.Generic.List[object]]::new()
@@ -680,7 +684,73 @@ function Invoke-CloudUpdate {
         if ($s.knownGoodHashes)  { foreach ($h in $s.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
         if ($s.packagePaths)     { $script:cheatPackagePaths = @(@($script:cheatPackagePaths) + @($s.packagePaths) | Select-Object -Unique) }
         if ($s.clientTokens)     { foreach ($t in $s.clientTokens) { [void]$script:distinctiveClientTokens.Add([string]$t) } }
+        if ($s.telemetry)        { $script:Telemetry = $s.telemetry }
     } catch {}
+
+    if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.pullSignatures -and $script:Telemetry.endpoint) {
+        try {
+            $ts = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/signatures" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+            if ($ts.knownCheatHashes) { foreach ($h in $ts.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
+            if ($ts.knownGoodHashes)  { foreach ($h in $ts.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
+        } catch {}
+    }
+
+    if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.endpoint) {
+        try {
+            $tm = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/model" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+            if ($tm.weights -and $tm.feature_order) {
+                $script:mlFeatureOrder = @($tm.feature_order)
+                foreach ($k in $script:mlFeatureOrder) { $wv = $tm.weights.$k; if ($null -ne $wv) { $script:mlWeights[$k] = [double]$wv; $script:mlBaseWeights[$k] = [double]$wv } }
+                $script:mlIntercept = [double]$tm.intercept; $script:mlBaseIntercept = [double]$tm.intercept
+                W "  $([char]0x2713) Using team-trained AI model $([char]0x2014) learned from $($tm.trainedCount) samples across all team scans." DarkGray
+            }
+        } catch {}
+    }
+}
+
+function Get-MinecraftName {
+    try {
+        $f = Join-Path $env:APPDATA ".minecraft\launcher_accounts.json"
+        if (Test-Path $f) {
+            $j = Get-Content -Raw $f -ErrorAction Stop | ConvertFrom-Json
+            $active = $j.activeAccountLocalId
+            foreach ($acc in $j.accounts.PSObject.Properties.Value) {
+                if ($acc.localId -eq $active -and $acc.minecraftProfile.name) { return [string]$acc.minecraftProfile.name }
+            }
+            foreach ($acc in $j.accounts.PSObject.Properties.Value) {
+                if ($acc.minecraftProfile.name) { return [string]$acc.minecraftProfile.name }
+            }
+        }
+    } catch {}
+    return ""
+}
+
+function Send-ScanResult {
+    $t = $script:Telemetry
+    if (-not $t -or -not $t.enabled -or -not $t.endpoint -or -not $t.key) { return }
+    try {
+        $verdict = if ($script:Flagged -gt 0) { "flagged" } elseif ($script:Review -gt 0) { "review" } else { "clean" }
+        $mkMod = { param($m) @{ name = $m.FileName; score = $m.Score; band = $m.Band; probability = $m.Probability; hash = $m.Hash; reasons = @($m.Reasons) } }
+        $payload = @{
+            scanner      = $env:USERNAME
+            targetUser   = (Get-MinecraftName)
+            pcName       = $env:COMPUTERNAME
+            modPath      = $ModPath
+            verdict      = $verdict
+            totals       = @{ total = $script:TotalMods; verified = $script:Verified; unknown = $script:Unknown; review = $script:Review; flagged = $script:Flagged; systemIssues = $script:SystemIssues }
+            flagged      = @(@($flaggedMods) | ForEach-Object { & $mkMod $_ })
+            review       = @(@($reviewMods)  | ForEach-Object { & $mkMod $_ })
+            newCheat     = @($script:sessionCheat | Select-Object -Unique)
+            newGood      = @($script:sessionGood  | Select-Object -Unique)
+            samples      = @(@($script:sessionSamples) | Select-Object -First 400)
+            toolVersion  = $script:Version
+            modelVersion = $script:mlModelVersion
+            clientTs     = (Get-Date).ToString("s")
+        }
+        $json = $payload | ConvertTo-Json -Depth 6 -Compress
+        $r = Invoke-RestMethod -Uri "$($t.endpoint)/api/scan" -Method Post -Body $json -ContentType "application/json" -Headers @{ "x-key" = [string]$t.key } -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        if ($r.ok) { W "  $([char]0x2713) Result uploaded to the team dashboard (id $($r.id))." DarkGray }
+    } catch { W "  $([char]0x26A0) Could not reach the team dashboard $([char]0x2014) result kept locally." DarkGray }
 }
 $script:mlFactorLabels = @{
     'pkgpath' = "cheat-client package path"
@@ -2841,6 +2911,13 @@ if ($script:mlSamples -gt 0 -or $script:knownGoodHashes.Count -gt 0 -or $script:
     Write-Host ""
 }
 
+if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.endpoint) {
+    W "  $([char]0x25CF) NOTICE $([char]0x2014) team mode is ON: this scan's result (mod list, hashes, verdict," Yellow
+    W "    your Windows & Minecraft name, PC name) will be uploaded to the AsyncStudios team" DarkGray
+    W "    dashboard so staff can review it. Your personal files are NOT uploaded." DarkGray
+    Write-Host ""
+}
+
 if ($Dev) {
     W "  [DEV MODE] Quick scan $([char]0x2014) max 10 items per category, heavy checks skipped." DarkYellow
     Write-Host ""
@@ -2994,12 +3071,17 @@ if (-not $SkipModCheck) {
             }
 
             if ($hash) {
+                $rawv = Get-ModFeatureVector $ctx
                 if ($verified) {
                     [void]$script:knownGoodHashes.Add($hash)
-                    Update-ModelOnline (Get-ModFeatureVector $ctx) 0
+                    [void]$script:sessionGood.Add($hash)
+                    Update-ModelOnline $rawv 0
+                    [void]$script:sessionSamples.Add(@{ vec = @($script:mlFeatureOrder | ForEach-Object { [double]$rawv[$_] }); label = 0 })
                 } elseif ($verdict.Band -eq "Confirmed" -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite)) {
                     [void]$script:knownCheatHashes.Add($hash)
-                    Update-ModelOnline (Get-ModFeatureVector $ctx) 1
+                    [void]$script:sessionCheat.Add($hash)
+                    Update-ModelOnline $rawv 1
+                    [void]$script:sessionSamples.Add(@{ vec = @($script:mlFeatureOrder | ForEach-Object { [double]$rawv[$_] }); label = 1 })
                     if ($script:Share) { [void]$script:shareHashes.Add($hash) }
                 }
             }
@@ -4588,6 +4670,8 @@ if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) {
 } else {
     W "  All checks passed. Installation appears clean." Green
 }
+
+Send-ScanResult
 
 Write-Host ""
 W "  Analysis complete!" Cyan

@@ -1,6 +1,13 @@
 {
   "version": 2,
   "note": "Community cheat-intelligence list. AsyncAnalyzer auto-downloads this on start (unless -NoUpdate). Add confirmed cheat SHA1 hashes to knownCheatHashes, known-legit hashes to knownGoodHashes, distinctive cheat-client package paths to packagePaths, and cheat-client filename tokens to clientTokens. Everyone who runs the tool then benefits.",
+  "telemetry": {
+    "enabled": false,
+    "endpoint": "",
+    "key": "",
+    "pullSignatures": true,
+    "note": "Team scan-history + shared learning. Set enabled=true and fill endpoint (your backend URL from server/README.md) + key (WRITE_KEY) to have every run upload its result to your dashboard. The tool shows an upload notice to the scanned person. Set enabled=false to turn it off for everyone instantly."
+  },
   "knownCheatHashes": [],
   "knownGoodHashes": [],
   "packagePaths": [

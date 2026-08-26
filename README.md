@@ -90,9 +90,31 @@ Detection gets better **every time you use it** — all on your machine, nothing
 ## 🔒 Is it safe? (yes — exactly what it does)
 
 - **Read-only.** Never changes, deletes or quarantines anything.
-- **Runs on your PC.** Never uploads your files or data.
+- **Never uploads your files.** Your mods, documents and personal data stay on your PC.
 - **Network = hash lookups only** (Modrinth / CurseForge / Megabase) + fetching the public model. Only a file *hash* is ever sent, never the file.
 - Default scan touches **only your mods folder**. Whole-PC scan and live-memory read are **opt-in**.
+- **Team mode is off by default.** If a team turns it on (see below), the tool uploads the *scan result* (mod list, hashes, verdict, usernames) to that team's own dashboard — and shows the scanned person a clear notice first. Still never the files themselves.
+
+---
+
+## 👥 Team mode — shared scan history
+
+Running a screenshare / anticheat team? Turn on **team mode** and every scan (yours, Luis's, any staff) lands in **one shared dashboard** — and **the AI itself learns from everyone's scans**, not just each PC. Confirmed detections from all team members train one shared model on the backend; every client pulls that team-trained model on the next run. The more your team scans, the smarter it gets for everyone.
+
+<div align="center">
+
+`Staff runs scan` → `result + labelled samples upload` → `one shared model trains on all scans` → `every client pulls the smarter model`
+
+</div>
+
+- Deploy the tiny backend once (**Cloudflare Worker**, free & always-on, or a **zero-dep Node server**) — full steps in [`server/README.md`](server/README.md).
+- Flip it on from **`ml/signatures.json`** in your repo (no need to touch the script):
+  ```json
+  "telemetry": { "enabled": true, "endpoint": "https://…workers.dev", "key": "your-write-secret", "pullSignatures": true }
+  ```
+- The tool shows the scanned person an **upload notice** (honest by design). Set `"enabled": false` to turn it off for everyone instantly.
+
+The dashboard shows who scanned whom, when, the verdict, and every flagged mod with its reasons — a clean, shareable proof log.
 
 ---
 

@@ -1,0 +1,14 @@
+name = "asyncanalyzer-backend"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Create the DB once with:  wrangler d1 create asyncanalyzer
+# then paste the printed database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "asyncanalyzer"
+database_id = "PASTE-YOUR-D1-DATABASE-ID-HERE"
+
+# Set secrets (not committed) with:
+#   wrangler secret put WRITE_KEY
+#   wrangler secret put VIEW_KEY     # optional; leave unset to make history public

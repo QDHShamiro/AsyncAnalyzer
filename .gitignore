@@ -10,3 +10,8 @@ AsyncAnalyzer_Report.html
 AsyncAnalyzer_Files_Result.html
 learned.json
 contribute_hashes.txt
+
+# Backend runtime
+server/data/
+node_modules/
+.wrangler/
