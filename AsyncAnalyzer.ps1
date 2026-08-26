@@ -458,6 +458,7 @@ function Get-FilenameSimilarityMatch([string]$JarName) {
 $script:suspiciousPatterns = @(
     "AimAssist","AnchorTweaks","AutoAnchor","AutoCrystal","AutoDoubleHand",
     "AutoHitCrystal","AutoHitTotem","AutoTotem","InventoryTotem",
+    "HoleFill","AutoHoleFill",
     "JumpReset","LegitTotem",
     "ShieldBreaker","TriggerBot","AxeSpam","WebMacro",
     "WalskyOptimizer","WalksyOptimizer","walsky.optimizer",

@@ -69,8 +69,14 @@ cd ml && python3 build_dataset.py && python3 train_model.py
 - `node -c` on server.js/worker.js; backend + federated learning tested live with curl/node.
 - **Not done: a real Windows PowerShell run.** That's the main open verification — run `-SelfTest` and a real scan on Windows.
 
+## Doomsday / ghost-client intel (gathered this session)
+- Doomsday is a **ghost / injectable** client, explicitly **screenshare-proof ("SS Bypass")** — the whole reason it needs detecting. Supports MC 1.8–1.21+, loaders Vanilla/Forge/Fabric/Feather/Lunar/LabyMod. Features: Aura, AutoCrystal, AutoTotem, HoleFill, Replenish.
+- **Injectable** = it can inject into the running JVM, so it is not always a `.jar` in the mods folder. Two detection vectors: (a) the distributed `.jar` (random hash-named, e.g. `hb4zz1xxrd4.jar` — now floored to Review), (b) the **injected** form → that is what `-DeepMemory` (live memory scan) + the process/JVM scan are for. For a screenshare check, run with `-DeepMemory` on the suspect's live Minecraft.
+- `doomsdayclient.com` is **blocked by this cloud env's egress proxy**, so no jar/hash could be pulled here. Mirrors seen in search: 9minecraft.net, exloader.net, cyde.xyz — NOT added as cheat download-domains on purpose (they also host legit mods → would cause false Zone.Identifier flags). Only dedicated cheat-vendor domains belong in `downloadDomains`.
+- Added `HoleFill` / `AutoHoleFill` to `suspiciousPatterns` (distinctive crystal-PvP term, no legit-mod collision).
+
 ## Open items / TODO
-- [ ] **Real cheat hashes**: `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty (didn't download real cheats in the cloud). Add SHA1s of Doomsday, Ghost, Vape, etc. → instant 100% detection. Feed them via `-Share` or edit signatures.json.
+- [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test** of the whole flow (auto-detect, scan, report, team upload).
 - [ ] Merge branch → main to ship.
 - [ ] Optional: Discord webhook on flagged scan; dashboard login; more 2025/2026 cheat families.
