@@ -15,3 +15,7 @@ contribute_hashes.txt
 server/data/
 node_modules/
 .wrangler/
+
+# Agent / tooling local state
+.claude/
+.claude-flow/

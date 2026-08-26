@@ -571,6 +571,7 @@ $script:cheatDownloadSources = @("DoomsdayClient","PrestigeClient","198Macros","
 # Each entry: @{ match = 'domain-or-substring'; name = 'DisplayName' }.
 $script:cheatDomainMap = @()
 $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+$script:goodMeta         = @{}
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
 $script:mlModelVersion = 2
@@ -622,6 +623,7 @@ function Load-LearnState {
         if (-not (Test-Path $lp)) { return }
         $st = Get-Content -Raw $lp -ErrorAction Stop | ConvertFrom-Json
         if ($st.knownGood)  { foreach ($h in $st.knownGood)  { [void]$script:knownGoodHashes.Add([string]$h) } }
+        if ($st.goodMeta)   { foreach ($gp in $st.goodMeta.PSObject.Properties) { $script:goodMeta[$gp.Name] = [string]$gp.Value } }
         if ($st.knownCheat) { foreach ($h in $st.knownCheat) { [void]$script:knownCheatHashes.Add([string]$h) } }
         if ($st.weights -and $st.modelVersion -ge $script:mlModelVersion) {
             foreach ($k in $script:mlFeatureOrder) {
@@ -644,6 +646,7 @@ function Save-LearnState {
             intercept = [Math]::Round([double]$script:mlIntercept, 6)
             weights = $wobj
             knownGood = @($script:knownGoodHashes)
+            goodMeta = $script:goodMeta
             knownCheat = @($script:knownCheatHashes)
             samples = $script:mlSamples
             updated = (Get-Date).ToString("s")
@@ -812,6 +815,9 @@ function Get-JarFeatures([string]$FilePath) {
         ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false; HttpExfil = $false
         NestedHollow = $false
         ModId = ""; MetaName = ""; FakeIdentity = $false
+        JavaAgent = $false; AgentRetransform = $false; AgentClass = ""
+        HiddenPayload = 0; LoaderIds = [System.Collections.Generic.List[string]]::new()
+        BlankMeta = $false; NativeJna = $false
     }
     $reflectionPatterns = @('Class\.forName','getMethod','getDeclaredMethod','getDeclaredField','setAccessible','java/lang/reflect','MethodHandle','sun/misc/Unsafe','defineClass','ByteBuddy','javassist','ASM\d')
     $zip = $null
@@ -825,6 +831,27 @@ function Get-JarFeatures([string]$FilePath) {
         foreach ($e in $entries) {
             $n = $e.FullName
             if ($n -match '^META-INF/jars/.+\.jar$') { $nested++ }
+            if ($n -match 'fabric\.mod\.json$|quilt\.mod\.json$') { if (-not $f.LoaderIds.Contains('fabric')) { [void]$f.LoaderIds.Add('fabric') } }
+            elseif ($n -match 'META-INF/(neoforge\.)?mods\.toml$') { if (-not $f.LoaderIds.Contains('forge')) { [void]$f.LoaderIds.Add('forge') } }
+            elseif ($n -match '^mcmod\.info$') { if (-not $f.LoaderIds.Contains('forge-legacy')) { [void]$f.LoaderIds.Add('forge-legacy') } }
+            elseif ($n -match '^plugin\.yml$|^bungee\.yml$') { if (-not $f.LoaderIds.Contains('bukkit')) { [void]$f.LoaderIds.Add('bukkit') } }
+            elseif ($n -match '^addon\d*\.json$') { if (-not $f.LoaderIds.Contains('labymod')) { [void]$f.LoaderIds.Add('labymod') } }
+            if ($e.Length -ge 1024 -and $n -notmatch '/$') {
+                $leaf = ($n -split '/')[-1]
+                if ($leaf.IndexOf('.') -lt 0) {
+                    try {
+                        $st = $e.Open()
+                        $buf = New-Object byte[] 65536
+                        $got = $st.Read($buf, 0, $buf.Length); $st.Close()
+                        if ($got -ge 512) {
+                            $isClass = ($buf[0] -eq 0xCA -and $buf[1] -eq 0xFE -and $buf[2] -eq 0xBA -and $buf[3] -eq 0xBE)
+                            $slice = New-Object byte[] $got
+                            [Array]::Copy($buf, $slice, $got)
+                            if ($isClass -or (Get-ShannonEntropy $slice) -gt 7.0) { $f.HiddenPayload++ }
+                        }
+                    } catch {}
+                }
+            }
             foreach ($p in $script:cheatPackagePaths) {
                 if ($n.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and -not $f.PackageHits.Contains($p)) { [void]$f.PackageHits.Add($p) }
             }
@@ -861,6 +888,12 @@ function Get-JarFeatures([string]$FilePath) {
                         if ($f.MetaName -eq "" -and $txt -match '"name"\s*:\s*"([^"]{2,60})"') { $f.MetaName = $matches[1] }
                     } elseif ($n -match 'mods\.toml') {
                         if ($f.ModId -eq "" -and $txt -match 'modId\s*=\s*"([^"]{2,60})"') { $f.ModId = $matches[1] }
+                    } elseif ($n -match 'MANIFEST\.MF$') {
+                        if ($txt -match '(?im)^(Premain-Class|Agent-Class)\s*:\s*(\S+)') {
+                            $f.JavaAgent = $true
+                            $f.AgentClass = $matches[2]
+                        }
+                        if ($txt -match '(?im)^Can-(Retransform|Redefine)-Classes\s*:\s*true') { $f.AgentRetransform = $true }
                     }
                 } catch {}
             }
@@ -889,6 +922,13 @@ function Get-JarFeatures([string]$FilePath) {
     if ($blob.Contains('openConnection') -and $blob.Contains('HttpURLConnection') -and $blob.Contains('FileOutputStream')) { $f.HttpDownload = $true }
     if ($blob.Contains('openConnection') -and $blob.Contains('setDoOutput') -and $blob.Contains('getOutputStream') -and $blob.Contains('getProperty')) { $f.HttpExfil = $true }
     if ($nested -eq 1 -and $total -lt 3) { $f.NestedHollow = $true }
+    if ($blob.Contains('com/sun/jna/')) { $f.NativeJna = $true }
+    if ($blob.Contains('cpw/mods/fml/') -and -not $f.LoaderIds.Contains('forge-cpw')) { [void]$f.LoaderIds.Add('forge-cpw') }
+    if ($blob.Contains('net/labymod/api') -and -not $f.LoaderIds.Contains('labymod')) { [void]$f.LoaderIds.Add('labymod') }
+    if ($blob.Contains('net/fabricmc/api/ModInitializer') -and -not $f.LoaderIds.Contains('fabric')) { [void]$f.LoaderIds.Add('fabric') }
+    if ($blob.Contains('net/minecraftforge/fml/') -and -not $f.LoaderIds.Contains('forge')) { [void]$f.LoaderIds.Add('forge') }
+    if ($blob -match '(?m)^BaseMod$' -and -not $f.LoaderIds.Contains('modloader')) { [void]$f.LoaderIds.Add('modloader') }
+    if ($f.ModId -and $f.ModId.Length -le 3 -and $f.MetaName -eq "") { $f.BlankMeta = $true }
 
     if ($total -gt 0) {
         $f.ClassCount = $total
@@ -950,6 +990,19 @@ function Get-ModVerdict($ctx) {
         $score = [Math]::Max($score, 80)
         [void]$reasons.Add("Cheat-client package path: " + ((@($ft.PackageHits) | Select-Object -Unique | Select-Object -First 3) -join ', '))
     }
+    if ($ft.JavaAgent) {
+        $score = [Math]::Max($score, $(if ($ft.AgentRetransform) { 90 } else { 80 }))
+        $agentWhat = if ($ft.AgentRetransform) { "rewrites game code while it runs" } else { "loads as a Java agent" }
+        [void]$reasons.Add("Injector: this jar $agentWhat ($($ft.AgentClass)) $([char]0x2014) normal mods never do this")
+    }
+    if ($ft.HiddenPayload -gt 0) {
+        $score = [Math]::Max($score, 75)
+        [void]$reasons.Add("Hidden payload: $($ft.HiddenPayload) disguised/encrypted file(s) with no extension, decrypted at runtime")
+    }
+    if (@($ft.LoaderIds).Count -ge 3) {
+        $score = [Math]::Max($score, 70)
+        [void]$reasons.Add("Claims $(@($ft.LoaderIds).Count) different mod-loader identities ($((@($ft.LoaderIds) | Select-Object -First 4) -join ', ')) $([char]0x2014) dropper pattern")
+    }
     if ($ctx.CheatSite)     { $score = [Math]::Max($score, 75); [void]$reasons.Add("Downloaded from a known cheat site: $($ctx.CheatSiteName)") }
     if ($ft.FakeIdentity)   { $score = [Math]::Max($score, 70); [void]$reasons.Add("Fake mod identity $([char]0x2014) metadata does not match the file") }
     if ($ctx.FilenameClient){ $score = [Math]::Max($score, 60); [void]$reasons.Add("Filename matches a known cheat client: $($ctx.FilenameToken)") }
@@ -989,6 +1042,64 @@ function Get-ModVerdict($ctx) {
     return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons }
 }
 
+function Split-CardText([string]$text, [int]$width) {
+    $out = [System.Collections.Generic.List[string]]::new()
+    $cur = ""
+    foreach ($word in ([string]$text -split ' ')) {
+        $wd = $word
+        while ($wd.Length -gt $width) {
+            if ($cur -ne "") { $out.Add($cur); $cur = "" }
+            $out.Add($wd.Substring(0, $width))
+            $wd = $wd.Substring($width)
+        }
+        if ($cur -eq "") { $cur = $wd }
+        elseif (($cur.Length + 1 + $wd.Length) -le $width) { $cur = "$cur $wd" }
+        else { $out.Add($cur); $cur = $wd }
+    }
+    if ($cur -ne "") { $out.Add($cur) }
+    if ($out.Count -eq 0) { $out.Add("") }
+    return $out
+}
+
+function Write-FinalVerdict($flagged, $review) {
+    $w = 70
+    $hasCheat = @($flagged).Count -gt 0
+    $color = if ($hasCheat) { [ConsoleColor]::Red } elseif (@($review).Count -gt 0) { [ConsoleColor]::DarkYellow } else { [ConsoleColor]::Green }
+    $head = if ($hasCheat) {
+        "  $([char]0x26D4)  CHEAT FOUND $([char]0x2014) $(@($flagged).Count) mod(s) flagged as a cheat"
+    } elseif (@($review).Count -gt 0) {
+        "  $([char]0x26A0)  NO CONFIRMED CHEAT $([char]0x2014) but $(@($review).Count) mod(s) need a manual check"
+    } else {
+        "  $([char]0x2713)  NO CHEAT FOUND $([char]0x2014) every mod checked out clean"
+    }
+    Write-Host ""
+    W ("  $([char]0x2554)" + "$([char]0x2550)" * ($w + 1) + "$([char]0x2557)") $color
+    W ("  $([char]0x2551)" + $head.PadRight($w + 1) + "$([char]0x2551)") $color
+    W ("  $([char]0x255A)" + "$([char]0x2550)" * ($w + 1) + "$([char]0x255D)") $color
+    Write-Host ""
+
+    $n = 0
+    foreach ($m in (@($flagged) + @($review) | Sort-Object Score -Descending)) {
+        $n++
+        $mColor = switch ($m.Band) { "Confirmed" { "Red" } "Likely" { "DarkYellow" } default { "Yellow" } }
+        W ("   $n. ") DarkGray -NoNewline
+        W ($m.FileName) White -NoNewline
+        W ("   $($m.Band.ToUpper())  $($m.Score)/100  (AI $($m.Probability)%)") $mColor
+        $why = @($m.Reasons) | Select-Object -First 3
+        foreach ($r in $why) { W "      $([char]0x2192) $r" DarkGray }
+        if (@($m.Reasons).Count -gt 3) { W "      $([char]0x2192) +$(@($m.Reasons).Count - 3) more reason(s) in the card above" DarkGray }
+        if ($m.DownloadSource) { W "      $([char]0x2192) downloaded from: $($m.DownloadSource)" DarkGray }
+        Write-Host ""
+    }
+
+    if ($hasCheat) {
+        W "  What this means: a flagged mod is a cheat client, an injector, or a jar that" DarkGray
+        W "  hides code it should not have. Remove it and re-download from Modrinth or" DarkGray
+        W "  CurseForge. Review items are unproven $([char]0x2014) look at them before you judge." DarkGray
+        Write-Host ""
+    }
+}
+
 function Write-VerdictCard($mod) {
     $w = 72
     $bandColor = switch ($mod.Band) { "Confirmed" { "Red" } "Likely" { "DarkYellow" } "Review" { "Yellow" } default { "DarkGray" } }
@@ -1002,9 +1113,12 @@ function Write-VerdictCard($mod) {
     if ($mod.DownloadSource) { W ("  $([char]0x2502)  Source: $($mod.DownloadSource)".PadRight($w + 2) + "$([char]0x2502)") DarkGray }
     W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") $bandColor
     foreach ($r in $mod.Reasons) {
-        $line = "    $([char]0x2022) $r"
-        if ($line.Length -gt $w) { $line = $line.Substring(0, $w - 3) + "..." }
-        W ("  $([char]0x2502)" + $line.PadRight($w + 1) + "$([char]0x2502)") DarkYellow
+        $first = $true
+        foreach ($seg in (Split-CardText $r ($w - 8))) {
+            $line = if ($first) { "    $([char]0x2022) $seg" } else { "      $seg" }
+            $first = $false
+            W ("  $([char]0x2502)" + $line.PadRight($w + 1) + "$([char]0x2502)") DarkYellow
+        }
     }
     $tip = if ($mod.Band -eq "Review") { "  $([char]0x2139) Not confirmed $([char]0x2014) check the source before you trust this mod." } else { "  $([char]0x26A0) Remove this mod and re-download it from an official source." }
     W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") $bandColor
@@ -1019,6 +1133,8 @@ function New-TestFeatures($over) {
         FullwidthClsPct = 0.0; JapaneseClsPct = 0.0; SingleCharClsPct = 0.0; NumericClsPct = 0.0; NoVowelClsPct = 0.0
         AvgEntropy = 0.0; HighEntropyPct = 0.0; ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false
         HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
+        JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0
+        LoaderIds = @(); BlankMeta = $false; NativeJna = $false
     }
     if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
     return $f
@@ -1037,6 +1153,11 @@ function Invoke-SelfTest {
         @{ Label = "Verified mod that contains scary strings"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ StrongStrings = @('AutoCrystal', 'KillAura'); HttpDownload = $true; ReflectionCount = 2 }) } }
         @{ Label = "Random-named jar, unverified"; Bands = @("Review"); Over = @{ RandomName = $true; Features = (New-TestFeatures @{ AvgEntropy = 5.6; ReflectionCount = 1 }) } }
         @{ Label = "Random-named jar but verified"; Bands = @("Clean"); Over = @{ RandomName = $true; Verified = $true; Features = (New-TestFeatures @{ AvgEntropy = 5.6 }) } }
+        @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
+        @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
+        @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
+        @{ Label = "Verified mod that ships an agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentClass = "org.spongepowered.asm.launch.MixinAgent" }) } }
+        @{ Label = "Architectury jar (fabric+forge only)"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge'); ReflectionCount = 2 }) } }
     )
     $pass = 0; $fail = 0
     foreach ($c in $cases) {
@@ -3100,21 +3221,26 @@ if (-not $SkipModCheck) {
             $dlUrl  = if ($dlObj) { $dlObj.RawUrl } else { $null }
 
             $verified = $false; $verifiedName = ""; $modUrl = ""; $verifiedVia = ""
-            if ($hash -and $script:knownGoodHashes.Contains($hash)) { $verified = $true; $verifiedVia = "known-good list" }
-            if (-not $verified -and $hash) {
+            if ($hash -and $script:knownGoodHashes.Contains($hash)) {
+                $verified = $true; $verifiedVia = "known-good list"
+                $gm = $script:goodMeta[$hash]
+                if ($gm) { $gp = $gm -split '\|', 2; $verifiedName = [string]$gp[0]; if ($gp.Count -gt 1) { $modUrl = [string]$gp[1] } }
+            }
+            if ($hash -and -not $verifiedName) {
                 $mr = Get-ModrinthMeta $hash
-                if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)"; $verifiedVia = "Modrinth" }
-                if (-not $verified) {
+                if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)"; if (-not $verifiedVia) { $verifiedVia = "Modrinth" } }
+                if (-not $verifiedName) {
                     $fp = Get-FileMurmur2 $jar.FullName
                     if ($null -ne $fp) {
                         $cf = Get-CurseForgeMeta $fp
-                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name; $modUrl = "https://www.curseforge.com/minecraft/mc-mods/$($cf.Slug)"; $verifiedVia = "CurseForge" }
+                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name; $modUrl = "https://www.curseforge.com/minecraft/mc-mods/$($cf.Slug)"; if (-not $verifiedVia) { $verifiedVia = "CurseForge" } }
                     }
                 }
-                if (-not $verified) {
+                if (-not $verifiedName) {
                     $mb = Get-MegabaseMeta $hash
-                    if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name; $modUrl = if ($mb.modrinth_id) { "https://modrinth.com/mod/$($mb.modrinth_id)" } else { "" }; $verifiedVia = "Megabase" }
+                    if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name; $modUrl = if ($mb.modrinth_id) { "https://modrinth.com/mod/$($mb.modrinth_id)" } else { "" }; if (-not $verifiedVia) { $verifiedVia = "Megabase" } }
                 }
+                if ($verified -and $verifiedName) { $script:goodMeta[$hash] = "$verifiedName|$modUrl" }
             }
 
             $feat = Get-JarFeatures $jar.FullName
@@ -3156,18 +3282,25 @@ if (-not $SkipModCheck) {
                 [void]$unknownMods.Add($rec)
             }
 
+            # Only ever train on externally grounded labels, and only once per file hash: rescanning
+            # the same folder must not re-weight the model toward whatever it already believes.
             if ($hash) {
                 $rawv = Get-ModFeatureVector $ctx
+                $mechCheat = $feat.JavaAgent -or ($feat.HiddenPayload -gt 0)
                 if ($verified) {
-                    [void]$script:knownGoodHashes.Add($hash)
+                    $isNew = $script:knownGoodHashes.Add($hash)
                     [void]$script:sessionGood.Add($hash)
-                    Update-ModelOnline $rawv 0
-                    [void]$script:sessionSamples.Add(@{ vec = @($script:mlFeatureOrder | ForEach-Object { [double]$rawv[$_] }); label = 0 })
-                } elseif ($verdict.Band -eq "Confirmed" -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite)) {
-                    [void]$script:knownCheatHashes.Add($hash)
+                    if ($isNew) {
+                        Update-ModelOnline $rawv 0
+                        [void]$script:sessionSamples.Add(@{ vec = @($script:mlFeatureOrder | ForEach-Object { [double]$rawv[$_] }); label = 0 })
+                    }
+                } elseif ($verdict.Band -eq "Confirmed" -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite -or $mechCheat)) {
+                    $isNew = $script:knownCheatHashes.Add($hash)
                     [void]$script:sessionCheat.Add($hash)
-                    Update-ModelOnline $rawv 1
-                    [void]$script:sessionSamples.Add(@{ vec = @($script:mlFeatureOrder | ForEach-Object { [double]$rawv[$_] }); label = 1 })
+                    if ($isNew) {
+                        Update-ModelOnline $rawv 1
+                        [void]$script:sessionSamples.Add(@{ vec = @($script:mlFeatureOrder | ForEach-Object { [double]$rawv[$_] }); label = 1 })
+                    }
                     if ($script:Share) { [void]$script:shareHashes.Add($hash) }
                 }
             }
@@ -4555,10 +4688,11 @@ Write-Host ""
 W ("$([char]0x2501)" * 76) Blue
 Write-Host ""
 
-if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) {
-    W "  ACTION REQUIRED $([char]0x2014) review all flagged items above." Red
-} else {
-    W "  All checks passed. Installation appears clean." Green
+Write-FinalVerdict $flaggedMods $reviewMods
+
+if ($script:SystemIssues -gt 0) {
+    W "  $([char]0x26A0) $($script:SystemIssues) system issue(s) found outside the mods folder $([char]0x2014) see the sections above." Red
+    Write-Host ""
 }
 
 Send-ScanResult
