@@ -61,6 +61,8 @@ Instead of *"one bad word = FLAGGED"*, every mod gets a **0–100 score**:
 
 The score blends the **AI model** with hard rules that always win: a known-cheat hash, a cheat-client package path (`net/ccbluex`, `org/chainlibs`…), or a known cheat download site. Verified / known-good mods are capped safe no matter what.
 
+**Nothing slips through as "unknown".** A jar with a random / hash-style filename (like `hb4zz1xxrd4.jar` — exactly how Doomsday and ghost clients ship) that *isn't* verified is floored to **Review** so you always see it, instead of it hiding in an "unknown" pile. A random name **never on its own** makes something a flag — it just gets surfaced for a look. If it *also* has a cheat package path, a cheat download site or a known hash, the hard rules push it to **Confirmed**.
+
 ```mermaid
 flowchart LR
     A[Mod .jar / .litemod] --> B[Extract 22 features]
@@ -181,13 +183,18 @@ The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassis
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
 | `ml/test_verdict.py` | **42/42** — cheats caught, 37 real libs Clean, anticheats Clean |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
-| `-SelfTest` (in-tool) | 6 known cases (Doomsday, grabber, Sodium, anticheat, verified…) all pass |
+| `-SelfTest` (in-tool) | 8 known cases (Doomsday, grabber, Sodium, anticheat, verified, random-named…) all pass |
 
 ---
 
 ## 🤝 Contributing cheat intelligence
 
-Found a cheat the tool missed? Add its SHA1 to `ml/signatures.json` → `knownCheatHashes` (or open an issue with the hash). Everyone's tool picks it up on the next run via auto-update.
+`ml/signatures.json` is a community cheat database the tool auto-downloads every run. Found a cheat it missed? Add one of these (or open an issue) and **everyone's** tool picks it up on the next run:
+
+- `knownCheatHashes` — a confirmed cheat **SHA1** → instant 100% detection.
+- `packagePaths` — a distinctive cheat-client Java package (e.g. `org/chainlibs`, `net/wurstclient`) → legit mods never ship these.
+- `clientTokens` — a distinctive client filename token (keep it **compound**, e.g. `ghostclient`, never a bare word like `ghost`, so legit mods aren't false-flagged).
+- `downloadDomains` — a cheat download site (`{ "match": "doomsdayclient", "name": "DoomsdayClient" }`); a jar downloaded from there is flagged by its `Zone.Identifier`.
 
 ---
 

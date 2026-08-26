@@ -566,6 +566,9 @@ $script:legitModIds = [System.Collections.Generic.HashSet[string]]::new([System.
 ) | ForEach-Object { [void]$script:legitModIds.Add($_) }
 
 $script:cheatDownloadSources = @("DoomsdayClient","PrestigeClient","198Macros","Dqrkis")
+# Extra cheat-download domains merged from signatures.json (community-extendable, no script edit needed).
+# Each entry: @{ match = 'domain-or-substring'; name = 'DisplayName' }.
+$script:cheatDomainMap = @()
 $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -687,6 +690,14 @@ function Invoke-CloudUpdate {
         if ($s.knownGoodHashes)  { foreach ($h in $s.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
         if ($s.packagePaths)     { $script:cheatPackagePaths = @(@($script:cheatPackagePaths) + @($s.packagePaths) | Select-Object -Unique) }
         if ($s.clientTokens)     { foreach ($t in $s.clientTokens) { [void]$script:distinctiveClientTokens.Add([string]$t) } }
+        if ($s.downloadDomains)  {
+            foreach ($d in $s.downloadDomains) {
+                if ($d.match -and $d.name) {
+                    $script:cheatDomainMap += [PSCustomObject]@{ match = [string]$d.match; name = [string]$d.name }
+                    if ($script:cheatDownloadSources -notcontains [string]$d.name) { $script:cheatDownloadSources += [string]$d.name }
+                }
+            }
+        }
         if ($s.telemetry)        { $script:Telemetry = $s.telemetry }
     } catch {}
 
@@ -954,6 +965,18 @@ function Get-ModVerdict($ctx) {
     }
     foreach ($tp in (@($contribs | Sort-Object C -Descending | Select-Object -First 4))) { [void]$reasons.Add("Factor: $($tp.Name)") }
 
+    # Random / hash-style filename on an unverified mod: never let it slip through as "unknown".
+    # Floor it to Review (never a flag) so it is surfaced for a manual look. Verified / legit mods
+    # are exempt (they are capped safe below), so a legitimately hash-renamed known mod is unaffected.
+    if ($ctx.RandomName -and -not ($ctx.Verified -or $ctx.LegitModId)) {
+        $floor = 35
+        if ($ft.HighEntropyPct -ge 0.25 -or $ft.SingleCharClsPct -ge 0.25 -or $ft.FullwidthClsPct -gt 0 -or $ft.NestedHollow -or ($ft.ReflectionCount -ge 2 -and ($ft.HttpDownload -or $ft.RuntimeExec -or $ft.HttpExfil))) { $floor = 55 }
+        if ($score -lt $floor) {
+            $score = $floor
+            [void]$reasons.Add("Unrecognized random / hash-style filename on an unverified mod $([char]0x2014) can't confirm what this is; review its source")
+        }
+    }
+
     $capped = $false
     if ($ctx.Verified -or $ctx.LegitModId) {
         if ($score -gt 20) { $capped = $true }
@@ -1011,6 +1034,8 @@ function Invoke-SelfTest {
         @{ Label = "Reflection-heavy clean library"; Bands = @("Clean", "Review"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 6; AvgEntropy = 5.7; HighEntropyPct = 0.05 }) } }
         @{ Label = "Token grabber"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HttpExfil = $true; RuntimeExec = $true; WeakStrings = @('grabToken', 'webhookurl', 'discordwebhook', 'sendWebhook', 'exfiltrate', 'callHome'); HighEntropyPct = 0.5; AvgEntropy = 7.0; ReflectionCount = 2 }) } }
         @{ Label = "Verified mod that contains scary strings"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ StrongStrings = @('AutoCrystal', 'KillAura'); HttpDownload = $true; ReflectionCount = 2 }) } }
+        @{ Label = "Random-named jar, unverified"; Bands = @("Review"); Over = @{ RandomName = $true; Features = (New-TestFeatures @{ AvgEntropy = 5.6; ReflectionCount = 1 }) } }
+        @{ Label = "Random-named jar but verified"; Bands = @("Clean"); Over = @{ RandomName = $true; Verified = $true; Features = (New-TestFeatures @{ AvgEntropy = 5.6 }) } }
     )
     $pass = 0; $fail = 0
     foreach ($c in $cases) {
@@ -2075,7 +2100,10 @@ function Get-DownloadSource([string]$path) {
             elseif ($url -match "198macros\.com")                                    { $name = "198Macros" }
             elseif ($url -match "dqrkis\.xyz")                                       { $name = "Dqrkis" }
             else {
-                if ($url -match "https?://(?:www\.)?([^/]+)") { $name = $matches[1] }
+                $cm = $null
+                if ($script:cheatDomainMap) { $cm = @($script:cheatDomainMap | Where-Object { $url -match [regex]::Escape($_.match) }) | Select-Object -First 1 }
+                if ($cm) { $name = $cm.name }
+                elseif ($url -match "https?://(?:www\.)?([^/]+)") { $name = $matches[1] }
                 else { $name = $url }
             }
             return [PSCustomObject]@{ Name = $name; RawUrl = $url }

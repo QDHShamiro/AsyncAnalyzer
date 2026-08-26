@@ -55,6 +55,25 @@ def verdict(raw):
     if raw.get("filename_client"):
         score = max(score, 60)
 
+    # Random / hash-style filename on an unverified mod: floor to Review (never a flag)
+    # so it is surfaced instead of slipping through as "unknown". Verified / legit mods
+    # are exempt (capped safe below). Mirrors Get-ModVerdict in AsyncAnalyzer.ps1.
+    if raw.get("random_name") and not (raw.get("verified") or raw.get("legit_modid")):
+        floor = 35
+        if (
+            raw.get("high_entropy_pct", 0.0) >= 0.25
+            or raw.get("singlechar_cls_pct", 0.0) >= 0.25
+            or raw.get("fullwidth_cls_pct", 0.0) > 0
+            or raw.get("nested_hollow")
+            or (
+                raw.get("reflection_count", 0) >= 2
+                and (raw.get("http_download") or raw.get("runtime_exec") or raw.get("http_exfil"))
+            )
+        ):
+            floor = 55
+        if score < floor:
+            score = floor
+
     if raw.get("verified") or raw.get("legit_modid"):
         score = min(score, 20)
 

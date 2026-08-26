@@ -169,6 +169,23 @@ def main():
         print(f"  [{mark}] {label:32s} score={v['score']:3d} p={v['probability']:3d}%"
               f" band={v['band']:9s} (want {sorted(allowed)})")
 
+    # random / hash-style filename on an unverified mod must surface as Review
+    # (never slip through as unknown); the same file, once verified, is Clean again.
+    print("\n=== Random-named jar provenance floor ===")
+    rp = os.path.join(d, "hb4zz1xxrd4.jar")
+    build_jar(rp, {"com/x/Main.class": _fake_class(9), "com/x/Util.class": _fake_class(10)})
+    for is_verified, allowed, label in [
+        (False, {"Review"}, "random name, unverified"),
+        (True, {"Clean"}, "random name, verified"),
+    ]:
+        raw = features.extract_from_jar(rp, verified=1 if is_verified else 0, random_name=1)
+        v = verdict.verdict(raw)
+        ok = v["band"] in allowed
+        passed += ok
+        failed += not ok
+        mark = "PASS" if ok else "FAIL"
+        print(f"  [{mark}] {label:32s} score={v['score']:3d} band={v['band']:9s} (want {sorted(allowed)})")
+
     # real known-clean library jars must all be Clean
     jars = os.path.join(HERE, "jars_legit")
     if os.path.isdir(jars):
