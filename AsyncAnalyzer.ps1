@@ -607,6 +607,19 @@ foreach ($mlk in $script:mlWeights.Keys) { $script:mlBaseWeights[$mlk] = $script
 $script:mlSamples = 0
 $script:RepoRaw = "https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/ml"
 
+# Magic bytes for resource types a dropper likes to disguise its payload as. A file that claims one
+# of these extensions but does not start with the right header is almost certainly a hidden blob.
+$script:magicExt = @{
+    'png'  = @(0x89, 0x50, 0x4E, 0x47)
+    'gif'  = @(0x47, 0x49, 0x46, 0x38)
+    'jpg'  = @(0xFF, 0xD8, 0xFF)
+    'jpeg' = @(0xFF, 0xD8, 0xFF)
+    'ogg'  = @(0x4F, 0x67, 0x67, 0x53)
+    'wav'  = @(0x52, 0x49, 0x46, 0x46)
+}
+# Text resources should read as text (entropy well under 6). Ciphertext hidden in one spikes to ~8.
+$script:textExt = @('json', 'txt', 'properties', 'cfg', 'toml', 'lang', 'mcmeta', 'md', 'yml', 'yaml', 'csv')
+
 function Get-LearnPath {
     $dir = Join-Path $env:APPDATA "AsyncAnalyzer"
     if (-not (Test-Path $dir)) { try { New-Item -ItemType Directory -Force -Path $dir | Out-Null } catch {} }
@@ -702,7 +715,7 @@ function Invoke-CloudUpdate {
                 }
             }
         }
-        if ($s.telemetry)        { $script:Telemetry = $s.telemetry }
+        if ($s.telemetry -and -not $env:ASYNCANALYZER_ENDPOINT) { $script:Telemetry = $s.telemetry }
     } catch {}
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.pullSignatures -and $script:Telemetry.endpoint) {
@@ -727,19 +740,31 @@ function Invoke-CloudUpdate {
 }
 
 function Get-MinecraftName {
-    try {
-        $f = Join-Path $env:APPDATA ".minecraft\launcher_accounts.json"
-        if (Test-Path $f) {
-            $j = Get-Content -Raw $f -ErrorAction Stop | ConvertFrom-Json
-            $active = $j.activeAccountLocalId
-            foreach ($acc in $j.accounts.PSObject.Properties.Value) {
-                if ($acc.localId -eq $active -and $acc.minecraftProfile.name) { return [string]$acc.minecraftProfile.name }
-            }
-            foreach ($acc in $j.accounts.PSObject.Properties.Value) {
-                if ($acc.minecraftProfile.name) { return [string]$acc.minecraftProfile.name }
-            }
+    $roots = [System.Collections.Generic.List[string]]::new()
+    [void]$roots.Add((Join-Path $env:APPDATA ".minecraft"))
+    if ($ModPath) {
+        $dir = Split-Path $ModPath -Parent
+        for ($i = 0; $i -lt 3 -and $dir; $i++) {
+            [void]$roots.Add($dir)
+            $dir = Split-Path $dir -Parent
         }
-    } catch {}
+    }
+    foreach ($root in $roots) {
+        foreach ($leaf in @("launcher_accounts.json", "launcher_accounts_microsoft_store.json")) {
+            try {
+                $f = Join-Path $root $leaf
+                if (-not (Test-Path $f)) { continue }
+                $j = Get-Content -Raw $f -ErrorAction Stop | ConvertFrom-Json
+                $active = $j.activeAccountLocalId
+                foreach ($acc in $j.accounts.PSObject.Properties.Value) {
+                    if ($acc.localId -eq $active -and $acc.minecraftProfile.name) { return [string]$acc.minecraftProfile.name }
+                }
+                foreach ($acc in $j.accounts.PSObject.Properties.Value) {
+                    if ($acc.minecraftProfile.name) { return [string]$acc.minecraftProfile.name }
+                }
+            } catch {}
+        }
+    }
     return ""
 }
 
@@ -817,6 +842,7 @@ function Get-JarFeatures([string]$FilePath) {
         ModId = ""; MetaName = ""; FakeIdentity = $false
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""
         HiddenPayload = 0; LoaderIds = [System.Collections.Generic.List[string]]::new()
+        PayloadKinds  = [System.Collections.Generic.List[string]]::new()
         BlankMeta = $false; NativeJna = $false
     }
     $reflectionPatterns = @('Class\.forName','getMethod','getDeclaredMethod','getDeclaredField','setAccessible','java/lang/reflect','MethodHandle','sun/misc/Unsafe','defineClass','ByteBuddy','javassist','ASM\d')
@@ -824,6 +850,7 @@ function Get-JarFeatures([string]$FilePath) {
     try { $zip = [System.IO.Compression.ZipFile]::OpenRead($FilePath) } catch { return $f }
 
     $total = 0; $numeric = 0; $fullwidth = 0; $japanese = 0; $single = 0; $novowel = 0
+    $payloadChecks = 0
     $entSum = 0.0; $entCnt = 0; $highEnt = 0; $nested = 0
     $sb = [System.Text.StringBuilder]::new(); $textLen = 0
     try {
@@ -836,10 +863,17 @@ function Get-JarFeatures([string]$FilePath) {
             elseif ($n -match '^mcmod\.info$') { if (-not $f.LoaderIds.Contains('forge-legacy')) { [void]$f.LoaderIds.Add('forge-legacy') } }
             elseif ($n -match '^plugin\.yml$|^bungee\.yml$') { if (-not $f.LoaderIds.Contains('bukkit')) { [void]$f.LoaderIds.Add('bukkit') } }
             elseif ($n -match '^addon\d*\.json$') { if (-not $f.LoaderIds.Contains('labymod')) { [void]$f.LoaderIds.Add('labymod') } }
-            if ($e.Length -ge 1024 -and $n -notmatch '/$') {
+            # Hidden payloads: an extensionless entry that is really a class / encrypted blob, OR a
+            # resource with a normal extension whose bytes betray it (a .png with no PNG header, a
+            # .json that is high-entropy ciphertext). Droppers hide their real payload this way.
+            if ($e.Length -ge 1024 -and $e.Length -lt 3000000 -and $n -notmatch '/$' -and $payloadChecks -lt 60) {
                 $leaf = ($n -split '/')[-1]
-                if ($leaf.IndexOf('.') -lt 0) {
+                $dot = $leaf.LastIndexOf('.')
+                $ext = if ($dot -ge 0) { $leaf.Substring($dot + 1).ToLower() } else { "" }
+                $checkThis = ($ext -eq "") -or ($script:magicExt.ContainsKey($ext)) -or ($script:textExt -contains $ext)
+                if ($checkThis) {
                     try {
+                        $payloadChecks++
                         $st = $e.Open()
                         $buf = New-Object byte[] 65536
                         $got = $st.Read($buf, 0, $buf.Length); $st.Close()
@@ -847,7 +881,18 @@ function Get-JarFeatures([string]$FilePath) {
                             $isClass = ($buf[0] -eq 0xCA -and $buf[1] -eq 0xFE -and $buf[2] -eq 0xBA -and $buf[3] -eq 0xBE)
                             $slice = New-Object byte[] $got
                             [Array]::Copy($buf, $slice, $got)
-                            if ($isClass -or (Get-ShannonEntropy $slice) -gt 7.0) { $f.HiddenPayload++ }
+                            $hit = $false; $why = ""
+                            if ($ext -eq "") {
+                                if ($isClass -or (Get-ShannonEntropy $slice) -gt 7.0) { $hit = $true; $why = "extensionless" }
+                            } elseif ($script:magicExt.ContainsKey($ext)) {
+                                $magic = $script:magicExt[$ext]
+                                $match = $true
+                                for ($mi = 0; $mi -lt $magic.Count; $mi++) { if ($buf[$mi] -ne $magic[$mi]) { $match = $false; break } }
+                                if (-not $match) { $hit = $true; $why = "$ext-magic" }
+                            } elseif ($script:textExt -contains $ext) {
+                                if ((Get-ShannonEntropy $slice) -gt 6.2) { $hit = $true; $why = "$ext-entropy" }
+                            }
+                            if ($hit) { $f.HiddenPayload++; if (-not $f.PayloadKinds.Contains($why)) { [void]$f.PayloadKinds.Add($why) } }
                         }
                     } catch {}
                 }
@@ -997,7 +1042,8 @@ function Get-ModVerdict($ctx) {
     }
     if ($ft.HiddenPayload -gt 0) {
         $score = [Math]::Max($score, 75)
-        [void]$reasons.Add("Hidden payload: $($ft.HiddenPayload) disguised/encrypted file(s) with no extension, decrypted at runtime")
+        $pk = if (@($ft.PayloadKinds) -contains 'extensionless' -and @($ft.PayloadKinds).Count -eq 1) { "no extension" } else { "disguised as resources" }
+        [void]$reasons.Add("Hidden payload: $($ft.HiddenPayload) encrypted/class file(s) $pk, decrypted at runtime")
     }
     if (@($ft.LoaderIds).Count -ge 3) {
         $score = [Math]::Max($score, 70)
@@ -1134,7 +1180,7 @@ function New-TestFeatures($over) {
         AvgEntropy = 0.0; HighEntropyPct = 0.0; ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false
         HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0
-        LoaderIds = @(); BlankMeta = $false; NativeJna = $false
+        LoaderIds = @(); BlankMeta = $false; NativeJna = $false; PayloadKinds = @()
     }
     if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
     return $f
@@ -3107,6 +3153,10 @@ W ("$([char]0x2501)" * 76) DarkCyan
 Write-Host ""
 
 Load-LearnState
+# Self-hosters / testing: point the tool at your own backend without publishing the key.
+if ($env:ASYNCANALYZER_ENDPOINT) {
+    $script:Telemetry = @{ enabled = $true; endpoint = $env:ASYNCANALYZER_ENDPOINT; key = $env:ASYNCANALYZER_KEY; pullSignatures = $true }
+}
 Invoke-CloudUpdate
 if ($script:mlSamples -gt 0 -or $script:knownGoodHashes.Count -gt 0 -or $script:knownCheatHashes.Count -gt 0) {
     W "  $([char]0x25CF) AI memory: " DarkGray -NoNewline

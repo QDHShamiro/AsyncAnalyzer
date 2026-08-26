@@ -45,6 +45,23 @@ tool can reach it. Data is stored in `server/data/*.json`.
 
 ---
 
+## Test it before you publish the key
+
+Any machine can point at a backend without touching the repo:
+
+```powershell
+$env:ASYNCANALYZER_ENDPOINT = "http://127.0.0.1:8787"
+$env:ASYNCANALYZER_KEY      = "your-write-secret"
+powershell -ExecutionPolicy Bypass -File AsyncAnalyzer.ps1
+```
+
+The env vars win over whatever `ml/signatures.json` says, so you can run the Node server locally,
+watch a scan land in the dashboard, and only then publish the telemetry block.
+
+Note: the write key in `ml/signatures.json` is public by design — that is what lets a suspect's
+one-liner run upload its result. Anyone who reads the repo can also POST to your backend; per-IP
+rate limiting is the only guard.
+
 ## Point the tool at your backend
 
 Edit **`ml/signatures.json`** in your GitHub repo and add a `telemetry` block:
