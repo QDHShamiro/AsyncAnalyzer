@@ -1,0 +1,12 @@
+# OS / editor junk
+Thumbs.db
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Local scan artifacts
+AsyncAnalyzer_Report.html
+AsyncAnalyzer_Files_Result.html
+learned.json
+contribute_hashes.txt

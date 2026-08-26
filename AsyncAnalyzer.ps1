@@ -1,7 +1,15 @@
 [CmdletBinding()]
 param(
     [switch]$Dev,
-    [string]$DevPath = ""
+    [string]$DevPath = "",
+    [switch]$DeepScan,
+    [switch]$DeepMemory,
+    [switch]$Yes,
+    [switch]$SelfTest,
+    [switch]$NoUpdate,
+    [switch]$NoLearn,
+    [switch]$Reset,
+    [switch]$Share
 )
 
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
@@ -14,15 +22,31 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 $null = chcp 65001
 $ModPath = ""
 
-$script:Version      = "3.0.0"
+$script:Version      = "4.0.0"
 $script:Author       = "QDHShamiro"
 $script:ToolName     = "AsyncAnalyzer"
 $script:TotalMods    = 0
 $script:Verified     = 0
 $script:Unknown      = 0
+$script:Review       = 0
 $script:Flagged      = 0
 $script:SystemIssues = 0
+$script:DeepMemory   = [bool]$DeepMemory
+$script:DeepScan     = [bool]$DeepScan
+$script:AssumeYes    = [bool]$Yes
+$script:NoUpdate     = [bool]$NoUpdate
+$script:NoLearn      = [bool]$NoLearn
+$script:Reset        = [bool]$Reset
+$script:Share        = [bool]$Share
+$script:shareHashes  = [System.Collections.Generic.List[string]]::new()
+$script:CurseForgeApiKey = if ($env:CURSEFORGE_API_KEY) { $env:CURSEFORGE_API_KEY } else { "" }
+$verifiedMods = [System.Collections.Generic.List[object]]::new()
+$unknownMods  = [System.Collections.Generic.List[object]]::new()
+$reviewMods   = [System.Collections.Generic.List[object]]::new()
+$flaggedMods  = [System.Collections.Generic.List[object]]::new()
+$script:BamDeleted = @()
 $script:FlaggedModsList = [System.Collections.Generic.List[string]]::new()
+$script:ReviewModsList  = [System.Collections.Generic.List[string]]::new()
 $script:SpinFrames   = @("$([char]0x28FE)","$([char]0x28FD)","$([char]0x28FB)","$([char]0x28BF)","$([char]0x287F)","$([char]0x28DF)","$([char]0x28EF)","$([char]0x28F7)")
 $script:SpinIdx      = 0
 
@@ -426,20 +450,19 @@ function Get-FilenameSimilarityMatch([string]$JarName) {
 
 $script:suspiciousPatterns = @(
     "AimAssist","AnchorTweaks","AutoAnchor","AutoCrystal","AutoDoubleHand",
-    "AutoHitCrystal","AutoPot","AutoTotem","AutoArmor","InventoryTotem",
+    "AutoHitCrystal","AutoHitTotem","AutoTotem","InventoryTotem",
     "JumpReset","LegitTotem",
     "ShieldBreaker","TriggerBot","AxeSpam","WebMacro",
-    "FastPlace","WalskyOptimizer","WalksyOptimizer","walsky.optimizer",
-    "WalksyCrystalOptimizerMod","Replace Mod",
-    "ShieldDisabler","SilentAim","Wtap","FakeLag",
-    "BlockESP","dev.krypton","Virgin","AntiMissClick",
-    "LagReach","PopSwitch","SprintReset","ChestSteal","AntiBot",
-    "ElytraSwap","FastXP","FastExp","AirAnchor",
-    "jnativehook","FakeInv","HoverTotem","AutoFirework",
-    "PackSpoof","Antiknockback","catlean","Argon",
-    "AuthBypass","Asteria","Prestige","AutoEat","AutoMine",
-    "MaceSwap","DoubleAnchor","AutoTPA","BaseFinder","Xenon","gypsy",
-    "Grim","grim",
+    "WalskyOptimizer","WalksyOptimizer","walsky.optimizer",
+    "WalksyCrystalOptimizerMod",
+    "ShieldDisabler","SilentAim","FakeLag",
+    "BlockESP","dev.krypton",
+    "LagReach","PopSwitch","ChestStealer",
+    "AirAnchor",
+    "FakeInv","HoverTotem",
+    "PackSpoof","Antiknockback","catlean",
+    "AuthBypass","Asteria",
+    "MaceSwap","DoubleAnchor","BaseFinder",
     "org.chainlibs.module.impl.modules.Crystal.Y",
     "org.chainlibs.module.impl.modules.Crystal.bF",
     "org.chainlibs.module.impl.modules.Crystal.bM",
@@ -453,7 +476,7 @@ $script:suspiciousPatterns = @(
     "org.chainlibs.module.impl.modules.Blatant.cj",
     "org.chainlibs.module.impl.modules.Blatant.dk",
     "imgui.gl3","imgui.glfw",
-    "BowAim","Criticals","Fakenick","FakeItem",
+    "BowAimbot","Fakenick",
     "ItemExploit","Hellion","hellion",
     "LicenseCheckMixin","ClientPlayerInteractionManagerAccessor",
     "ClientPlayerEntityMixim","dev.gambleclient","obfuscatedAuth",
@@ -467,7 +490,7 @@ $script:suspiciousPatterns = @(
 Add-Type -Assembly "System.IO.Compression.FileSystem" -ErrorAction SilentlyContinue
 
 $script:patternRegex = [regex]::new(
-    '(?<![A-Za-z])(' + ($script:suspiciousPatterns | ForEach-Object { [regex]::Escape($_) } | Select-Object -Unique) + ')(?![A-Za-z])',
+    '(?<![A-Za-z])(' + (($script:suspiciousPatterns | ForEach-Object { [regex]::Escape($_) } | Select-Object -Unique) -join '|') + ')(?![A-Za-z])',
     [System.Text.RegularExpressions.RegexOptions]::Compiled
 )
 
@@ -478,6 +501,648 @@ $script:fullwidthRegex = [regex]::new(
     "[$([char]0xFF21)-$([char]0xFF3A)$([char]0xFF41)-$([char]0xFF5A)$([char]0xFF10)-$([char]0xFF19)]{2,}",
     [System.Text.RegularExpressions.RegexOptions]::Compiled
 )
+
+$script:weakStringSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+@(
+    "arrayOfString","setSelectedSlot","invokeDoAttack","invokeDoItemUse","invokeOnMouseButton",
+    "onBlockBreaking","setItemUseCooldown","getBlockBreakingCooldown","blockBreakingCooldown",
+    "setBlockBreakingCooldown","onPushOutOfBlocks","onIsGlowing","Entity.isGlowing",
+    "NoBounce","No Bounce","damagetick","Runtime.exec","cmd.exe","powershell.exe","FastPlace",
+    "Blatant","Fast Mode","Reach Distance","Min Height","Min Fall Speed","Attack Delay","Hit Delay",
+    "Include Head","Check Players","Stop On Kill","Stop on Kill","Only Charge","Vertical Speed",
+    "Swap Speed","Random Pattern","Particle Chance","Place Delay","Break Delay","Place Chance",
+    "Break Chance","Switch Delay","Trigger Key","Activate Key","On RMB","Anti Weakness",
+    "Smooth Rotations","Use Easing","Easing Strength","While Use","Glowstone Delay","Glowstone Chance",
+    "Explode Delay","Explode Chance","Explode Slot","Require Elytra","Auto Switch Back",
+    "Check Line of Sight","Only When Falling","Require Crit","Show Status Display","Stop On Crystal",
+    "Check Shield","On Pop","Predict Crystals","Check Aim","Check Items","Activates Above","Force Totem",
+    "Stay Open For","Only On Pop","Strict One-Tick","Mace Priority","Min Totems","Min Pearls",
+    "Totem First","Drop Interval","Horizontal Aim Speed","Vertical Aim Speed","Web Delay","Holding Web",
+    "Not When Affects Player","Require Hold Axe","Anchor Macro","Breach Delay","Click Simulation",
+    "No Count Glitch","ClassLoader","defineClass"
+) | ForEach-Object { [void]$script:weakStringSet.Add($_) }
+
+$script:strongPhraseSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+@(
+    "Breaking shield with axe...","Failed to switch to mace after axe!",
+    "Automatically switches to sword when hitting with totem","Dqrkis Client","LWFH Crystal",
+    "auto crystal","auto totem","auto anchor","aim assist","trigger bot","silent rotations",
+    "web macro","axe spam","safe anchor","cw crystal","POT_CHEATS"
+) | ForEach-Object { [void]$script:strongPhraseSet.Add($_) }
+
+$script:cheatPackagePaths = @(
+    "net/ccbluex","meteordevelopment","org/chainlibs","wtf/moonlight","today/opai","cc/novoline",
+    "com/alan/clients","club/maxstats","me/zeroeightsix/kami","net/minecraft/injection","xyz/greaj",
+    "com/cheatbreaker","dev/krypton","dev/gambleclient","doomsdayclient"
+)
+
+$script:distinctiveClientTokens = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+@(
+    "doomsday","doomsdayclient","doomsday-client","doomsday_client","liquidbounce","liquidbounceclient",
+    "meteorclient","wurst","wurstclient","wurst7","sigmaclient","sigmahack","sigmamod","riseclient",
+    "futureclient","konasclient","inertiaclient","exhibitionclient","exhibitionhack","pandaware",
+    "astolfo","astolfoclient","rusherhack","novaclient","novoline","impactclient","aristois",
+    "aristoisclient","moonlightclient","intentclient","prestigeclient","cheatbreaker","kamiblue",
+    "fdpclient","vape","vapeclient","vapelite","vapepro","salwyrrclient","nodusclient","wolframclient",
+    "huzuni"
+) | ForEach-Object { [void]$script:distinctiveClientTokens.Add($_) }
+
+$script:legitModIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+@(
+    "grimac","grim","vulcan","nocheatplus","ncp","matrix","themis","intave","spartan",
+    "anticheatreloaded","aac","negativity","exploitfixer","polar","karhu","sodium","iris","lithium",
+    "ferritecore","lazydfu","starlight","krypton","c2me","immediatelyfast","modernfix","entityculling",
+    "memoryleakfix","noisium","create","jei","emi","roughlyenoughitems","rei","journeymap",
+    "xaerominimap","xaeroworldmap","tweakeroo","litematica","minihud","malilib","carpet","fabric",
+    "fabricloader","fabricapi","quilt","modmenu","clothconfig","appleskin","jade","waystones",
+    "twilightforest","farmersdelight","supplementaries","cloth","yacl","yetanotherconfiglib"
+) | ForEach-Object { [void]$script:legitModIds.Add($_) }
+
+$script:cheatDownloadSources = @("DoomsdayClient","PrestigeClient","198Macros","Dqrkis")
+$script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+$script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+$script:mlModelVersion = 2
+$script:mlIntercept = -3.595535
+$script:mlFeatureOrder = @('pkgpath','cheatsite','strong_sig','weak_sig','fullwidth_str','fullwidth_cls','japanese_cls','singlechar_cls','numeric_cls','novowel_cls','avg_entropy','high_entropy','reflection','runtime_exec','http_download','http_exfil','nested_hollow','fake_identity','filename_client','random_name','verified','legit_modid')
+$script:mlWeights = @{
+    'pkgpath' = 1.411735
+    'cheatsite' = 1.414517
+    'strong_sig' = 3.507748
+    'weak_sig' = 2.269847
+    'fullwidth_str' = 1.131481
+    'fullwidth_cls' = 0.546677
+    'japanese_cls' = 0.202722
+    'singlechar_cls' = 1.922687
+    'numeric_cls' = 0.605933
+    'novowel_cls' = -0.66706
+    'avg_entropy' = 0.781555
+    'high_entropy' = 2.899511
+    'reflection' = -1.485873
+    'runtime_exec' = 1.274711
+    'http_download' = 1.479519
+    'http_exfil' = -0.239139
+    'nested_hollow' = 2.615867
+    'fake_identity' = 1.961105
+    'filename_client' = 2.371303
+    'random_name' = 0.0
+    'verified' = -2.507493
+    'legit_modid' = -2.338688
+}
+$script:mlBaseIntercept = $script:mlIntercept
+$script:mlBaseWeights = @{}
+foreach ($mlk in $script:mlWeights.Keys) { $script:mlBaseWeights[$mlk] = $script:mlWeights[$mlk] }
+$script:mlSamples = 0
+$script:RepoRaw = "https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/ml"
+
+function Get-LearnPath {
+    $dir = Join-Path $env:APPDATA "AsyncAnalyzer"
+    if (-not (Test-Path $dir)) { try { New-Item -ItemType Directory -Force -Path $dir | Out-Null } catch {} }
+    return (Join-Path $dir "learned.json")
+}
+
+function Load-LearnState {
+    if ($script:Reset) {
+        try { $rp = Get-LearnPath; if (Test-Path $rp) { Remove-Item $rp -Force } } catch {}
+        return
+    }
+    try {
+        $lp = Get-LearnPath
+        if (-not (Test-Path $lp)) { return }
+        $st = Get-Content -Raw $lp -ErrorAction Stop | ConvertFrom-Json
+        if ($st.knownGood)  { foreach ($h in $st.knownGood)  { [void]$script:knownGoodHashes.Add([string]$h) } }
+        if ($st.knownCheat) { foreach ($h in $st.knownCheat) { [void]$script:knownCheatHashes.Add([string]$h) } }
+        if ($st.weights -and $st.modelVersion -ge $script:mlModelVersion) {
+            foreach ($k in $script:mlFeatureOrder) {
+                $wv = $st.weights.$k
+                if ($null -ne $wv) { $script:mlWeights[$k] = [double]$wv }
+            }
+            if ($null -ne $st.intercept) { $script:mlIntercept = [double]$st.intercept }
+            if ($null -ne $st.samples)   { $script:mlSamples = [int]$st.samples }
+        }
+    } catch {}
+}
+
+function Save-LearnState {
+    try {
+        $wobj = @{}
+        foreach ($k in $script:mlFeatureOrder) { $wobj[$k] = [Math]::Round([double]$script:mlWeights[$k], 6) }
+        $obj = [ordered]@{
+            v = 1
+            modelVersion = $script:mlModelVersion
+            intercept = [Math]::Round([double]$script:mlIntercept, 6)
+            weights = $wobj
+            knownGood = @($script:knownGoodHashes)
+            knownCheat = @($script:knownCheatHashes)
+            samples = $script:mlSamples
+            updated = (Get-Date).ToString("s")
+        }
+        ($obj | ConvertTo-Json -Depth 5) | Out-File -FilePath (Get-LearnPath) -Encoding UTF8
+    } catch {}
+}
+
+function Update-ModelOnline($raw, $label) {
+    if ($script:NoLearn) { return }
+    try {
+        $lr = 0.08; $l2 = 0.02; $clamp = 8.0
+        $z = [double]$script:mlIntercept
+        foreach ($k in $script:mlFeatureOrder) { $z += [double]$script:mlWeights[$k] * [double]$raw[$k] }
+        $p = if ($z -lt -60) { 0.0 } elseif ($z -gt 60) { 1.0 } else { 1.0 / (1.0 + [Math]::Exp(-$z)) }
+        $err = $p - $label
+        foreach ($k in $script:mlFeatureOrder) {
+            $w = [double]$script:mlWeights[$k] - $lr * ($err * [double]$raw[$k] + $l2 * ([double]$script:mlWeights[$k] - [double]$script:mlBaseWeights[$k]))
+            if ($w -gt $clamp) { $w = $clamp } elseif ($w -lt (-$clamp)) { $w = -$clamp }
+            $script:mlWeights[$k] = $w
+        }
+        $script:mlIntercept = [double]$script:mlIntercept - $lr * ($err + $l2 * ([double]$script:mlIntercept - [double]$script:mlBaseIntercept))
+        $script:mlSamples++
+    } catch {}
+}
+
+function Invoke-CloudUpdate {
+    if ($script:NoUpdate) { return }
+    try {
+        $m = Invoke-RestMethod -Uri "$($script:RepoRaw)/model.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+        if ($m.version -and ([int]$m.version) -gt $script:mlModelVersion -and $m.weights -and $m.feature_order) {
+            $script:mlFeatureOrder = @($m.feature_order)
+            foreach ($k in $script:mlFeatureOrder) {
+                $wv = $m.weights.$k
+                if ($null -ne $wv) { $script:mlWeights[$k] = [double]$wv; $script:mlBaseWeights[$k] = [double]$wv }
+            }
+            $script:mlIntercept = [double]$m.intercept; $script:mlBaseIntercept = [double]$m.intercept
+            $script:mlModelVersion = [int]$m.version
+            W "  $([char]0x2713) AI model auto-updated to v$($script:mlModelVersion) from GitHub." DarkGray
+        }
+    } catch {}
+    try {
+        $s = Invoke-RestMethod -Uri "$($script:RepoRaw)/signatures.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+        if ($s.knownCheatHashes) { foreach ($h in $s.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
+        if ($s.knownGoodHashes)  { foreach ($h in $s.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
+        if ($s.packagePaths)     { $script:cheatPackagePaths = @(@($script:cheatPackagePaths) + @($s.packagePaths) | Select-Object -Unique) }
+        if ($s.clientTokens)     { foreach ($t in $s.clientTokens) { [void]$script:distinctiveClientTokens.Add([string]$t) } }
+    } catch {}
+}
+$script:mlFactorLabels = @{
+    'pkgpath' = "cheat-client package path"
+    'cheatsite' = "downloaded from a known cheat site"
+    'strong_sig' = "distinctive cheat signatures"
+    'weak_sig' = "multiple generic cheat indicators"
+    'fullwidth_str' = "fullwidth-disguised cheat strings"
+    'fullwidth_cls' = "fullwidth class-name obfuscation"
+    'japanese_cls' = "Japanese class-name obfuscation"
+    'singlechar_cls' = "single-letter class-name obfuscation"
+    'numeric_cls' = "numeric class-name obfuscation"
+    'high_entropy' = "encrypted/packed classes (high entropy)"
+    'avg_entropy' = "elevated class entropy"
+    'runtime_exec' = "runs OS commands (Runtime.exec)"
+    'http_download' = "downloads and writes files at runtime"
+    'http_exfil' = "sends data to an external server"
+    'nested_hollow' = "hollow shell wrapping a hidden jar"
+    'fake_identity' = "fake mod identity"
+    'filename_client' = "filename of a known cheat client"
+}
+
+function Invoke-MlModel($raw) {
+    $z = [double]$script:mlIntercept
+    foreach ($k in $script:mlFeatureOrder) {
+        $v = if ($raw.ContainsKey($k)) { [double]$raw[$k] } else { 0.0 }
+        $z += [double]$script:mlWeights[$k] * $v
+    }
+    if ($z -lt -60) { return 0.0 }
+    if ($z -gt 60)  { return 1.0 }
+    return 1.0 / (1.0 + [Math]::Exp(-$z))
+}
+
+function Get-JarFeatures([string]$FilePath) {
+    $f = @{
+        StrongStrings = [System.Collections.Generic.List[string]]::new()
+        WeakStrings   = [System.Collections.Generic.List[string]]::new()
+        PackageHits   = [System.Collections.Generic.List[string]]::new()
+        Patterns      = [System.Collections.Generic.List[string]]::new()
+        FullwidthStr  = $false
+        ClassCount    = 0
+        FullwidthClsPct = 0.0; JapaneseClsPct = 0.0; SingleCharClsPct = 0.0
+        NumericClsPct = 0.0; NoVowelClsPct = 0.0
+        AvgEntropy = 0.0; HighEntropyPct = 0.0
+        ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false; HttpExfil = $false
+        NestedHollow = $false
+        ModId = ""; MetaName = ""; FakeIdentity = $false
+    }
+    $reflectionPatterns = @('Class\.forName','getMethod','getDeclaredMethod','getDeclaredField','setAccessible','java/lang/reflect','MethodHandle','sun/misc/Unsafe','defineClass','ByteBuddy','javassist','ASM\d')
+    $zip = $null
+    try { $zip = [System.IO.Compression.ZipFile]::OpenRead($FilePath) } catch { return $f }
+
+    $total = 0; $numeric = 0; $fullwidth = 0; $japanese = 0; $single = 0; $novowel = 0
+    $entSum = 0.0; $entCnt = 0; $highEnt = 0; $nested = 0
+    $sb = [System.Text.StringBuilder]::new(); $textLen = 0
+    try {
+        $entries = @($zip.Entries)
+        foreach ($e in $entries) {
+            $n = $e.FullName
+            if ($n -match '^META-INF/jars/.+\.jar$') { $nested++ }
+            foreach ($p in $script:cheatPackagePaths) {
+                if ($n.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and -not $f.PackageHits.Contains($p)) { [void]$f.PackageHits.Add($p) }
+            }
+        }
+        foreach ($e in $entries) {
+            $n = $e.FullName
+            if ($n -match '\.class$') {
+                $total++
+                $cn = [System.IO.Path]::GetFileNameWithoutExtension(($n -split '/')[-1])
+                if ($cn -match '^\d+$') { $numeric++ }
+                if ($cn -match "[$([char]0xFF21)-$([char]0xFF3A)$([char]0xFF41)-$([char]0xFF5A)$([char]0xFF10)-$([char]0xFF19)]") { $fullwidth++ }
+                if ($cn -match "[$([char]0x3040)-$([char]0x309F)$([char]0x30A0)-$([char]0x30FF)$([char]0x3400)-$([char]0x4DBF)$([char]0x4E00)-$([char]0x9FFF)]") { $japanese++ }
+                if ($cn -match '^[a-zA-Z]$') { $single++ }
+                if ($cn.Length -ge 3 -and $cn.Length -le 8 -and $cn -match '^[a-zA-Z]+$') {
+                    $vc = ($cn.ToCharArray() | Where-Object { 'aeiouAEIOU'.IndexOf($_) -ge 0 }).Count
+                    if ($vc -eq 0) { $novowel++ }
+                }
+                if ($e.Length -gt 200 -and $e.Length -lt 500000) {
+                    try {
+                        $st = $e.Open(); $ms = New-Object System.IO.MemoryStream; $st.CopyTo($ms); $st.Close()
+                        $bytes = $ms.ToArray(); $ms.Dispose()
+                        $ent = Get-ShannonEntropy $bytes
+                        $entSum += $ent; $entCnt++
+                        if ($ent -gt 7.2) { $highEnt++ }
+                        if ($textLen -lt 500000) { $ascii = [System.Text.Encoding]::ASCII.GetString($bytes); [void]$sb.Append($ascii); $textLen += $ascii.Length }
+                    } catch {}
+                }
+            } elseif ($n -match '\.(json|txt|cfg|properties|toml|mf|xml)$' -or $n -match 'MANIFEST\.MF') {
+                try {
+                    $st = $e.Open(); $ms = New-Object System.IO.MemoryStream; $st.CopyTo($ms); $st.Close()
+                    $bytes = $ms.ToArray(); $ms.Dispose()
+                    $txt = [System.Text.Encoding]::UTF8.GetString($bytes)
+                    if ($textLen -lt 500000) { [void]$sb.Append($txt); $textLen += $txt.Length }
+                    if ($n -match 'fabric\.mod\.json|quilt\.mod\.json') {
+                        if ($f.ModId -eq "" -and $txt -match '"id"\s*:\s*"([^"]{2,60})"') { $f.ModId = $matches[1] }
+                        if ($f.MetaName -eq "" -and $txt -match '"name"\s*:\s*"([^"]{2,60})"') { $f.MetaName = $matches[1] }
+                    } elseif ($n -match 'mods\.toml') {
+                        if ($f.ModId -eq "" -and $txt -match 'modId\s*=\s*"([^"]{2,60})"') { $f.ModId = $matches[1] }
+                    }
+                } catch {}
+            }
+        }
+    } catch {}
+    try { $zip.Dispose() } catch {}
+
+    $blob = $sb.ToString()
+    foreach ($s in $script:cheatStringSet) {
+        if ($blob.IndexOf($s, [System.StringComparison]::Ordinal) -ge 0) {
+            $isPkg = $false
+            foreach ($p in $script:cheatPackagePaths) { if ($s.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { $isPkg = $true; break } }
+            if ($isPkg) { if (-not $f.PackageHits.Contains($s)) { [void]$f.PackageHits.Add($s) } }
+            elseif ($script:weakStringSet.Contains($s)) { [void]$f.WeakStrings.Add($s) }
+            elseif ($s.Contains(' ') -and -not $script:strongPhraseSet.Contains($s)) { [void]$f.WeakStrings.Add($s) }
+            else { [void]$f.StrongStrings.Add($s) }
+        }
+    }
+    foreach ($m in $script:patternRegex.Matches($blob)) { if (-not $f.Patterns.Contains($m.Value)) { [void]$f.Patterns.Add($m.Value) } }
+    if ($script:fullwidthRegex.IsMatch($blob)) { $f.FullwidthStr = $true }
+
+    $refl = 0
+    foreach ($rp in $reflectionPatterns) { if ([regex]::IsMatch($blob, $rp)) { $refl++ } }
+    $f.ReflectionCount = $refl
+    if ($blob.Contains('java/lang/Runtime') -and $blob.Contains('getRuntime') -and $blob.Contains('exec')) { $f.RuntimeExec = $true }
+    if ($blob.Contains('openConnection') -and $blob.Contains('HttpURLConnection') -and $blob.Contains('FileOutputStream')) { $f.HttpDownload = $true }
+    if ($blob.Contains('openConnection') -and $blob.Contains('setDoOutput') -and $blob.Contains('getOutputStream') -and $blob.Contains('getProperty')) { $f.HttpExfil = $true }
+    if ($nested -eq 1 -and $total -lt 3) { $f.NestedHollow = $true }
+
+    if ($total -gt 0) {
+        $f.ClassCount = $total
+        $f.NumericClsPct = $numeric / $total
+        $f.FullwidthClsPct = $fullwidth / $total
+        $f.JapaneseClsPct = $japanese / $total
+        $f.SingleCharClsPct = $single / $total
+        $f.NoVowelClsPct = $novowel / $total
+    }
+    if ($entCnt -gt 0) { $f.AvgEntropy = $entSum / $entCnt; $f.HighEntropyPct = $highEnt / $entCnt }
+
+    if ($f.MetaName) {
+        $jarBase = ([System.IO.Path]::GetFileNameWithoutExtension($FilePath)).ToLower() -replace '[^a-z0-9]',''
+        $mnClean = $f.MetaName.ToLower() -replace '[^a-z0-9]',''
+        foreach ($km in @('optifine','sodium','lithium','iris','create','journeymap','fabricapi')) {
+            if ($mnClean -match "^$km" -and $jarBase -notmatch $km) { $f.FakeIdentity = $true; break }
+        }
+    }
+    return $f
+}
+
+function Get-ModFeatureVector($ctx) {
+    $ft = $ctx.Features
+    return @{
+        pkgpath        = if ($ft.PackageHits.Count -gt 0) { 1 } else { 0 }
+        cheatsite      = if ($ctx.CheatSite) { 1 } else { 0 }
+        strong_sig     = [Math]::Min(($ft.StrongStrings.Count + $ft.Patterns.Count), 5) / 5.0
+        weak_sig       = [Math]::Min($ft.WeakStrings.Count, 10) / 10.0
+        fullwidth_str  = if ($ft.FullwidthStr) { 1 } else { 0 }
+        fullwidth_cls  = [Math]::Min($ft.FullwidthClsPct, 1.0)
+        japanese_cls   = [Math]::Min($ft.JapaneseClsPct, 1.0)
+        singlechar_cls = [Math]::Min($ft.SingleCharClsPct, 1.0)
+        numeric_cls    = [Math]::Min($ft.NumericClsPct, 1.0)
+        novowel_cls    = [Math]::Min($ft.NoVowelClsPct, 1.0)
+        avg_entropy    = [Math]::Min($ft.AvgEntropy / 8.0, 1.0)
+        high_entropy   = [Math]::Min($ft.HighEntropyPct, 1.0)
+        reflection     = [Math]::Min($ft.ReflectionCount, 6) / 6.0
+        runtime_exec   = if ($ft.RuntimeExec) { 1 } else { 0 }
+        http_download  = if ($ft.HttpDownload) { 1 } else { 0 }
+        http_exfil     = if ($ft.HttpExfil) { 1 } else { 0 }
+        nested_hollow  = if ($ft.NestedHollow) { 1 } else { 0 }
+        fake_identity  = if ($ft.FakeIdentity) { 1 } else { 0 }
+        filename_client = if ($ctx.FilenameClient) { 1 } else { 0 }
+        random_name    = if ($ctx.RandomName) { 1 } else { 0 }
+        verified       = if ($ctx.Verified) { 1 } else { 0 }
+        legit_modid    = if ($ctx.LegitModId) { 1 } else { 0 }
+    }
+}
+
+function Get-ModVerdict($ctx) {
+    $raw = Get-ModFeatureVector $ctx
+    $p = Invoke-MlModel $raw
+    $score = [int][Math]::Round($p * 100)
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $ft = $ctx.Features
+
+    if ($ctx.HashKnownCheat) { $score = 100; [void]$reasons.Add("SHA1 matches the known-cheat database") }
+    if ($ft.PackageHits.Count -gt 0) {
+        $score = [Math]::Max($score, 80)
+        [void]$reasons.Add("Cheat-client package path: " + ((@($ft.PackageHits) | Select-Object -Unique | Select-Object -First 3) -join ', '))
+    }
+    if ($ctx.CheatSite)     { $score = [Math]::Max($score, 75); [void]$reasons.Add("Downloaded from a known cheat site: $($ctx.CheatSiteName)") }
+    if ($ft.FakeIdentity)   { $score = [Math]::Max($score, 70); [void]$reasons.Add("Fake mod identity $([char]0x2014) metadata does not match the file") }
+    if ($ctx.FilenameClient){ $score = [Math]::Max($score, 60); [void]$reasons.Add("Filename matches a known cheat client: $($ctx.FilenameToken)") }
+
+    [void]$reasons.Add("AI cheat probability: $([int][Math]::Round($p * 100))%")
+    if ($ft.StrongStrings.Count -gt 0) { [void]$reasons.Add("Cheat signatures: " + ((@($ft.StrongStrings) | Select-Object -First 5) -join ', ')) }
+
+    $contribs = @()
+    foreach ($k in $script:mlFeatureOrder) {
+        $v = [double]$raw[$k]
+        if ($v -le 0) { continue }
+        $c = [double]$script:mlWeights[$k] * $v
+        if ($c -gt 0.2 -and $script:mlFactorLabels.ContainsKey($k)) { $contribs += [PSCustomObject]@{ Name = $script:mlFactorLabels[$k]; C = $c } }
+    }
+    foreach ($tp in (@($contribs | Sort-Object C -Descending | Select-Object -First 4))) { [void]$reasons.Add("Factor: $($tp.Name)") }
+
+    $capped = $false
+    if ($ctx.Verified -or $ctx.LegitModId) {
+        if ($score -gt 20) { $capped = $true }
+        $score = [Math]::Min($score, 20)
+    }
+    if ($capped) { $reasons.Insert(0, "Known-good / verified mod $([char]0x2014) the matches below are part of the mod's own function, not a cheat") }
+
+    $band = if ($score -ge 85) { "Confirmed" } elseif ($score -ge 60) { "Likely" } elseif ($score -ge 30) { "Review" } else { "Clean" }
+    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons }
+}
+
+function Write-VerdictCard($mod) {
+    $w = 72
+    $bandColor = switch ($mod.Band) { "Confirmed" { "Red" } "Likely" { "DarkYellow" } "Review" { "Yellow" } default { "DarkGray" } }
+    $title = " $($mod.Band.ToUpper())  $($mod.FileName)"
+    if ($title.Length -gt ($w - 2)) { $title = $title.Substring(0, $w - 5) + "..." }
+    $pad = [Math]::Max(0, $w - $title.Length - 2)
+    W ("  $([char]0x250C)$([char]0x2500)" + $title + "$([char]0x2500)" * $pad + "$([char]0x2510)") $bandColor
+    $sl = "  Score $($mod.Score)/100    AI cheat probability $($mod.Probability)%"
+    W ("  $([char]0x2502)" + $sl.PadRight($w + 1) + "$([char]0x2502)") White
+    if ($mod.Hash) { W ("  $([char]0x2502)  SHA1: $($mod.Hash)".PadRight($w + 2) + "$([char]0x2502)") DarkGray }
+    if ($mod.DownloadSource) { W ("  $([char]0x2502)  Source: $($mod.DownloadSource)".PadRight($w + 2) + "$([char]0x2502)") DarkGray }
+    W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") $bandColor
+    foreach ($r in $mod.Reasons) {
+        $line = "    $([char]0x2022) $r"
+        if ($line.Length -gt $w) { $line = $line.Substring(0, $w - 3) + "..." }
+        W ("  $([char]0x2502)" + $line.PadRight($w + 1) + "$([char]0x2502)") DarkYellow
+    }
+    $tip = if ($mod.Band -eq "Review") { "  $([char]0x2139) Not confirmed $([char]0x2014) check the source before you trust this mod." } else { "  $([char]0x26A0) Remove this mod and re-download it from an official source." }
+    W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") $bandColor
+    W ("  $([char]0x2502)" + $tip.PadRight($w + 1) + "$([char]0x2502)") $bandColor
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2518)") $bandColor
+    Write-Host ""
+}
+
+function New-TestFeatures($over) {
+    $f = @{
+        StrongStrings = @(); WeakStrings = @(); PackageHits = @(); Patterns = @(); FullwidthStr = $false
+        FullwidthClsPct = 0.0; JapaneseClsPct = 0.0; SingleCharClsPct = 0.0; NumericClsPct = 0.0; NoVowelClsPct = 0.0
+        AvgEntropy = 0.0; HighEntropyPct = 0.0; ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false
+        HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
+    }
+    if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
+    return $f
+}
+
+function Invoke-SelfTest {
+    W "  AsyncAnalyzer self-test $([char]0x2014) verifying the local AI model + verdict logic" Cyan
+    Write-Host ""
+    $base = @{ Verified = $false; LegitModId = $false; HashKnownCheat = $false; CheatSite = $false; CheatSiteName = $null; FilenameClient = $false; FilenameToken = ""; RandomName = $false }
+    $cases = @(
+        @{ Label = "Doomsday-style cheat"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ PackageHits = @('org/chainlibs'); StrongStrings = @('AutoCrystal', 'KillAura', 'AutoAnchor', 'TriggerBot'); SingleCharClsPct = 0.35; HighEntropyPct = 0.35; AvgEntropy = 6.9; FullwidthStr = $true; ReflectionCount = 3 }) } }
+        @{ Label = "Clean optimization mod (legit id)"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ ReflectionCount = 3; AvgEntropy = 6.3 }) } }
+        @{ Label = "Anticheat full of detection names"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ StrongStrings = @('KillAura', 'AutoCrystal', 'TriggerBot', 'AimAssist', 'Scaffold'); ReflectionCount = 3 }) } }
+        @{ Label = "Reflection-heavy clean library"; Bands = @("Clean", "Review"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 6; AvgEntropy = 5.7; HighEntropyPct = 0.05 }) } }
+        @{ Label = "Token grabber"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HttpExfil = $true; RuntimeExec = $true; WeakStrings = @('grabToken', 'webhookurl', 'discordwebhook', 'sendWebhook', 'exfiltrate', 'callHome'); HighEntropyPct = 0.5; AvgEntropy = 7.0; ReflectionCount = 2 }) } }
+        @{ Label = "Verified mod that contains scary strings"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ StrongStrings = @('AutoCrystal', 'KillAura'); HttpDownload = $true; ReflectionCount = 2 }) } }
+    )
+    $pass = 0; $fail = 0
+    foreach ($c in $cases) {
+        $ctx = @{}
+        foreach ($k in $base.Keys) { $ctx[$k] = $base[$k] }
+        foreach ($k in $c.Over.Keys) { $ctx[$k] = $c.Over[$k] }
+        $v = Get-ModVerdict $ctx
+        $ok = $c.Bands -contains $v.Band
+        if ($ok) { $pass++ } else { $fail++ }
+        $col = if ($ok) { "Green" } else { "Red" }
+        $tag = if ($ok) { "PASS" } else { "FAIL" }
+        W ("  [$tag] " + $c.Label.PadRight(40) + " score=$($v.Score)  band=$($v.Band)  (want $($c.Bands -join '/'))") $col
+    }
+    Write-Host ""
+    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) model + verdict logic OK on this machine." Green }
+    else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
+    Write-Host ""
+}
+
+function Enc([string]$s) { return [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+function New-HtmlReport {
+    $bandMeta = @{
+        "Confirmed" = @{ c = "#f85149"; l = "CONFIRMED CHEAT" }
+        "Likely"    = @{ c = "#fb8500"; l = "LIKELY CHEAT" }
+        "Review"    = @{ c = "#e3b341"; l = "REVIEW" }
+        "Clean"     = @{ c = "#2ecc71"; l = "CLEAN" }
+    }
+
+    $mods = @()
+    $mods += @($flaggedMods)
+    $mods += @($reviewMods)
+    $mods = @($mods | Sort-Object Score -Descending)
+
+    $modCards = ""
+    foreach ($m in $mods) {
+        $bm = $bandMeta[$m.Band]; if (-not $bm) { $bm = $bandMeta["Review"] }
+        $reasonItems = ""
+        foreach ($r in @($m.Reasons)) { $reasonItems += "<li>$(Enc $r)</li>" }
+        $src = if ($m.DownloadSource) { "Source: $(Enc $m.DownloadSource)" } else { "" }
+        $sha = if ($m.Hash) { $m.Hash } else { "unknown" }
+        $modCards += @"
+<div class="mod" style="--band:$($bm.c);">
+  <div class="mod-head">
+    <span class="badge" style="background:$($bm.c);">$($bm.l)</span>
+    <span class="mod-name">$(Enc $m.FileName)</span>
+    <span class="mod-score">$($m.Score)<small>/100</small></span>
+  </div>
+  <div class="bar"><div class="bar-fill" style="width:$($m.Score)%;background:$($bm.c);"></div></div>
+  <div class="mod-meta">AI cheat probability $($m.Probability)% &nbsp;&bull;&nbsp; SHA1 $sha &nbsp; $src</div>
+  <ul class="reasons">$reasonItems</ul>
+</div>
+"@
+    }
+    if (-not $modCards) { $modCards = "<p class='ok-big'>&#10003; No cheats and nothing suspicious &mdash; every mod is clean or verified.</p>" }
+
+    $verRows = ""
+    foreach ($v in @($verifiedMods)) {
+        $nm = if ($v.ModName) { $v.ModName } else { $v.FileName }
+        $verRows += "<tr><td>$(Enc $nm)</td><td class='muted'>$(Enc $v.FileName)</td><td><span class='pill green'>Verified</span></td></tr>"
+    }
+    $verSection = if (@($verifiedMods).Count -gt 0) {
+        "<details open><summary>Verified mods ($(@($verifiedMods).Count)) &mdash; matched on Modrinth / CurseForge, guaranteed safe</summary><table><thead><tr><th>Mod</th><th>File</th><th>Status</th></tr></thead><tbody>$verRows</tbody></table></details>"
+    } else { "" }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $allRows = ""
+    $addRow = {
+        param($name, $ext)
+        if (-not $seen.Add($name)) { return }
+        $st = if ($script:FlaggedModsList.Contains($name)) { "<span class='pill red'>Flagged</span>" }
+              elseif ($script:ReviewModsList.Contains($name)) { "<span class='pill amber'>Review</span>" }
+              elseif (@($verifiedMods | Where-Object { $_.FileName -eq $name }).Count -gt 0) { "<span class='pill green'>Verified</span>" }
+              else { "<span class='pill green'>Clean</span>" }
+        $script:_allRows += "<tr data-ext='$ext'><td>$(Enc $name)</td><td class='muted'>.$ext</td><td>$st</td></tr>"
+    }
+    $script:_allRows = ""
+    foreach ($f in @($jarFiles)) { & $addRow $f.Name "jar" }
+    foreach ($f in @($exeFiles)) { & $addRow $f.Name "exe" }
+    foreach ($f in @($pyFiles))  { & $addRow $f.Name "py" }
+    if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { & $addRow $n "exe" } }
+    if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { & $addRow $n "py" } }
+    $allRows = $script:_allRows
+
+    $bamSection = ""
+    if (@($script:BamDeleted).Count -gt 0) {
+        $bamRows = ""
+        foreach ($de in @($script:BamDeleted)) { $bamRows += "<tr><td>$(Enc $de.FileName)</td><td class='muted'>$(Enc $de.Path)</td><td>$(Enc $de.Time)</td></tr>" }
+        $bamSection = "<h2>&#9888; Deleted executables (BAM history) &mdash; $(@($script:BamDeleted).Count)</h2><p class='muted'>Ran on this PC but no longer on disk.</p><table><thead><tr><th>File</th><th>Path</th><th>Last run</th></tr></thead><tbody>$bamRows</tbody></table>"
+    }
+
+    if ($script:Flagged -gt 0) { $vColor = "#f85149"; $vText = "$($script:Flagged) likely cheat$(if($script:Flagged -ne 1){'s'}) found"; $vIcon = "&#9888;" }
+    elseif ($script:Review -gt 0) { $vColor = "#e3b341"; $vText = "$($script:Review) mod$(if($script:Review -ne 1){'s'}) to review"; $vIcon = "&#9873;" }
+    else { $vColor = "#2ecc71"; $vText = "Clean &mdash; no cheats detected"; $vIcon = "&#10003;" }
+
+    $scanDate = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $html = @"
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AsyncAnalyzer Report</title>
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.5;padding:0 0 60px;}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px;}
+.hero{background:linear-gradient(135deg,#161b22,#0d1117);border-bottom:1px solid var(--border);padding:40px 0 30px;margin-bottom:28px;}
+.brand{color:var(--muted);font-size:.85em;letter-spacing:.14em;text-transform:uppercase;}
+.verdict{display:flex;align-items:center;gap:16px;margin:14px 0 6px;}
+.verdict .dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 14px var(--vc);background:var(--vc);}
+.verdict h1{font-size:2em;font-weight:800;color:var(--vc);}
+.sub{color:var(--muted);font-size:.9em;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:26px 0;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 16px;text-align:center;}
+.card .n{font-size:2em;font-weight:800;line-height:1;}
+.card .k{color:var(--muted);font-size:.78em;margin-top:6px;text-transform:uppercase;letter-spacing:.05em;}
+.green{color:#2ecc71;}.amber{color:#e3b341;}.red{color:#f85149;}.blue{color:var(--accent);}
+h2{font-size:1.15em;margin:34px 0 14px;padding-top:10px;}
+.mod{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--band);border-radius:12px;padding:18px;margin-bottom:14px;}
+.mod-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.badge{color:#0d1117;font-weight:800;font-size:.7em;letter-spacing:.06em;padding:4px 9px;border-radius:6px;}
+.mod-name{font-weight:600;flex:1;word-break:break-all;}
+.mod-score{font-size:1.5em;font-weight:800;color:var(--band);}
+.mod-score small{font-size:.5em;color:var(--muted);font-weight:600;}
+.bar{height:8px;background:var(--surface2);border-radius:6px;overflow:hidden;margin:12px 0;}
+.bar-fill{height:100%;border-radius:6px;transition:width .6s;}
+.mod-meta{color:var(--muted);font-size:.8em;font-family:ui-monospace,Consolas,monospace;word-break:break-all;margin-bottom:8px;}
+.reasons{list-style:none;display:flex;flex-direction:column;gap:5px;}
+.reasons li{background:var(--surface2);border-radius:6px;padding:6px 10px;font-size:.86em;}
+.reasons li:before{content:'\25B8';color:var(--accent);margin-right:8px;}
+.ok-big{color:#2ecc71;font-size:1.3em;font-weight:700;padding:26px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:12px;}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:10px;}
+th{background:var(--surface2);color:var(--muted);font-size:.72em;text-transform:uppercase;letter-spacing:.06em;padding:11px 14px;text-align:left;}
+td{padding:10px 14px;border-top:1px solid var(--border);font-size:.88em;}
+.muted{color:var(--muted);}
+.pill{font-size:.75em;font-weight:700;padding:3px 9px;border-radius:20px;}
+.pill.green{background:rgba(46,204,113,.15);color:#2ecc71;}
+.pill.amber{background:rgba(227,179,65,.15);color:#e3b341;}
+.pill.red{background:rgba(248,81,73,.15);color:#f85149;}
+details{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 16px;margin-top:10px;}
+summary{cursor:pointer;padding:10px 0;color:var(--muted);font-size:.9em;}
+.filter{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
+.filter input{flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);outline:none;}
+.filter input:focus{border-color:var(--accent);}
+.fbtn{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 15px;color:var(--muted);cursor:pointer;font-size:.85em;}
+.fbtn.on,.fbtn:hover{border-color:var(--accent);color:var(--accent);}
+footer{color:var(--muted);font-size:.82em;text-align:center;margin-top:44px;padding-top:20px;border-top:1px solid var(--border);}
+footer a{color:var(--accent);text-decoration:none;}
+</style></head>
+<body>
+<div class="hero"><div class="wrap">
+  <div class="brand">AsyncAnalyzer v$($script:Version) &bull; self-improving AI cheat scan</div>
+  <div class="verdict" style="--vc:$vColor;"><span class="dot"></span><h1>$vIcon $vText</h1></div>
+  <div class="sub">$scanDate &nbsp;&bull;&nbsp; $(Enc $ModPath)</div>
+</div></div>
+<div class="wrap">
+  <div class="grid">
+    <div class="card"><div class="n">$($script:TotalMods)</div><div class="k">Mods scanned</div></div>
+    <div class="card"><div class="n green">$($script:Verified)</div><div class="k">Verified</div></div>
+    <div class="card"><div class="n">$($script:Unknown)</div><div class="k">Clean / Unknown</div></div>
+    <div class="card"><div class="n amber">$($script:Review)</div><div class="k">Review</div></div>
+    <div class="card"><div class="n red">$($script:Flagged)</div><div class="k">Flagged</div></div>
+    <div class="card"><div class="n $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="k">System issues</div></div>
+    <div class="card"><div class="n blue">$($script:mlSamples)</div><div class="k">AI learned (v$($script:mlModelVersion))</div></div>
+  </div>
+
+  <h2>Flagged &amp; review</h2>
+  $modCards
+
+  $verSection
+
+  <h2>All files ($(@($seen).Count))</h2>
+  <div class="filter">
+    <input id="q" placeholder="Search files..." oninput="flt()">
+    <button class="fbtn on" data-e="all" onclick="setE(this)">All</button>
+    <button class="fbtn" data-e="jar" onclick="setE(this)">.jar</button>
+    <button class="fbtn" data-e="exe" onclick="setE(this)">.exe</button>
+    <button class="fbtn" data-e="py" onclick="setE(this)">.py</button>
+  </div>
+  <table id="ft"><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allRows</tbody></table>
+
+  $bamSection
+
+  <footer>
+    Generated by <b>AsyncAnalyzer</b> &mdash; a local, self-improving AI that learns from every scan.<br>
+    No files were uploaded. <a href="https://github.com/QDHShamiro/AsyncAnalyzer">github.com/QDHShamiro/AsyncAnalyzer</a> &bull; discord.gg/asyncstudios
+  </footer>
+</div>
+<script>
+var E="all";
+function setE(b){E=b.dataset.e;document.querySelectorAll('.fbtn').forEach(function(x){x.classList.remove('on')});b.classList.add('on');flt();}
+function flt(){var q=document.getElementById('q').value.toLowerCase();document.querySelectorAll('#ft tbody tr').forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.dataset.ext;r.style.display=((E=='all'||e==E)&&n.indexOf(q)>=0)?'':'none';});}
+</script>
+</body></html>
+"@
+    try {
+        $rp = Join-Path $env:TEMP "AsyncAnalyzer_Report.html"
+        $html | Out-File -FilePath $rp -Encoding UTF8
+        Invoke-Item $rp
+        try { Start-Process explorer.exe -ArgumentList "/select,`"$rp`"" } catch {}
+        W "  $([char]0x2713) Report saved & opened: $rp" Green
+    } catch { W "  $([char]0x2717) Could not write report: $($_.Exception.Message)" Red }
+    Write-Host ""
+}
 
 function W([string]$text, [ConsoleColor]$color, [switch]$NoNewline) {
     $old = $Host.UI.RawUI.ForegroundColor
@@ -1235,9 +1900,10 @@ function Get-FileMurmur2([string]$path) {
 }
 
 function Get-CurseForgeMeta([long]$fingerprint) {
+    if ([string]::IsNullOrWhiteSpace($script:CurseForgeApiKey)) { return @{ Name = ""; Slug = "" } }
     try {
         $body = "{`"fingerprints`":[" + $fingerprint + "]}"
-        $r = Invoke-RestMethod -Uri "https://api.curseforge.com/v1/fingerprints/432" -Method Post -Body $body -ContentType "application/json" -Headers @{ "x-api-key" = "$2a$10`$bL4bIL5pUWqfcO7KQtnMReakwtfHepBUuxe3G//STEeE0iNHyjPe6" } -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        $r = Invoke-RestMethod -Uri "https://api.curseforge.com/v1/fingerprints/432" -Method Post -Body $body -ContentType "application/json" -Headers @{ "x-api-key" = $script:CurseForgeApiKey } -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
         $match = $r.data.exactMatches | Where-Object { $_.file.fileFingerprint -eq $fingerprint } | Select-Object -First 1
         if ($match) { return @{ Name = $match.file.displayName; Slug = [string]$match.id } }
     } catch {}
@@ -1753,13 +2419,9 @@ function Invoke-ExeScan([string]$FilePath) {
                 [void]$flags.Add("Cheat string match: '$tok'")
             }
         }
-        foreach ($pat in $script:patternRegex) {
-            foreach ($tok in $tokens) {
-                if ($tok -match $pat.Key) {
-                    [void]$flags.Add("Cheat pattern ($($pat.Key)): '$tok'")
-                    break
-                }
-            }
+        foreach ($tok in $tokens) {
+            $pm = $script:patternRegex.Match($tok)
+            if ($pm.Success) { [void]$flags.Add("Cheat pattern ($($pm.Value)): '$tok'") }
         }
 
         $injectApis = @("CreateRemoteThread","VirtualAllocEx","WriteProcessMemory","NtWriteVirtualMemory","RtlCreateUserThread","SetWindowsHookEx","OpenProcess")
@@ -1793,9 +2455,7 @@ function Invoke-PyScan([string]$FilePath) {
         foreach ($entry in $script:cheatStringSet) {
             if ($src -match [regex]::Escape($entry)) { [void]$flags.Add("Cheat string match: '$entry'") }
         }
-        foreach ($pat in $script:patternRegex) {
-            if ($src -match $pat.Key) { [void]$flags.Add("Cheat pattern ($($pat.Key))") }
-        }
+        foreach ($pm in $script:patternRegex.Matches($src)) { [void]$flags.Add("Cheat pattern ($($pm.Value))") }
 
         $suspImports = @("pyautogui","pynput","ctypes","win32api","win32con","keyboard","mouse","mss","pyscreeze","subprocess","socket","requests","urllib","paramiko","ftplib","smtplib")
         foreach ($imp in $suspImports) {
@@ -1858,7 +2518,7 @@ function Run-JVMScan {
             }
         } catch {}
 
-        try {
+        if ($script:DeepMemory) { try {
             $sig = @"
 [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h,IntPtr addr,byte[] buf,int sz,out int read);
 [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(int acc,bool inh,int pid);
@@ -1902,7 +2562,7 @@ function Run-JVMScan {
                 }
                 [Win32.MemAPI]::CloseHandle($handle) | Out-Null
             }
-        } catch {}
+        } catch {} }
     }
 
     return $jvmFlags
@@ -2154,6 +2814,33 @@ function Run-ServiceCheck {
 
 Show-Banner
 
+if ($SelfTest) { Invoke-SelfTest; return }
+
+W "  What this tool does $([char]0x2014) and does not do:" Cyan
+W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green
+W "    $([char]0x2713) Runs fully on your PC. It never uploads your files or your data." Green
+W "    $([char]0x2713) Network use is limited to looking mods up by hash on Modrinth /" DarkGray
+W "      CurseForge / Megabase $([char]0x2014) only the file hash is sent, never the file." DarkGray
+W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud, no key)." Green
+W "    $([char]0x2713) Verified mods are never flagged. Flags come with a reason + score." Green
+W "    $([char]0x2139) By default it only scans your mods folder. A deep, whole-PC scan is" DarkGray
+W "      optional and asked for separately. Reading live game memory needs -DeepMemory." DarkGray
+W "    $([char]0x2713) Self-improving: it learns from every scan (all local) and auto-updates" Green
+W "      its model from GitHub, so detection keeps getting better over time." Green
+Write-Host ""
+W ("$([char]0x2501)" * 76) DarkCyan
+Write-Host ""
+
+Load-LearnState
+Invoke-CloudUpdate
+if ($script:mlSamples -gt 0 -or $script:knownGoodHashes.Count -gt 0 -or $script:knownCheatHashes.Count -gt 0) {
+    W "  $([char]0x25CF) AI memory: " DarkGray -NoNewline
+    W "$($script:knownGoodHashes.Count)" Green -NoNewline; W " known-good  " DarkGray -NoNewline
+    W "$($script:knownCheatHashes.Count)" Red -NoNewline; W " known-cheat  " DarkGray -NoNewline
+    W "$($script:mlSamples)" Cyan -NoNewline; W " examples learned (model v$($script:mlModelVersion))" DarkGray
+    Write-Host ""
+}
+
 if ($Dev) {
     W "  [DEV MODE] Quick scan $([char]0x2014) max 10 items per category, heavy checks skipped." DarkYellow
     Write-Host ""
@@ -2212,7 +2899,8 @@ if (-not $SkipSystemCheck)  { Run-SystemChecks }
 if (-not $SkipServiceCheck) { Run-ServiceCheck }
 
 if (-not $SkipModCheck) {
-    $jarFiles = Get-ChildItem -Path $ModPath -Filter "*.jar" -ErrorAction SilentlyContinue
+    $jarFiles = @(Get-ChildItem -Path $ModPath -Filter "*.jar" -ErrorAction SilentlyContinue) + @(Get-ChildItem -Path $ModPath -Filter "*.litemod" -ErrorAction SilentlyContinue)
+    $jarFiles = @($jarFiles)
     if ($script:_DevLimit) { $jarFiles = @($jarFiles | Select-Object -First $script:_DevLimit) }
     $script:TotalMods = @($jarFiles).Count
 
@@ -2233,160 +2921,86 @@ if (-not $SkipModCheck) {
 
         $verifiedMods   = [System.Collections.Generic.List[object]]::new()
         $unknownMods    = [System.Collections.Generic.List[object]]::new()
-        $suspiciousMods = [System.Collections.Generic.List[object]]::new()
-        $bypassMods     = [System.Collections.Generic.List[object]]::new()
-        $obfuscatedMods = [System.Collections.Generic.List[object]]::new()
-        $filenameFlaggedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-        W "  Checking filenames for cheat client patterns..." DarkGray
-        foreach ($jar in $jarFiles) {
-            $checkName = $jar.Name -replace '\.(temp|disabled|bak|old|backup)(\.jar)$','$2'
-            $fnMatch = Get-FilenameSimilarityMatch $checkName
-            if ($null -ne $fnMatch) {
-                $hash = Get-FileSHA1 $jar.FullName
-                $dl   = Get-DownloadSource $jar.FullName
-                $fnStrings = [System.Collections.Generic.HashSet[string]]::new()
-                [void]$fnStrings.Add("Filename resembles known cheat client: '$($fnMatch.Token)' ($($fnMatch.Score)% match)")
-                [void]$suspiciousMods.Add([PSCustomObject]@{
-                    FileName = $jar.Name; Hash = $hash; Verified = $false; VerifiedName = ""
-                    DownloadSource = if ($dl) { $dl.Name } else { $null }
-                    DownloadUrl    = if ($dl) { $dl.RawUrl } else { $null }
-                    Patterns  = [System.Collections.Generic.HashSet[string]]::new()
-                    Strings   = $fnStrings
-                    Fullwidth = [System.Collections.Generic.HashSet[string]]::new()
-                })
-                [void]$filenameFlaggedSet.Add($jar.Name)
-                [void]$script:FlaggedModsList.Add($jar.Name)
-                $script:Flagged++
-            } elseif (Test-RandomFilename $checkName) {
-                $hash = Get-FileSHA1 $jar.FullName
-                $dl   = Get-DownloadSource $jar.FullName
-                $rnStrings = [System.Collections.Generic.HashSet[string]]::new()
-                [void]$rnStrings.Add("Suspicious filename $([char]0x2014) randomly generated name pattern")
-                [void]$suspiciousMods.Add([PSCustomObject]@{
-                    FileName = $jar.Name; Hash = $hash; Verified = $false; VerifiedName = ""
-                    DownloadSource = if ($dl) { $dl.Name } else { $null }
-                    DownloadUrl    = if ($dl) { $dl.RawUrl } else { $null }
-                    Patterns  = [System.Collections.Generic.HashSet[string]]::new()
-                    Strings   = $rnStrings
-                    Fullwidth = [System.Collections.Generic.HashSet[string]]::new()
-                })
-                [void]$filenameFlaggedSet.Add($jar.Name)
-                [void]$script:FlaggedModsList.Add($jar.Name)
-                $script:Flagged++
-            }
-        }
-        SpinClear
+        $reviewMods  = [System.Collections.Generic.List[object]]::new()
+        $flaggedMods = [System.Collections.Generic.List[object]]::new()
 
         $idx = 0
-        W "  Verifying hashes (Modrinth + CurseForge + Megabase)..." DarkGray
+        W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            $hash     = Get-FileSHA1 $jar.FullName
-            $dlObj    = Get-DownloadSource $jar.FullName
-            $dlSource = if ($dlObj) { $dlObj.Name } else { $null }
-            $dlUrl    = if ($dlObj) { $dlObj.RawUrl } else { $null }
-            $verified = $false; $verifiedName = ""
 
-            $modUrl = ""
-            if ($hash) {
+            $hash   = Get-FileSHA1 $jar.FullName
+            $dlObj  = Get-DownloadSource $jar.FullName
+            $dlName = if ($dlObj) { $dlObj.Name } else { $null }
+            $dlUrl  = if ($dlObj) { $dlObj.RawUrl } else { $null }
+
+            $verified = $false; $verifiedName = ""; $modUrl = ""; $verifiedVia = ""
+            if ($hash -and $script:knownGoodHashes.Contains($hash)) { $verified = $true; $verifiedVia = "known-good list" }
+            if (-not $verified -and $hash) {
                 $mr = Get-ModrinthMeta $hash
-                if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)" }
+                if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)"; $verifiedVia = "Modrinth" }
                 if (-not $verified) {
                     $fp = Get-FileMurmur2 $jar.FullName
                     if ($null -ne $fp) {
                         $cf = Get-CurseForgeMeta $fp
-                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name; $modUrl = "https://www.curseforge.com/minecraft/mc-mods/$($cf.Slug)" }
+                        if ($cf.Slug) { $verified = $true; $verifiedName = $cf.Name; $modUrl = "https://www.curseforge.com/minecraft/mc-mods/$($cf.Slug)"; $verifiedVia = "CurseForge" }
                     }
                 }
                 if (-not $verified) {
                     $mb = Get-MegabaseMeta $hash
-                    if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name; $modUrl = if ($mb.modrinth_id) { "https://modrinth.com/mod/$($mb.modrinth_id)" } else { "" } }
+                    if ($mb -and $mb.name) { $verified = $true; $verifiedName = $mb.name; $modUrl = if ($mb.modrinth_id) { "https://modrinth.com/mod/$($mb.modrinth_id)" } else { "" }; $verifiedVia = "Megabase" }
                 }
+            }
+
+            $feat = Get-JarFeatures $jar.FullName
+
+            $checkName = $jar.Name -replace '\.(temp|disabled|bak|old|backup)(\.jar)$','$2'
+            $fnMatch   = Get-FilenameSimilarityMatch $checkName
+            $filenameClient = $false; $filenameToken = ""
+            if ($null -ne $fnMatch -and $script:distinctiveClientTokens.Contains($fnMatch.Token)) { $filenameClient = $true; $filenameToken = $fnMatch.Token }
+            $randomName = (-not $filenameClient) -and (Test-RandomFilename $checkName)
+            $modIdNorm  = if ($feat.ModId) { ($feat.ModId -replace '[^a-zA-Z0-9]','').ToLower() } else { "" }
+            $legitModId = ($modIdNorm -ne "") -and $script:legitModIds.Contains($modIdNorm)
+            $hashKnownCheat = ($null -ne $hash) -and $script:knownCheatHashes.Contains($hash)
+            $cheatSite  = ($null -ne $dlName) -and ($script:cheatDownloadSources -contains $dlName)
+
+            $ctx = @{
+                Features = $feat; Verified = $verified; LegitModId = $legitModId
+                HashKnownCheat = $hashKnownCheat; CheatSite = $cheatSite; CheatSiteName = $dlName
+                FilenameClient = $filenameClient; FilenameToken = $filenameToken; RandomName = $randomName
+            }
+            $verdict = Get-ModVerdict $ctx
+
+            $rec = [PSCustomObject]@{
+                FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash
+                Verified = $verified; VerifiedName = $verifiedName; ModName = $verifiedName; VerifiedVia = $verifiedVia; ModUrl = $modUrl
+                DownloadSource = $dlName; DownloadUrl = $dlUrl
+                Score = $verdict.Score; Band = $verdict.Band; Probability = $verdict.Probability; Reasons = $verdict.Reasons
             }
 
             if ($verified) {
-                [void]$verifiedMods.Add([PSCustomObject]@{ ModName = $verifiedName; FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash; ModUrl = $modUrl })
+                [void]$verifiedMods.Add($rec)
+            } elseif ($verdict.Band -eq "Confirmed" -or $verdict.Band -eq "Likely") {
+                [void]$flaggedMods.Add($rec)
+                [void]$script:FlaggedModsList.Add($jar.Name)
+                $script:Flagged++
+            } elseif ($verdict.Band -eq "Review") {
+                [void]$reviewMods.Add($rec)
+                [void]$script:ReviewModsList.Add($jar.Name)
             } else {
-                [void]$unknownMods.Add([PSCustomObject]@{ FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash; DownloadSource = $dlSource; DownloadUrl = $dlUrl })
+                [void]$unknownMods.Add($rec)
             }
-        }
-        SpinClear
 
-        $idx = 0
-        W "  Deep-scanning cheat signatures..." DarkGray
-        foreach ($jar in $jarFiles) {
-            $idx++
-            Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            $result = Invoke-ModScan -FilePath $jar.FullName
-
-            if ($result.Patterns.Count -gt 0 -or $result.Strings.Count -gt 0 -or $result.Fullwidth.Count -gt 0) {
-                if ($filenameFlaggedSet.Contains($jar.Name)) {
-                    $existing = $suspiciousMods | Where-Object { $_.FileName -eq $jar.Name } | Select-Object -First 1
-                    if ($null -ne $existing) {
-                        foreach ($p in $result.Patterns) { [void]$existing.Patterns.Add($p) }
-                        foreach ($s in $result.Strings)  { [void]$existing.Strings.Add($s) }
-                        foreach ($f in $result.Fullwidth) { [void]$existing.Fullwidth.Add($f) }
-                    }
-                } else {
-                    $isVer = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
-                    $verName = ($verifiedMods | Where-Object { $_.FileName -eq $jar.Name } | Select-Object -First 1).ModName
-                    $hash    = ($jarFiles | Where-Object { $_.Name -eq $jar.Name } | ForEach-Object { Get-FileSHA1 $_.FullName } | Select-Object -First 1)
-                    $dlO     = Get-DownloadSource $jar.FullName
-
-                    [void]$suspiciousMods.Add([PSCustomObject]@{
-                        FileName = $jar.Name; Hash = $hash; Verified = $isVer; VerifiedName = $verName
-                        DownloadSource = if ($dlO) { $dlO.Name } else { $null }
-                        DownloadUrl    = if ($dlO) { $dlO.RawUrl } else { $null }
-                        Patterns = $result.Patterns; Strings = $result.Strings; Fullwidth = $result.Fullwidth
-                    })
-                    $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
-                    [void]$script:FlaggedModsList.Add($jar.Name)
-                    $script:Flagged++
-                }
-            }
-        }
-        SpinClear
-
-        $idx = 0
-        W "  Running bypass / injection scan..." DarkGray
-        foreach ($jar in $jarFiles) {
-            $idx++
-            Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            $bFlags = Invoke-BypassScan -FilePath $jar.FullName
-
-            if ($bFlags.Count -gt 0) {
-                $alreadySusp = ($suspiciousMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
-                if (-not $alreadySusp) {
-                    [void]$bypassMods.Add([PSCustomObject]@{ FileName = $jar.Name; Flags = $bFlags })
-                    $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
-                    $unknownMods  = [System.Collections.Generic.List[object]]($unknownMods  | Where-Object { $_.FileName -ne $jar.Name })
-                    if (-not $filenameFlaggedSet.Contains($jar.Name)) {
-                        [void]$script:FlaggedModsList.Add($jar.Name)
-                        $script:Flagged++
-                    }
-                }
-            }
-        }
-        SpinClear
-
-        $idx = 0
-        W "  Running obfuscation analysis..." DarkGray
-        foreach ($jar in $jarFiles) {
-            $idx++
-            Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            $oFlags = Invoke-ObfuscationScan -FilePath $jar.FullName
-
-            if ($oFlags.Count -gt 0) {
-                $alreadyFlagged = (($suspiciousMods + $bypassMods) | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
-                if (-not $alreadyFlagged) {
-                    [void]$obfuscatedMods.Add([PSCustomObject]@{ FileName = $jar.Name; Flags = $oFlags })
-                    $verifiedMods = [System.Collections.Generic.List[object]]($verifiedMods | Where-Object { $_.FileName -ne $jar.Name })
-                    if (-not $filenameFlaggedSet.Contains($jar.Name)) {
-                        [void]$script:FlaggedModsList.Add($jar.Name)
-                        $script:Flagged++
-                    }
+            if ($hash) {
+                if ($verified) {
+                    [void]$script:knownGoodHashes.Add($hash)
+                    Update-ModelOnline (Get-ModFeatureVector $ctx) 0
+                } elseif ($verdict.Band -eq "Confirmed" -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite)) {
+                    [void]$script:knownCheatHashes.Add($hash)
+                    Update-ModelOnline (Get-ModFeatureVector $ctx) 1
+                    if ($script:Share) { [void]$script:shareHashes.Add($hash) }
                 }
             }
         }
@@ -2394,6 +3008,7 @@ if (-not $SkipModCheck) {
 
         $script:Verified = $verifiedMods.Count
         $script:Unknown  = $unknownMods.Count
+        $script:Review   = $reviewMods.Count
 
         if ($verifiedMods.Count -gt 0) {
             Write-SectionHeader "VERIFIED MODS" $verifiedMods.Count Green Green
@@ -2440,55 +3055,18 @@ if (-not $SkipModCheck) {
             }
         }
 
-        if ($suspiciousMods.Count -gt 0) {
-            Write-SectionHeader "SUSPICIOUS MODS" $suspiciousMods.Count Red Red
+        if ($reviewMods.Count -gt 0) {
+            Write-SectionHeader "REVIEW $([char]0x2014) verify these manually" $reviewMods.Count DarkYellow Yellow
             Write-Rule "$([char]0x2500)" 76 DarkGray
             Write-Host ""
-            foreach ($mod in $suspiciousMods) {
-                Write-FlaggedCard $mod.FileName $mod.Hash $mod.Verified $mod.VerifiedName $mod.DownloadSource $mod.DownloadUrl $mod.Patterns $mod.Strings $mod.Fullwidth
-            }
+            foreach ($mod in ($reviewMods | Sort-Object Score -Descending)) { Write-VerdictCard $mod }
         }
 
-        if ($bypassMods.Count -gt 0) {
-            Write-SectionHeader "BYPASS / INJECTION DETECTED" $bypassMods.Count Magenta Magenta
+        if ($flaggedMods.Count -gt 0) {
+            Write-SectionHeader "FLAGGED $([char]0x2014) likely cheats" $flaggedMods.Count Red Red
             Write-Rule "$([char]0x2500)" 76 DarkGray
             Write-Host ""
-            foreach ($mod in $bypassMods) { Write-InjectionCard $mod.FileName $mod.Flags }
-        }
-
-        if ($obfuscatedMods.Count -gt 0) {
-            Write-SectionHeader "OBFUSCATED MODS" $obfuscatedMods.Count DarkYellow Yellow
-            Write-Rule "$([char]0x2500)" 76 DarkGray
-            Write-Host ""
-            foreach ($mod in $obfuscatedMods) { Write-ObfuscationCard $mod.FileName $mod.Flags }
-        }
-
-        $deepScanTargets = [System.Collections.Generic.List[object]]::new()
-        foreach ($jar in $jarFiles) {
-            $isFlagged = ($suspiciousMods + $bypassMods + $obfuscatedMods | Where-Object { $_.FileName -eq $jar.Name } | Measure-Object).Count -gt 0
-            if ($isFlagged) { [void]$deepScanTargets.Add($jar) }
-        }
-
-        if ($deepScanTargets.Count -gt 0) {
-            Write-Host ""
-            Write-SectionHeader "DEEP SCAN RESULTS" $deepScanTargets.Count DarkRed Red
-            Write-Rule "$([char]0x2500)" 76 DarkGray
-            Write-Host ""
-            $idx = 0
-            $deepResults = [System.Collections.Generic.List[object]]::new()
-            foreach ($jar in $deepScanTargets) {
-                $idx++
-                Spin "[$idx/$($deepScanTargets.Count)] Deep-scanning $($jar.Name)"
-                $df = Invoke-DeepScan -FilePath $jar.FullName
-                if ($df.Count -gt 0) { [void]$deepResults.Add([PSCustomObject]@{ FileName = $jar.Name; Findings = $df }) }
-            }
-            SpinClear
-            if ($deepResults.Count -gt 0) {
-                foreach ($dr in $deepResults) { Write-DeepScanCard $dr.FileName $dr.Findings }
-            } else {
-                W "  $([char]0x2713) Deep scan complete $([char]0x2014) no additional threats confirmed." Green
-                Write-Host ""
-            }
+            foreach ($mod in ($flaggedMods | Sort-Object Score -Descending)) { Write-VerdictCard $mod }
         }
     }
 
@@ -2827,7 +3405,8 @@ function Run-BamScan {
         foreach ($af in $allFilesCombined) {
             $afFlagged  = $script:FlaggedModsList.Contains($af.Name)
             $afVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $af.Name } | Measure-Object).Count -gt 0)
-            $afStatus   = if ($afFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($afVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#e3b341;'>Unknown</span>" }
+            $afReview   = $script:ReviewModsList.Contains($af.Name)
+            $afStatus   = if ($afFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($afReview) { "<span style='color:#e3b341;font-weight:600;'>Review</span>" } elseif ($afVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#2ecc71;'>Clean</span>" }
             $allFilesRows += "<tr data-ext=`"$($af.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($af.Name))</td><td style='color:var(--muted);'>.$($af.Ext)</td><td>$afStatus</td></tr>`n"
         }
         $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active")});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();document.querySelectorAll("#afTable tbody tr").forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");r.style.display=(_afExt==="all"||e===_afExt)&&n.includes(q)?"":"none";});}</script>'
@@ -2882,6 +3461,7 @@ function Run-BamScan {
     <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
     <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
     <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
+    <div class="card"><div class="num yellow">$($script:Review)</div><div class="lbl">Review</div></div>
     <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
     <div class="card"><div class="num $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="lbl">System Issues</div></div>
   </div>
@@ -2900,12 +3480,8 @@ function Run-BamScan {
 </html>
 "@
 
-        $reportPath = Join-Path $env:TEMP "AsyncAnalyzer_Files_Result.html"
-        $reportHtml | Out-File -FilePath $reportPath -Encoding UTF8
-        Invoke-Item $reportPath
-        Start-Process explorer.exe -ArgumentList "/select,`"$reportPath`""
-        W "  $([char]0x2713) Scan report saved and opened: $reportPath" Green
-        Write-Host ""
+        $script:BamDeleted = @()
+        New-HtmlReport
         return
     }
 
@@ -3021,7 +3597,8 @@ function Run-BamScan {
     foreach ($raf in $rAllFilesCombined) {
         $rafFlagged  = $script:FlaggedModsList.Contains($raf.Name)
         $rafVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $raf.Name } | Measure-Object).Count -gt 0)
-        $rafStatus   = if ($rafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($rafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#e3b341;'>Unknown</span>" }
+        $rafReview   = $script:ReviewModsList.Contains($raf.Name)
+        $rafStatus   = if ($rafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($rafReview) { "<span style='color:#e3b341;font-weight:600;'>Review</span>" } elseif ($rafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#2ecc71;'>Clean</span>" }
         $rAllFilesRows += "<tr data-ext=`"$($raf.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($raf.Name))</td><td style='color:var(--muted);'>.$($raf.Ext)</td><td>$rafStatus</td></tr>`n"
     }
     $rAllFilesTable = if ($rAllFilesCombined.Count -gt 0) {
@@ -3073,6 +3650,7 @@ function Run-BamScan {
     <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
     <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
     <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
+    <div class="card"><div class="num yellow">$($script:Review)</div><div class="lbl">Review</div></div>
     <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
     <div class="card"><div class="num $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="lbl">System Issues</div></div>
     <div class="card"><div class="num $(if($deletedEntries.Count -gt 0){'yellow'}else{'green'})">$($deletedEntries.Count)</div><div class="lbl">BAM Deleted</div></div>
@@ -3088,11 +3666,8 @@ function Run-BamScan {
 </body>
 </html>
 "@
-    $rPath = Join-Path $env:TEMP "AsyncAnalyzer_Files_Result.html"
-    $reportHtml2 | Out-File -FilePath $rPath -Encoding UTF8
-    Invoke-Item $rPath
-    Start-Process explorer.exe -ArgumentList "/select,`"$rPath`""
-    W "  $([char]0x2713) Main report opened: $rPath" Green
+    $script:BamDeleted = @($deletedEntries)
+    New-HtmlReport
     Write-Host ""
 
     if ($bamEntries.Count -eq 0) {
@@ -3995,12 +4570,15 @@ W ("$([char]0x2501)" * 76) Blue
 Write-Host ""
 W "  SCAN SUMMARY" Cyan
 Write-Host ""
-W "  Total files scanned  : " DarkGray -NoNewline; W "$($script:TotalMods)" White
-W "  Verified mods        : " DarkGray -NoNewline; W "$($script:Verified)" Green
-W "  Unknown mods         : " DarkGray -NoNewline; W "$($script:Unknown)" Yellow
-W "  Flagged / suspicious : " DarkGray -NoNewline; W "$($script:Flagged)" Red
+$reviewColor = if ($script:Review -gt 0) { [ConsoleColor]::DarkYellow } else { [ConsoleColor]::Green }
+W "  Total mods scanned   : " DarkGray -NoNewline; W "$($script:TotalMods)" White
+W "  Verified (safe)      : " DarkGray -NoNewline; W "$($script:Verified)" Green
+W "  Unknown (looks clean): " DarkGray -NoNewline; W "$($script:Unknown)" Yellow
+W "  Review (check these) : " DarkGray -NoNewline; W "$($script:Review)" $reviewColor
+W "  Flagged (likely cheat): " DarkGray -NoNewline; W "$($script:Flagged)" Red
 $issueColor = if ($script:SystemIssues -gt 0) { [ConsoleColor]::Red } else { [ConsoleColor]::Green }
 W "  System issues        : " DarkGray -NoNewline; W "$($script:SystemIssues)" $issueColor
+W "  AI self-learning     : " DarkGray -NoNewline; W "$($script:mlSamples)" Cyan -NoNewline; W " examples learned  $([char]0x2014)  memory $($script:knownGoodHashes.Count) good / $($script:knownCheatHashes.Count) cheat  (model v$($script:mlModelVersion))" DarkGray
 Write-Host ""
 W ("$([char]0x2501)" * 76) Blue
 Write-Host ""
@@ -4026,10 +4604,36 @@ W $runCmd DarkGray
 Write-Host ""
 Write-Host ""
 Write-Host ""
-Run-RecentActivity
-Run-PCscan
+$doDeep = $script:DeepScan -or $script:AssumeYes
+if (-not $doDeep -and -not $script:_DevMode) {
+    Write-Host ""
+    W "  Optional deep system scan (reaches outside your mods folder)" Cyan
+    W "  Also checks: recently deleted / added files, running processes, and scans your" DarkGray
+    W "  drives for stray cheat JARs. Read-only, uploads nothing, but slower and broader." DarkGray
+    W "  Skip it for a fast, mods-only check." DarkGray
+    Write-Host ""
+    $doDeep = Ask-YesNo "Run the optional deep system scan?"
+    Write-Host ""
+}
+if ($doDeep -or $script:_DevMode) {
+    Run-RecentActivity
+    Run-PCscan
+}
 if (-not $script:_DevMode) {
     Run-BamScan
+}
+
+Save-LearnState
+if ($script:Share -and $script:shareHashes.Count -gt 0) {
+    try {
+        $shareFile = Join-Path (Split-Path (Get-LearnPath)) "contribute_hashes.txt"
+        (@($script:shareHashes) | Select-Object -Unique) | Out-File -FilePath $shareFile -Encoding UTF8
+        Write-Host ""
+        W "  $([char]0x2191) Share $([char]0x2014) $($script:shareHashes.Count) confirmed cheat hash(es) saved to:" Cyan
+        W "    $shareFile" DarkGray
+        W "    Submit them at github.com/QDHShamiro/AsyncAnalyzer/issues to help everyone." DarkGray
+        Write-Host ""
+    } catch {}
 }
 
 if ($script:_DevMode) {
@@ -4055,7 +4659,8 @@ if ($script:_DevMode) {
     foreach ($daf in $devAllFilesCombined) {
         $dafFlagged  = $script:FlaggedModsList.Contains($daf.Name)
         $dafVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $daf.Name } | Measure-Object).Count -gt 0)
-        $dafStatus   = if ($dafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($dafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#e3b341;'>Unknown</span>" }
+        $dafReview   = $script:ReviewModsList.Contains($daf.Name)
+        $dafStatus   = if ($dafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($dafReview) { "<span style='color:#e3b341;font-weight:600;'>Review</span>" } elseif ($dafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#2ecc71;'>Clean</span>" }
         $devAllFilesRows += "<tr data-ext=`"$($daf.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($daf.Name))</td><td style='color:var(--muted);'>.$($daf.Ext)</td><td>$dafStatus</td></tr>`n"
     }
     $devAllFilesTable = if ($devAllFilesCombined.Count -gt 0) {
@@ -4108,6 +4713,7 @@ if ($script:_DevMode) {
     <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
     <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
     <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
+    <div class="card"><div class="num yellow">$($script:Review)</div><div class="lbl">Review</div></div>
     <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged</div></div>
   </div>
   $flaggedTable
@@ -4120,13 +4726,7 @@ if ($script:_DevMode) {
 </body>
 </html>
 "@
-    $devPath = Join-Path $env:TEMP "AsyncAnalyzer_Files_Result.html"
-    $devHtml | Out-File -FilePath $devPath -Encoding UTF8
-    Invoke-Item $devPath
-    Start-Process explorer.exe -ArgumentList "/select,`"$devPath`""
-    Write-Host ""
-    W "  $([char]0x2713) Dev report opened: $devPath" DarkYellow
-    Write-Host ""
+    New-HtmlReport
     return
 }
 
