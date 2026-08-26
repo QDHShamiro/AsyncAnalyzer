@@ -197,6 +197,14 @@ def extract_from_jar(path, verified=0, legit_modid=0, filename_client=0,
                 if text_len < 500000:
                     text_blob.write(text)
                     text_len += len(text)
+                if re.search(r"fabric\.mod\.json|quilt\.mod\.json", n) and not raw.get("modid"):
+                    m = re.search(r'"id"\s*:\s*"([^"]{2,60})"', text)
+                    if m:
+                        raw["modid"] = m.group(1)
+                elif re.search(r"mods\.toml", n) and not raw.get("modid"):
+                    m = re.search(r'modId\s*=\s*"([^"]{2,60})"', text)
+                    if m:
+                        raw["modid"] = m.group(1)
             except Exception:
                 pass
 

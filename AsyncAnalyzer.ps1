@@ -4,7 +4,8 @@ param(
     [string]$DevPath = "",
     [switch]$DeepScan,
     [switch]$DeepMemory,
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$SelfTest
 )
 
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
@@ -806,6 +807,47 @@ function Write-VerdictCard($mod) {
     W ("  $([char]0x251C)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2524)") $bandColor
     W ("  $([char]0x2502)" + $tip.PadRight($w + 1) + "$([char]0x2502)") $bandColor
     W ("  $([char]0x2514)" + "$([char]0x2500)" * ($w + 1) + "$([char]0x2518)") $bandColor
+    Write-Host ""
+}
+
+function New-TestFeatures($over) {
+    $f = @{
+        StrongStrings = @(); WeakStrings = @(); PackageHits = @(); Patterns = @(); FullwidthStr = $false
+        FullwidthClsPct = 0.0; JapaneseClsPct = 0.0; SingleCharClsPct = 0.0; NumericClsPct = 0.0; NoVowelClsPct = 0.0
+        AvgEntropy = 0.0; HighEntropyPct = 0.0; ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false
+        HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
+    }
+    if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
+    return $f
+}
+
+function Invoke-SelfTest {
+    W "  AsyncAnalyzer self-test $([char]0x2014) verifying the local AI model + verdict logic" Cyan
+    Write-Host ""
+    $base = @{ Verified = $false; LegitModId = $false; HashKnownCheat = $false; CheatSite = $false; CheatSiteName = $null; FilenameClient = $false; FilenameToken = ""; RandomName = $false }
+    $cases = @(
+        @{ Label = "Doomsday-style cheat"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ PackageHits = @('org/chainlibs'); StrongStrings = @('AutoCrystal', 'KillAura', 'AutoAnchor', 'TriggerBot'); SingleCharClsPct = 0.35; HighEntropyPct = 0.35; AvgEntropy = 6.9; FullwidthStr = $true; ReflectionCount = 3 }) } }
+        @{ Label = "Clean optimization mod (legit id)"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ ReflectionCount = 3; AvgEntropy = 6.3 }) } }
+        @{ Label = "Anticheat full of detection names"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ StrongStrings = @('KillAura', 'AutoCrystal', 'TriggerBot', 'AimAssist', 'Scaffold'); ReflectionCount = 3 }) } }
+        @{ Label = "Reflection-heavy clean library"; Bands = @("Clean", "Review"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 6; AvgEntropy = 5.7; HighEntropyPct = 0.05 }) } }
+        @{ Label = "Token grabber"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HttpExfil = $true; RuntimeExec = $true; WeakStrings = @('grabToken', 'webhookurl', 'discordwebhook', 'sendWebhook', 'exfiltrate', 'callHome'); HighEntropyPct = 0.5; AvgEntropy = 7.0; ReflectionCount = 2 }) } }
+        @{ Label = "Verified mod that contains scary strings"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ StrongStrings = @('AutoCrystal', 'KillAura'); HttpDownload = $true; ReflectionCount = 2 }) } }
+    )
+    $pass = 0; $fail = 0
+    foreach ($c in $cases) {
+        $ctx = @{}
+        foreach ($k in $base.Keys) { $ctx[$k] = $base[$k] }
+        foreach ($k in $c.Over.Keys) { $ctx[$k] = $c.Over[$k] }
+        $v = Get-ModVerdict $ctx
+        $ok = $c.Bands -contains $v.Band
+        if ($ok) { $pass++ } else { $fail++ }
+        $col = if ($ok) { "Green" } else { "Red" }
+        $tag = if ($ok) { "PASS" } else { "FAIL" }
+        W ("  [$tag] " + $c.Label.PadRight(40) + " score=$($v.Score)  band=$($v.Band)  (want $($c.Bands -join '/'))") $col
+    }
+    Write-Host ""
+    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) model + verdict logic OK on this machine." Green }
+    else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
     Write-Host ""
 }
 
@@ -2478,6 +2520,8 @@ function Run-ServiceCheck {
 }
 
 Show-Banner
+
+if ($SelfTest) { Invoke-SelfTest; return }
 
 W "  What this tool does $([char]0x2014) and does not do:" Cyan
 W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green

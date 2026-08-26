@@ -29,7 +29,19 @@ Want to read the whole script before you run it? Open the raw URL above in your 
 | `-DeepScan` | Also scans your drives, recycle bin and processes for cheat traces. |
 | `-DeepMemory` | Also reads live Minecraft memory for loaded cheats (slower, off by default). |
 | `-Yes` | Answer "yes" to the deep-scan prompt automatically. |
+| `-SelfTest` | Verify the AI model + verdict logic on your machine, then exit. |
 | `-Dev` | Quick developer mode (10 items per category). |
+
+Verify the detector works before trusting it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1'))) -SelfTest"
+```
+
+It runs known cheat / clean / anticheat / verified cases through the real
+scoring engine and prints PASS/FAIL for each. Use the same
+`& ([scriptblock]::Create((irm '...'))) -Flag` form to pass any flag above
+(the short `iex (irm '...')` form runs a plain scan with no flags).
 
 ---
 
