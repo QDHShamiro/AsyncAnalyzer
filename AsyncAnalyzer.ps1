@@ -827,13 +827,11 @@ function Get-JarFeatures([string]$FilePath) {
                     $vc = ($cn.ToCharArray() | Where-Object { 'aeiouAEIOU'.IndexOf($_) -ge 0 }).Count
                     if ($vc -eq 0) { $novowel++ }
                 }
-                if ($e.Length -gt 200 -and $e.Length -lt 500000) {
+                if ($e.Length -gt 200 -and $e.Length -lt 500000 -and ($entCnt -lt 500 -or $textLen -lt 500000)) {
                     try {
                         $st = $e.Open(); $ms = New-Object System.IO.MemoryStream; $st.CopyTo($ms); $st.Close()
                         $bytes = $ms.ToArray(); $ms.Dispose()
-                        $ent = Get-ShannonEntropy $bytes
-                        $entSum += $ent; $entCnt++
-                        if ($ent -gt 7.2) { $highEnt++ }
+                        if ($entCnt -lt 500) { $ent = Get-ShannonEntropy $bytes; $entSum += $ent; $entCnt++; if ($ent -gt 7.2) { $highEnt++ } }
                         if ($textLen -lt 500000) { $ascii = [System.Text.Encoding]::ASCII.GetString($bytes); [void]$sb.Append($ascii); $textLen += $ascii.Length }
                     } catch {}
                 }
@@ -2231,14 +2229,13 @@ function Invoke-ObfuscationScan([string]$FilePath) {
 }
 
 function Get-ShannonEntropy([byte[]]$data) {
-    if ($data.Length -eq 0) { return 0.0 }
-    $freq = @{}
-    foreach ($b in $data) { if ($freq.ContainsKey($b)) { $freq[$b]++ } else { $freq[$b] = 1 } }
-    $entropy = 0.0
     $len = $data.Length
-    foreach ($c in $freq.Values) {
-        $p = $c / $len
-        $entropy -= $p * [Math]::Log($p, 2)
+    if ($len -eq 0) { return 0.0 }
+    $freq = New-Object 'int[]' 256
+    foreach ($b in $data) { $freq[$b]++ }
+    $entropy = 0.0
+    foreach ($c in $freq) {
+        if ($c -gt 0) { $p = $c / $len; $entropy -= $p * [Math]::Log($p, 2) }
     }
     return [Math]::Round($entropy, 4)
 }
@@ -3465,103 +3462,6 @@ function Run-BamScan {
         W "  $([char]0x26A0)  Administrator privileges required for BAM scan. Skipping." Yellow
         Write-Host ""
 
-        $flaggedRows = ""
-        foreach ($m in $script:FlaggedModsList) {
-            $ext = [System.IO.Path]::GetExtension($m).TrimStart('.').ToLower()
-            $flaggedRows += "<tr data-ext=`"$ext`"><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
-        }
-        $flaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
-            $filterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
-            "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button><button class='fbtn' onclick='_setExt(this,`"py`")'>.py</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious File</th></tr></thead><tbody>$flaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$filterJs"
-        } else {
-            "<p class='ok'>No flagged mods detected.</p>"
-        }
-        $allFilesRows = ""
-        $allFilesCombined = @()
-        $afSeen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($f in $jarFiles) { if ($afSeen.Add($f.Name)) { $allFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "jar" } } }
-        foreach ($f in $exeFiles) { if ($afSeen.Add($f.Name)) { $allFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "exe" } } }
-        foreach ($f in $pyFiles)  { if ($afSeen.Add($f.Name)) { $allFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "py"  } } }
-        if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { if ($afSeen.Add($n)) { $allFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "exe" } } } }
-        if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { if ($afSeen.Add($n)) { $allFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "py"  } } } }
-        foreach ($af in $allFilesCombined) {
-            $afFlagged  = $script:FlaggedModsList.Contains($af.Name)
-            $afVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $af.Name } | Measure-Object).Count -gt 0)
-            $afReview   = $script:ReviewModsList.Contains($af.Name)
-            $afStatus   = if ($afFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($afReview) { "<span style='color:#e3b341;font-weight:600;'>Review</span>" } elseif ($afVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#2ecc71;'>Clean</span>" }
-            $allFilesRows += "<tr data-ext=`"$($af.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($af.Name))</td><td style='color:var(--muted);'>.$($af.Ext)</td><td>$afStatus</td></tr>`n"
-        }
-        $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active")});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();document.querySelectorAll("#afTable tbody tr").forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");r.style.display=(_afExt==="all"||e===_afExt)&&n.includes(q)?"":"none";});}</script>'
-        $allFilesTable = if ($allFilesCombined.Count -gt 0) {
-            "<style>.afbtn{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 14px;color:var(--muted);cursor:pointer;font-size:0.85em;transition:border-color .15s,color .15s}.afbtn.active,.afbtn:hover{border-color:#238636;color:#2ecc71}</style><h2 style='margin:32px 0 10px;font-size:1.05em;'>File Result ($($allFilesCombined.Count))</h2><div class='filter-bar'><input type='text' id='afSearch' placeholder='Search files...' oninput='_afFilter()' style='flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:0.9em;outline:none;' /><button class='afbtn active' onclick='_afSetExt(this,`"all`")'>All</button><button class='afbtn' onclick='_afSetExt(this,`"jar`")'>.jar</button><button class='afbtn' onclick='_afSetExt(this,`"exe`")'>.exe</button><button class='afbtn' onclick='_afSetExt(this,`"py`")'>.py</button></div><table id='afTable'><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allFilesRows</tbody></table>$afScript"
-        } else { "" }
-        $statusColor  = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) { "#e74c3c" } else { "#2ecc71" }
-        $statusText   = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
-        $scanDate     = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-        $reportHtml = @"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AsyncAnalyzer $($script:Version) &mdash; Scan Report</title>
-  <style>
-    :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#238636; --danger:#e74c3c; --warn:#e3b341; }
-    * { box-sizing:border-box; margin:0; padding:0; }
-    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:32px 24px; }
-    h1 { font-size:1.6em; margin-bottom:4px; }
-    .sub { color:var(--muted); font-size:0.9em; margin-bottom:32px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:32px; }
-    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px 16px; text-align:center; }
-    .card .num { font-size:2.4em; font-weight:700; line-height:1; }
-    .card .lbl { color:var(--muted); font-size:0.8em; margin-top:6px; }
-    .green { color:#2ecc71; } .yellow { color:#e3b341; } .red { color:#e74c3c; }
-    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-    th { background:#1c2128; color:var(--muted); font-size:0.8em; text-transform:uppercase; letter-spacing:.06em; padding:10px 16px; text-align:left; }
-    td { padding:10px 16px; border-top:1px solid var(--border); font-size:0.9em; }
-    .status { margin-top:24px; padding:16px 20px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$statusColor; background:var(--surface); }
-    .bam-note { margin-top:16px; padding:12px 16px; border-radius:8px; background:var(--surface); border:1px solid var(--warn); color:var(--warn); font-size:0.85em; }
-    .ok { color:#2ecc71; padding:12px 0; }
-    .filter-bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
-    #modSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
-    #modSearch:focus { border-color:#238636; }
-    .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
-    .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
-    #afSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
-    #afSearch:focus { border-color:#238636; }
-    .afbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
-    .afbtn.active,.afbtn:hover { border-color:#238636; color:#2ecc71; }
-    footer { margin-top:40px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
-  </style>
-</head>
-<body>
-  <h1>AsyncAnalyzer $($script:Version) &mdash; Scan Report</h1>
-  <p class="sub">Generated: $scanDate &nbsp;&bull;&nbsp; Mod path: $([System.Net.WebUtility]::HtmlEncode($ModPath))</p>
-
-  <div class="grid">
-    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
-    <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
-    <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
-    <div class="card"><div class="num yellow">$($script:Review)</div><div class="lbl">Review</div></div>
-    <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
-    <div class="card"><div class="num $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="lbl">System Issues</div></div>
-  </div>
-
-  $flaggedTable
-  $allFilesTable
-
-  <div class="status">$statusText</div>
-  <div class="bam-note">&#9888; BAM scan skipped &mdash; Administrator privileges required. Re-run as Administrator for full history.</div>
-
-  <footer>
-    <span>AsyncAnalyzer by $($script:Author)</span>
-    <span>github.com/QDHShamiro &nbsp;&bull;&nbsp; discord.gg/asyncstudios</span>
-  </footer>
-</body>
-</html>
-"@
-
         $script:BamDeleted = @()
         New-HtmlReport
         return
@@ -3649,105 +3549,6 @@ function Run-BamScan {
     }
 
     $deletedEntries = @($bamEntries | Where-Object { $_.Signature -eq "Deleted" })
-    $rFlaggedRows = ""
-    foreach ($m in $script:FlaggedModsList) {
-        $rExt = [System.IO.Path]::GetExtension($m).TrimStart('.').ToLower()
-        $rFlaggedRows += "<tr data-ext=`"$rExt`"><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
-    }
-    $rFlaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
-        $rFilterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
-        "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button><button class='fbtn' onclick='_setExt(this,`"py`")'>.py</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious File</th></tr></thead><tbody>$rFlaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$rFilterJs"
-    } else { "<p class='ok'>No flagged mods detected.</p>" }
-    $rBamDelRows = ""
-    foreach ($de in $deletedEntries) {
-        $rBamDelRows += "<tr><td>$([System.Net.WebUtility]::HtmlEncode($de.FileName))</td><td style='color:var(--muted);font-size:0.82em;word-break:break-all;'>$([System.Net.WebUtility]::HtmlEncode($de.Path))</td><td>$([System.Net.WebUtility]::HtmlEncode($de.Time))</td></tr>`n"
-    }
-    $rBamDelSection = if ($deletedEntries.Count -gt 0) {
-        "<h2 style='margin:32px 0 10px;font-size:1.05em;color:#e3b341;'>&#9888; BAM &mdash; Deleted Files ($($deletedEntries.Count))</h2><p style='color:var(--muted);font-size:0.83em;margin-bottom:10px;'>Files executed on this PC but no longer present on disk (BAM registry).</p><table><thead><tr><th>File Name</th><th>Path</th><th>Last Executed</th></tr></thead><tbody>$rBamDelRows</tbody></table>"
-    } else { "<h2 style='margin:32px 0 10px;font-size:1.05em;'>BAM &mdash; Deleted Files</h2><p class='ok'>No deleted executables found in BAM history.</p>" }
-    $rAllFilesRows = ""
-    $rAllFilesCombined = @()
-    $rSeenNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($f in $jarFiles) { if ($rSeenNames.Add($f.Name)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "jar" } } }
-    foreach ($f in $exeFiles) { if ($rSeenNames.Add($f.Name)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "exe" } } }
-    foreach ($f in $pyFiles)  { if ($rSeenNames.Add($f.Name)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "py"  } } }
-    foreach ($be in ($bamEntries | Where-Object { $_.Signature -ne "Deleted" -and $_.FileName -match '\.(exe|py)$' })) {
-        if ($rSeenNames.Add($be.FileName)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $be.FileName; Ext = ([System.IO.Path]::GetExtension($be.FileName).TrimStart('.').ToLower()) } }
-    }
-    if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { if ($rSeenNames.Add($n)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "exe" } } } }
-    if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { if ($rSeenNames.Add($n)) { $rAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "py"  } } } }
-    foreach ($raf in $rAllFilesCombined) {
-        $rafFlagged  = $script:FlaggedModsList.Contains($raf.Name)
-        $rafVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $raf.Name } | Measure-Object).Count -gt 0)
-        $rafReview   = $script:ReviewModsList.Contains($raf.Name)
-        $rafStatus   = if ($rafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($rafReview) { "<span style='color:#e3b341;font-weight:600;'>Review</span>" } elseif ($rafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#2ecc71;'>Clean</span>" }
-        $rAllFilesRows += "<tr data-ext=`"$($raf.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($raf.Name))</td><td style='color:var(--muted);'>.$($raf.Ext)</td><td>$rafStatus</td></tr>`n"
-    }
-    $rAllFilesTable = if ($rAllFilesCombined.Count -gt 0) {
-        $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();var rows=document.querySelectorAll("#afTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_afExt==="all"||e===_afExt)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noAf").style.display=v===0?"":"none";}</script>'
-        "<h2 style='margin:32px 0 10px;font-size:1.05em;'>File Result ($($rAllFilesCombined.Count))</h2><div class='filter-bar'><input type='text' id='afSearch' placeholder='Search files...' oninput='_afFilter()' /><button class='afbtn active' onclick='_afSetExt(this,`"all`")'>All</button><button class='afbtn' onclick='_afSetExt(this,`"jar`")'>.jar</button><button class='afbtn' onclick='_afSetExt(this,`"exe`")'>.exe</button><button class='afbtn' onclick='_afSetExt(this,`"py`")'>.py</button></div><table id='afTable'><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$rAllFilesRows</tbody></table><p id='noAf' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$afScript"
-    } else { "" }
-    $rStatusColor = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0 -or $deletedEntries.Count -gt 0) { "#e74c3c" } else { "#2ecc71" }
-    $rStatusText  = if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0 -or $deletedEntries.Count -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
-    $rScanDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $reportHtml2 = @"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AsyncAnalyzer $($script:Version) &mdash; Scan Report</title>
-  <style>
-    :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#238636; --danger:#e74c3c; --warn:#e3b341; }
-    * { box-sizing:border-box; margin:0; padding:0; }
-    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:32px 24px; }
-    h1 { font-size:1.6em; margin-bottom:4px; }
-    .sub { color:var(--muted); font-size:0.9em; margin-bottom:32px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:32px; }
-    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px 16px; text-align:center; }
-    .card .num { font-size:2.4em; font-weight:700; line-height:1; }
-    .card .lbl { color:var(--muted); font-size:0.8em; margin-top:6px; }
-    .green { color:#2ecc71; } .yellow { color:#e3b341; } .red { color:#e74c3c; }
-    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:8px; }
-    th { background:#1c2128; color:var(--muted); font-size:0.8em; text-transform:uppercase; letter-spacing:.06em; padding:10px 16px; text-align:left; }
-    td { padding:10px 16px; border-top:1px solid var(--border); font-size:0.9em; }
-    .status { margin-top:24px; padding:16px 20px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$rStatusColor; background:var(--surface); }
-    .ok { color:#2ecc71; padding:12px 0; }
-    .filter-bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
-    #modSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
-    #modSearch:focus { border-color:#238636; }
-    .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
-    .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
-    #afSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
-    #afSearch:focus { border-color:#238636; }
-    .afbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; transition:border-color .15s,color .15s; }
-    .afbtn.active,.afbtn:hover { border-color:#238636; color:#2ecc71; }
-    footer { margin-top:40px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
-  </style>
-</head>
-<body>
-  <h1>AsyncAnalyzer $($script:Version) &mdash; Scan Report</h1>
-  <p class="sub">Generated: $rScanDate &nbsp;&bull;&nbsp; Mod path: $([System.Net.WebUtility]::HtmlEncode($ModPath))</p>
-  <div class="grid">
-    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
-    <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
-    <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
-    <div class="card"><div class="num yellow">$($script:Review)</div><div class="lbl">Review</div></div>
-    <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged / Suspicious</div></div>
-    <div class="card"><div class="num $(if($script:SystemIssues -gt 0){'red'}else{'green'})">$($script:SystemIssues)</div><div class="lbl">System Issues</div></div>
-    <div class="card"><div class="num $(if($deletedEntries.Count -gt 0){'yellow'}else{'green'})">$($deletedEntries.Count)</div><div class="lbl">BAM Deleted</div></div>
-  </div>
-  $rFlaggedTable
-  $rBamDelSection
-  $rAllFilesTable
-  <div class="status">$rStatusText</div>
-  <footer>
-    <span>AsyncAnalyzer by $($script:Author)</span>
-    <span>github.com/QDHShamiro &nbsp;&bull;&nbsp; discord.gg/asyncstudios</span>
-  </footer>
-</body>
-</html>
-"@
     $script:BamDeleted = @($deletedEntries)
     New-HtmlReport
     Write-Host ""
@@ -4721,95 +4522,6 @@ if ($script:Share -and $script:shareHashes.Count -gt 0) {
 }
 
 if ($script:_DevMode) {
-    $flaggedRows = ""
-    foreach ($m in $script:FlaggedModsList) {
-        $ext = [System.IO.Path]::GetExtension($m).TrimStart('.').ToLower()
-        $flaggedRows += "<tr data-ext=`"$ext`"><td>$([System.Net.WebUtility]::HtmlEncode($m))</td></tr>`n"
-    }
-    $flaggedTable = if ($script:FlaggedModsList.Count -gt 0) {
-        $filterJs = '<script>var _ext="all";function _setExt(b,e){_ext=e;document.querySelectorAll(".fbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_filter();}function _filter(){var q=document.getElementById("modSearch").value.toLowerCase();var rows=document.querySelectorAll("#flagTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_ext==="all"||e===_ext)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noMods").style.display=v===0?"":"none";}</script>'
-        "<div class='filter-bar'><input type='text' id='modSearch' placeholder='Search mods...' oninput='_filter()' /><button class='fbtn active' onclick='_setExt(this,`"all`")'>All</button><button class='fbtn' onclick='_setExt(this,`"jar`")'>.jar</button><button class='fbtn' onclick='_setExt(this,`"exe`")'>.exe</button><button class='fbtn' onclick='_setExt(this,`"py`")'>.py</button></div><table id='flagTable'><thead><tr><th>Flagged / Suspicious File</th></tr></thead><tbody>$flaggedRows</tbody></table><p id='noMods' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$filterJs"
-    } else {
-        "<p class='ok'>No flagged mods detected.</p>"
-    }
-    $devAllFilesRows = ""
-    $devAllFilesCombined = @()
-    $devSeenNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($f in $jarFiles) { if ($devSeenNames.Add($f.Name)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "jar" } } }
-    foreach ($f in $exeFiles) { if ($devSeenNames.Add($f.Name)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "exe" } } }
-    foreach ($f in $pyFiles)  { if ($devSeenNames.Add($f.Name)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $f.Name; Ext = "py"  } } }
-    if ($null -ne $script:PCScannedExeNames) { foreach ($n in $script:PCScannedExeNames) { if ($devSeenNames.Add($n)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "exe" } } } }
-    if ($null -ne $script:PCScannedPyNames)  { foreach ($n in $script:PCScannedPyNames)  { if ($devSeenNames.Add($n)) { $devAllFilesCombined += [PSCustomObject]@{ Name = $n; Ext = "py"  } } } }
-    foreach ($daf in $devAllFilesCombined) {
-        $dafFlagged  = $script:FlaggedModsList.Contains($daf.Name)
-        $dafVerified = ($null -ne $verifiedMods) -and (($verifiedMods | Where-Object { $_.FileName -eq $daf.Name } | Measure-Object).Count -gt 0)
-        $dafReview   = $script:ReviewModsList.Contains($daf.Name)
-        $dafStatus   = if ($dafFlagged) { "<span style='color:#e74c3c;font-weight:600;'>Flagged</span>" } elseif ($dafReview) { "<span style='color:#e3b341;font-weight:600;'>Review</span>" } elseif ($dafVerified) { "<span style='color:#2ecc71;'>Verified</span>" } else { "<span style='color:#2ecc71;'>Clean</span>" }
-        $devAllFilesRows += "<tr data-ext=`"$($daf.Ext)`"><td>$([System.Net.WebUtility]::HtmlEncode($daf.Name))</td><td style='color:var(--muted);'>.$($daf.Ext)</td><td>$dafStatus</td></tr>`n"
-    }
-    $devAllFilesTable = if ($devAllFilesCombined.Count -gt 0) {
-        $afScript = '<script>var _afExt="all";function _afSetExt(b,e){_afExt=e;document.querySelectorAll(".afbtn").forEach(function(x){x.classList.remove("active");});b.classList.add("active");_afFilter();}function _afFilter(){var q=document.getElementById("afSearch").value.toLowerCase();var rows=document.querySelectorAll("#afTable tbody tr");var v=0;rows.forEach(function(r){var n=r.cells[0].textContent.toLowerCase();var e=r.getAttribute("data-ext");var ok=(_afExt==="all"||e===_afExt)&&n.includes(q);r.style.display=ok?"":"none";if(ok)v++;});document.getElementById("noAf").style.display=v===0?"":"none";}</script>'
-        "<h2 style='margin:32px 0 10px;font-size:1.05em;'>File Result ($($devAllFilesCombined.Count))</h2><div class='filter-bar'><input type='text' id='afSearch' placeholder='Search files...' oninput='_afFilter()' /><button class='afbtn active' onclick='_afSetExt(this,`"all`")'>All</button><button class='afbtn' onclick='_afSetExt(this,`"jar`")'>.jar</button><button class='afbtn' onclick='_afSetExt(this,`"exe`")'>.exe</button><button class='afbtn' onclick='_afSetExt(this,`"py`")'>.py</button></div><table id='afTable'><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$devAllFilesRows</tbody></table><p id='noAf' style='display:none;color:#8b949e;padding:8px 0;'>No results match your filter.</p>$afScript"
-    } else { "" }
-    $statusColor = if ($script:Flagged -gt 0) { "#e74c3c" } else { "#2ecc71" }
-    $statusText  = if ($script:Flagged -gt 0) { "ACTION REQUIRED &#8212; review all flagged items above." } else { "All checks passed. Installation appears clean." }
-    $scanDate    = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $devHtml = @"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AsyncAnalyzer $($script:Version) &mdash; Dev Result</title>
-  <style>
-    :root { --bg:#0d1117; --surface:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e; --warn:#e3b341; }
-    * { box-sizing:border-box; margin:0; padding:0; }
-    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; padding:32px 24px; }
-    h1 { font-size:1.6em; margin-bottom:4px; }
-    .sub { color:var(--muted); font-size:0.9em; margin-bottom:24px; }
-    .dev-badge { display:inline-block; background:#e3b341; color:#0d1117; font-size:0.75em; font-weight:700; padding:3px 10px; border-radius:4px; margin-left:10px; vertical-align:middle; letter-spacing:.06em; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
-    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; text-align:center; }
-    .card .num { font-size:2.2em; font-weight:700; line-height:1; }
-    .card .lbl { color:var(--muted); font-size:0.8em; margin-top:6px; }
-    .green { color:#2ecc71; } .yellow { color:#e3b341; } .red { color:#e74c3c; }
-    table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-    th { background:#1c2128; color:var(--muted); font-size:0.8em; text-transform:uppercase; letter-spacing:.06em; padding:10px 16px; text-align:left; }
-    td { padding:10px 16px; border-top:1px solid var(--border); font-size:0.9em; }
-    .status { margin-top:24px; padding:14px 18px; border-radius:8px; font-weight:600; border:1px solid var(--border); color:$statusColor; background:var(--surface); }
-    .ok { color:#2ecc71; padding:10px 0; }
-    .filter-bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
-    #modSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
-    #modSearch:focus { border-color:#238636; }
-    .fbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; }
-    .fbtn.active,.fbtn:hover { border-color:#238636; color:#2ecc71; }
-    #afSearch { flex:1; min-width:200px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 12px; color:var(--text); font-size:0.9em; outline:none; }
-    #afSearch:focus { border-color:#238636; }
-    .afbtn { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; color:var(--muted); cursor:pointer; font-size:0.85em; }
-    .afbtn.active,.afbtn:hover { border-color:#238636; color:#2ecc71; }
-    footer { margin-top:36px; color:var(--muted); font-size:0.8em; display:flex; justify-content:space-between; }
-  </style>
-</head>
-<body>
-  <h1>AsyncAnalyzer $($script:Version) <span class="dev-badge">DEV</span></h1>
-  <p class="sub">Generated: $scanDate &nbsp;&bull;&nbsp; Quick dev scan &mdash; all heavy checks skipped</p>
-  <div class="grid">
-    <div class="card"><div class="num">$($script:TotalMods)</div><div class="lbl">Total Files</div></div>
-    <div class="card"><div class="num green">$($script:Verified)</div><div class="lbl">Verified</div></div>
-    <div class="card"><div class="num yellow">$($script:Unknown)</div><div class="lbl">Unknown</div></div>
-    <div class="card"><div class="num yellow">$($script:Review)</div><div class="lbl">Review</div></div>
-    <div class="card"><div class="num red">$($script:Flagged)</div><div class="lbl">Flagged</div></div>
-  </div>
-  $flaggedTable
-  $devAllFilesTable
-  <div class="status">$statusText</div>
-  <footer>
-    <span>AsyncAnalyzer by $($script:Author) &mdash; DEV MODE</span>
-    <span>$scanDate</span>
-  </footer>
-</body>
-</html>
-"@
     New-HtmlReport
     return
 }
