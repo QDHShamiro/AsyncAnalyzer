@@ -44,6 +44,8 @@ public class MC {
   public static class ServerboundPlayerActionPacket { public ServerboundPlayerActionPacket(int x,int y,int z){} }
   public static class ServerboundContainerClickPacket { public ServerboundContainerClickPacket(int slot,int btn){} }
   public static class ServerboundChatPacket { public ServerboundChatPacket(String m){} }
+  public static class HitResult { public Entity entity; public double dist; }
+  public static class Camera { public HitResult getCrosshairTarget(){return null;} }
   public static class AbstractContainerMenu { public int slots; public void clicked(int s,int b){} }
 }
 '''
@@ -193,10 +195,14 @@ def body(kind, obf):
         return '''    if (!bind.isPressed()) return;
     for (int i=0;i<menu.slots;i++) menu.clicked(i, 0);'''
     if kind == "reachdisp":
-        # reach / CPS display: measures exactly what a reach cheat measures and
-        # never attacks with it.
-        return '''    for (MC.Entity t : level.entitiesForRendering()) {
-      double d = Math.sqrt((t.x-me.x)*(t.x-me.x) + (t.z-me.z)*(t.z-me.z));
+        # A reach / ping / CPS display reads the ONE entity under the crosshair and
+        # draws a number. It was first modelled here as a full entity sweep, which is
+        # wrong and made it indistinguishable from a mob radar - the real thing never
+        # enumerates entities at all, and that is why it stays clean while a radar
+        # does not.
+        return '''    MC.HitResult h = cam.getCrosshairTarget();
+    if (h != null && h.entity != null) {
+      double d = Math.sqrt((h.entity.x-me.x)*(h.entity.x-me.x));
       if (d > 0) hit++;
     }
     MC.RenderSystem.setShader(); stack.pushPose(); stack.popPose();'''
@@ -266,6 +272,7 @@ FIELDS = [
     ("buf",   "  private MC.VertexConsumer buf;"),
     ("stack", "  private MC.PoseStack stack;"),
     ("menu",  "  private MC.AbstractContainerMenu menu;"),
+    ("cam",   "  private MC.Camera cam;"),
     ("blob",  "  private byte[] blob = new byte[16];"),
     ("k",     "  private byte[] k = new byte[16];"),
     ("hit",   "  private int hit;"),

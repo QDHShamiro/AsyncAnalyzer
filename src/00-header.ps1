@@ -33,6 +33,9 @@ $script:TotalMods    = 0
 $script:Verified     = 0
 $script:Unknown      = 0
 $script:Review       = 0
+# Recognised for certain, but whether it is allowed is the server's rule. Counted
+# separately from Review so a moderator can tell a rule question from uncertainty.
+$script:ServerRule   = 0
 $script:Flagged      = 0
 $script:SystemIssues = 0
 $script:DeepMemory   = [bool]$DeepMemory

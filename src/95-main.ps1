@@ -229,9 +229,13 @@ if (-not $SkipModCheck) {
                 [void]$flaggedMods.Add($rec)
                 [void]$script:FlaggedModsList.Add($jar.Name)
                 $script:Flagged++
-            } elseif ($verdict.Band -eq "Review") {
+            } elseif ($verdict.Band -eq "Review" -or $verdict.Band -eq "ServerRule") {
+                # A server-rule finding goes in the same list as Review - it needs a
+                # person to look at it either way. It keeps its own band so the report
+                # can say WHY: uncertainty in one case, a rule question in the other.
                 [void]$reviewMods.Add($rec)
                 [void]$script:ReviewModsList.Add($jar.Name)
+                if ($verdict.Band -eq "ServerRule") { $script:ServerRule++ }
             } else {
                 [void]$unknownMods.Add($rec)
             }

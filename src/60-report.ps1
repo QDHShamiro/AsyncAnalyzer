@@ -11,6 +11,10 @@ function Get-BandStyle([string]$band) {
                                 say = "Strong signs of cheating. Every point below needs an answer before this is closed." } }
         "Review"    { return @{ c = "#ffcf4d"; label = "NEEDS A MANUAL LOOK";  short = "REVIEW";
                                 say = "Something does not fit, but it is not proof. Read the points below and decide." } }
+        # Violet on purpose: it must not read as a severity between amber and red.
+        # This is a different KIND of finding, not a stronger one.
+        "ServerRule" { return @{ c = "#a78bfa"; label = "SERVER RULE";          short = "SERVER RULE";
+                                say = "Recognised for certain, and whether it is allowed is your server's rule rather than a technical question. This is not an accusation." } }
         default     { return @{ c = "#3ddc84"; label = "NOTHING FOUND";        short = "CLEAN";
                                 say = "Nothing cheat-like was found in what was checked. Read the coverage box - it says what was not checked." } }
     }
@@ -93,6 +97,9 @@ function New-HtmlReport([string]$OutPath = "") {
 
     # ---- mods ---------------------------------------------------------------
     $mods = @(@($flaggedMods) + @($reviewMods) | Where-Object { $_ } | Sort-Object Score -Descending)
+    $srNote = if ($script:ServerRule -gt 0) {
+        " <span class='srnote'>$($script:ServerRule) of them are server-rule questions, not accusations</span>"
+    } else { "" }
     $modCards = ""
     foreach ($m in $mods) {
         $bm = Get-BandStyle $m.Band
@@ -281,6 +288,7 @@ ol.verdict-reasons li{display:flex;gap:12px;background:var(--surface);border:1px
 .score{font-size:1.35rem;font-weight:800;color:var(--lc);font-variant-numeric:tabular-nums;}
 .score small{font-size:.5em;color:var(--ink3);font-weight:600;}
 .area{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);}
+.srnote{font-size:.7rem;text-transform:none;letter-spacing:0;color:#a78bfa;font-weight:500;margin-left:.6em;}
 .kv{color:var(--ink3);margin:10px 0 2px;}
 .why{margin-top:13px;padding-top:12px;border-top:1px solid var(--line);}
 ul.reasons,ul.evidence{list-style:none;display:flex;flex-direction:column;gap:5px;}
@@ -388,7 +396,7 @@ footer a:hover{text-decoration:underline;}
 </section>
 
 <section>
-  <h2>Mods &mdash; flagged and to review<span class="count">$($script:Flagged + $script:Review)</span></h2>
+  <h2>Mods &mdash; flagged and to review<span class="count">$($script:Flagged + $script:Review)</span>$srNote</h2>
   $modCards
   $verSection
 </section>

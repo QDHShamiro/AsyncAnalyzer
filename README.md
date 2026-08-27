@@ -92,10 +92,24 @@ Instead of *"one bad word = FLAGGED"*, every mod gets a **0–100 score**:
 | ✅ **Verified** | — | Hash matched on Modrinth / CurseForge. **Never flagged.** |
 | 🟢 **Clean** | 0–29 | Nothing cheat-like. |
 | 🟡 **Review** | 30–59 | Worth a manual look, not confirmed. |
+| 🟣 **Server rule** | 30–59 | Recognised for certain — but whether it's *allowed* is your server's rule, not a technical question. Never proof. |
 | 🟠 **Likely** | 60–84 | Probably a cheat. |
 | 🔴 **Confirmed** | 85–100 | Cheat. |
 
 The score blends the **AI model** with hard rules that always win: a known-cheat hash, a cheat-client package path (`net/ccbluex`, `org/chainlibs`…), or a known cheat download site. Verified / known-good mods are capped safe no matter what.
+
+**Server rule** is its own band because two different things were both landing on "Review",
+and a moderator could not tell them apart: *we are not sure what this is* and *we are sure
+what this is, and your rulebook decides*. A schematic printer and a mob-radar minimap are the
+second kind. It sits in the Review score range and is renamed, never raised — if the same jar
+also forges movement packets, that finding stands and it is not a printer any more.
+
+There is also a cap in the other direction. A jar whose bytecode only ever goes through the
+game's own systems — reads a keybind, clicks an inventory slot, draws to the screen — and
+never forges movement, writes rotation, attacks, loads code or opens a socket, is capped at
+Clean. It cannot do what a cheat needs to do, so obfuscated names and alarming strings must
+not be allowed to push it into Review on their own. A known-cheat hash or a cheat package
+path still overrides the cap.
 
 **A cheat can't hide behind a legit mod.** The mod id (`"id":"sodium"`) lives in the jar's own `fabric.mod.json` — the jar writes it itself, so it proves nothing. A **hash-verified** file really is that mod and stays capped safe; but a jar that merely *claims* a known mod id while carrying injector/cheat evidence is treated as **impersonation → Confirmed**. That covers both a cheat pretending to be Sodium and a real mod someone injected cheat code into (its hash stops matching the moment it's tampered with).
 
@@ -334,6 +348,7 @@ describe a rule the tool no longer runs.
 |---|---|
 | **False flags on real software** | **0** of **177** real Maven Central libraries — through the *full* verdict chain, not just one rule |
 | Aim / killaura / pathing / timer | detected, independent of where it hides (class 0 → 4995 of 5000) |
+| Combat, movement, world, ghost utilities | **198 of 222** reconstructed cheat variants caught &mdash; scaffold, no-fall, blink, speed, nuker, inventory-move, velocity, triggerbot, autoclicker, freecam, Baritone-style pathing |
 | Dropper (decrypt → defineClass) | detected |
 | Legit auto-walk vs. pathing cheat | told apart — the cheat forges its own movement packet, the mod uses the game's input |
 | Team learning | a new cheat pattern climbs 13% → 35% while clean scans stay at 9% |
@@ -350,6 +365,9 @@ Two results are reported honestly rather than tuned away:
   The rule is scoped to *a jar in a mods folder*, where an agent is abnormal.
 - **ESP is not decidable from bytecode.** ESP and a mob-radar minimap do the same thing, so
   it is surfaced for review instead of accused. That costs recall on purpose.
+- **A HTTP config pull with reflection is not detectable.** That rule would have matched 87
+  of the 177 real libraries, so it does not ship. A ghost client that keeps its modules on a
+  server and pulls them at runtime is caught by what it then *does*, not by the download.
 
 Reproduce it yourself from a clean checkout:
 ```bash
@@ -365,8 +383,8 @@ python3 ml/fetch_jars.py && python3 ml/benchmark.py
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
 | `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
-| `-SelfTest` (in-tool) | 42 known cases — mod-level, impersonation, whole-scan **and the report itself** (it renders end to end and is checked, so the document staff read is never the untested part) |
-| `ml/test_report.py` | **41/41** — the score scale draws the engine's real band edges, a clean verdict never claims proof, an incomplete scan says so, no template variable is silently undefined |
+| `-SelfTest` (in-tool) | 58 known cases — mod-level, impersonation, whole-scan **and the report itself** (it renders end to end and is checked, so the document staff read is never the untested part) |
+| `ml/test_report.py` | **46/46** — the score scale draws the engine's real band edges, a clean verdict never claims proof, an incomplete scan says so, no template variable is silently undefined |
 
 ---
 

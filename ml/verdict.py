@@ -65,6 +65,9 @@ def verdict(raw):
     # Behaviour read out of the bytecode (see ml/bytecode.py). Survives string
     # encryption, because calling a Minecraft method means naming it in the pool.
     bc = raw.get("bytecode") or {}
+    # Set when a behaviour is recognised for certain but its legality is a server
+    # rule rather than a technical fact. It renames the band; it never raises it.
+    policy = False
     if bc.get("classes_parsed", 0) > 0:
         # aim/killaura: forging your own movement packet with a computed rotation
         if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_rotation_ratio", 0) > 0:
@@ -73,13 +76,54 @@ def verdict(raw):
         if bc.get("bc_crypto_ratio", 0) >= 0.5 and (
                 bc.get("bc_classload_ratio", 0) > 0 or bc.get("bc_reflect_ratio", 0) >= 0.5):
             score = max(score, 85)
+        # Forging movement paired with a second thing no legitimate mod combines it
+        # with. Measured at 0 hits across 405 clean jars, 177 of them real libraries.
+        if bc.get("bc_blockplace_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
+            score = max(score, 85)          # scaffold / tower
+        if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_motion_ratio", 0) > 0:
+            score = max(score, 85)          # speed / no-fall / blink
+        if bc.get("bc_container_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
+            score = max(score, 85)          # inventory-move
         if bc.get("bc_instrument_ratio", 0) > 0:
             score = max(score, 80)
-        # ESP and a mob-radar minimap are the same behaviour and the bytecode does not
-        # contain what separates them -> surface for review, never accuse.
+        # Strong, but not the same order of certainty -> flag, do not confirm.
+        if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) == 0:
+            score = max(score, 60)          # movement not coming from the player
+        if bc.get("bc_entityscan_ratio", 0) > 0 and bc.get("bc_attack_ratio", 0) > 0:
+            score = max(score, 60)          # killaura / reach / triggerbot targeting
+        if bc.get("bc_attack_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) == 0:
+            score = max(score, 60)          # autoclicker / triggerbot
+        if bc.get("bc_pktlisten_ratio", 0) > 0 and bc.get("bc_motion_ratio", 0) > 0:
+            score = max(score, 60)          # velocity / anti-knockback
+        if bc.get("bc_blockbreak_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) == 0:
+            score = max(score, 60)          # nuker
+        if (bc.get("bc_rotation_ratio", 0) > 0 and bc.get("bc_render_ratio", 0) > 0
+                and bc.get("bc_movepacket_ratio", 0) == 0):
+            score = max(score, 60)          # freecam
+        # Recognised for certain; legality is a server rule, not a technical fact.
+        # These are scored into Review and the band is renamed, never raised.
         if (bc.get("bc_render_ratio", 0) > 0 and bc.get("bc_entityscan_ratio", 0) > 0
                 and not (raw.get("verified") or raw.get("legit_modid"))):
             score = max(score, 35)
+            policy = True                   # ESP or a mob-radar minimap
+        if (bc.get("bc_blockplace_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) > 0
+                and bc.get("bc_movepacket_ratio", 0) == 0
+                and not (raw.get("verified") or raw.get("legit_modid"))):
+            score = max(score, 35)
+            policy = True                   # schematic printer
+
+        # Behaviour beats text: a jar that only goes through the game's own systems
+        # and forges nothing cannot cheat, whatever its names and strings look like.
+        forges = any(bc.get(k, 0) > 0 for k in (
+            "bc_movepacket_ratio", "bc_rotation_ratio", "bc_motion_ratio", "bc_attack_ratio",
+            "bc_classload_ratio", "bc_instrument_ratio", "bc_unsafe_ratio", "bc_exec_ratio",
+            "bc_crypto_ratio", "bc_net_ratio"))
+        uses_game_only = any(bc.get(k, 0) > 0 for k in
+                             ("bc_input_ratio", "bc_container_ratio", "bc_render_ratio"))
+        if (not policy and not forges and uses_game_only
+                and not raw.get("hash_known_cheat") and not raw.get("pkgpath")
+                and not raw.get("cheatsite")):
+            score = min(score, 20)
 
     # Random / hash-style filename on an unverified mod: floor to Review (never a flag)
     # so it is surfaced instead of slipping through as "unknown". Verified / legit mods
@@ -120,7 +164,13 @@ def verdict(raw):
         else:
             score = min(score, 20)
 
-    return {"score": score, "band": band(score), "probability": round(p * 100)}
+    b = band(score)
+    # Only renamed while it sits in Review. If anything else pushed the same jar to
+    # Likely or Confirmed, that finding stands - a printer that also forges movement
+    # packets is not a printer.
+    if policy and b == "Review":
+        b = "ServerRule"
+    return {"score": score, "band": b, "probability": round(p * 100), "policy": policy}
 
 
 if __name__ == "__main__":

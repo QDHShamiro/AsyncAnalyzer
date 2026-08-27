@@ -238,6 +238,9 @@ function Get-ModVerdict($ctx) {
     foreach ($tp in (@($contribs | Sort-Object C -Descending | Select-Object -First 4))) { [void]$reasons.Add("Factor: $($tp.Name)") }
 
     # ---- behaviour, read out of the bytecode (survives string encryption) ----
+    # Set when a behaviour is recognised for certain but its legality is a server
+    # rule rather than a technical fact. It renames the band; it never raises it.
+    $policy = $false
     $bc = $ctx.Bytecode
     if ($bc -and $bc.ClassesParsed -gt 0) {
         # The aim / killaura fingerprint, verified against real cheat source: forging your
@@ -252,15 +255,87 @@ function Get-ModVerdict($ctx) {
             $score = [Math]::Max($score, 85)
             [void]$reasons.Add("Behaviour: decrypts data and defines classes from it at runtime $([char]0x2014) loader/dropper pattern")
         }
-        # Deliberately NOT an accusation. ESP and a mob-radar minimap are the same
-        # behaviour, and the bytecode does not contain what separates them. Surface it.
-        if ($bc.renderRatio -gt 0 -and $bc.entityscanRatio -gt 0 -and -not ($ctx.Verified -or $ctx.LegitModId)) {
-            $score = [Math]::Max($score, 35)
-            [void]$reasons.Add("Behaviour: draws from a full entity sweep $([char]0x2014) that is what ESP does, but also what a mob-radar minimap does. Unverified, so worth a look, not a verdict")
+        # Forging your own movement is the line between automating the game and
+        # lying to the server about where you are. Each of these pairs that forgery
+        # with a second thing no legitimate mod combines it with. Measured on the
+        # corpus at 0 hits across 405 clean jars, 177 of them real libraries.
+        if ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement")
+        }
+        if ($bc.movepacketRatio -gt 0 -and $bc.motionRatio -gt 0) {
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match $([char]0x2014) speed / no-fall / blink. The game never produced this movement")
+        }
+        if ($bc.containerRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement")
+        }
+        # Strong, but not the same order of certainty as forging movement, so these
+        # flag rather than confirm.
+        if ($bc.movepacketRatio -gt 0 -and $bc.inputRatio -eq 0) {
+            $score = [Math]::Max($score, 60)
+            [void]$reasons.Add("Behaviour: sends its own movement packets and never reads the keyboard $([char]0x2014) the movement is not coming from the player")
+        }
+        if ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
+            $score = [Math]::Max($score, 60)
+            [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep $([char]0x2014) killaura / reach / triggerbot pick their target this way")
+        }
+        if ($bc.attackRatio -gt 0 -and $bc.inputRatio -eq 0) {
+            $score = [Math]::Max($score, 60)
+            [void]$reasons.Add("Behaviour: attacks without ever reading a key or mouse button $([char]0x2014) the hits are not coming from the player (autoclicker / triggerbot)")
+        }
+        if ($bc.pktlistenRatio -gt 0 -and $bc.motionRatio -gt 0) {
+            $score = [Math]::Max($score, 60)
+            [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back")
+        }
+        if ($bc.blockbreakRatio -gt 0 -and $bc.inputRatio -eq 0) {
+            $score = [Math]::Max($score, 60)
+            [void]$reasons.Add("Behaviour: breaks blocks without reading input $([char]0x2014) nuker. A vein miner breaks blocks too, but only while the player is mining")
+        }
+        if ($bc.rotationRatio -gt 0 -and $bc.renderRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
+            $score = [Math]::Max($score, 60)
+            [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them")
         }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
+        }
+        # ---- server-rule behaviours ------------------------------------------
+        # Recognised for certain; whether they are allowed is not a technical
+        # question. These never become proof - they are scored into Review and the
+        # band is renamed so a moderator sees a rule question, not an accusation.
+        if ($bc.renderRatio -gt 0 -and $bc.entityscanRatio -gt 0 -and -not ($ctx.Verified -or $ctx.LegitModId)) {
+            $score = [Math]::Max($score, 35)
+            $policy = $true
+            [void]$reasons.Add("Behaviour: draws from a full entity sweep $([char]0x2014) that is what ESP does, and also exactly what a mob-radar minimap does. The bytecode does not contain what separates them")
+        }
+        if ($bc.blockplaceRatio -gt 0 -and $bc.inputRatio -gt 0 -and $bc.movepacketRatio -eq 0 -and
+            -not ($ctx.Verified -or $ctx.LegitModId)) {
+            $score = [Math]::Max($score, 35)
+            $policy = $true
+            [void]$reasons.Add("Behaviour: places blocks automatically while a key is held $([char]0x2014) a schematic printer. Banned on most survival servers and normal on build servers, so this is a rule question rather than a cheat")
+        }
+
+        # ---- behaviour beats text -------------------------------------------
+        # A jar that only ever goes through the game's own systems - reads a keybind,
+        # clicks a slot, draws to the screen - and never forges movement, writes
+        # rotation, attacks, loads code, shells out or opens a socket, is not doing
+        # anything a cheat needs to do. Obfuscated names and alarming strings do not
+        # change that, so they must not be allowed to push it into Review on their
+        # own: that is where inventory sorters and reach/ping/CPS displays were
+        # being scored on how their code looks rather than on what it does.
+        $forges = ($bc.movepacketRatio -gt 0 -or $bc.rotationRatio -gt 0 -or $bc.motionRatio -gt 0 -or
+                   $bc.attackRatio -gt 0 -or $bc.classloadRatio -gt 0 -or $bc.instrumentRatio -gt 0 -or
+                   $bc.unsafeRatio -gt 0 -or $bc.execRatio -gt 0 -or $bc.cryptoRatio -gt 0 -or
+                   $bc.netRatio -gt 0)
+        $usesGameOnly = ($bc.inputRatio -gt 0 -or $bc.containerRatio -gt 0 -or $bc.renderRatio -gt 0)
+        if (-not $policy -and -not $forges -and $usesGameOnly -and $bc.ClassesParsed -gt 0 -and
+            -not $ctx.HashKnownCheat -and ($ft.PackageHits.Count -eq 0) -and -not $ctx.CheatSite) {
+            if ($score -gt 20) {
+                [void]$reasons.Add("Behaviour: goes through the game's own input, container and rendering systems and forges nothing $([char]0x2014) no movement packet, no rotation write, no attack, no code loading. Whatever the file looks like, it cannot cheat with this")
+            }
+            $score = [Math]::Min($score, 20)
         }
     }
 
@@ -304,7 +379,11 @@ function Get-ModVerdict($ctx) {
     if ($capped) { $reasons.Insert(0, "Known-good / verified mod $([char]0x2014) the matches below are part of the mod's own function, not a cheat") }
 
     $band = if ($score -ge 85) { "Confirmed" } elseif ($score -ge 60) { "Likely" } elseif ($score -ge 30) { "Review" } else { "Clean" }
-    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons }
+    # A rule-dependent behaviour is only renamed while it sits in Review. If anything
+    # else pushed the same jar to Likely or Confirmed, that finding stands - a printer
+    # that also forges movement packets is not a printer.
+    if ($policy -and $band -eq "Review") { $band = "ServerRule" }
+    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons; Policy = $policy }
 }
 
 function Split-CardText([string]$text, [int]$width) {
@@ -429,9 +508,8 @@ function Invoke-SelfTest {
         @{ Label = "Legit mod tampered with (agent added)"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; ReflectionCount = 3 }) } }
         @{ Label = "Real verified mod shipping its own agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true }) } }
         @{ Label = "Aim cheat by behaviour alone"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0 }) } }
-        @{ Label = "Freecam mod (rotation, no packet)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0 }) } }
         @{ Label = "Chat macro (packet, no rotation)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Minimap w/ mob radar, unverified"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
+        @{ Label = "Minimap w/ mob radar, unverified"; Bands = @("ServerRule"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Minimap w/ mob radar, verified"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Dropper by behaviour (encrypted)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ cryptoRatio = 1.0; classloadRatio = 1.0; reflectRatio = 1.0; StrReadableRatio = 0.1 }) } }
         @{ Label = "Reflection-heavy lib, no cheat behaviour"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 5 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0 }) } }
@@ -440,6 +518,24 @@ function Invoke-SelfTest {
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
         @{ Label = "Verified mod that ships an agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentClass = "org.spongepowered.asm.launch.MixinAgent" }) } }
         @{ Label = "Architectury jar (fabric+forge only)"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge'); ReflectionCount = 2 }) } }
+        # ---- the behaviour families, each against the legit mod it resembles ----
+        @{ Label = "Scaffold (places + forges movement)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Schematic printer (places on a key)"; Bands = @("ServerRule"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; renderRatio = 1.0 }) } }
+        @{ Label = "Speed/no-fall (velocity + forged move)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Inventory-move (slots + forged move)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; movepacketRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Inventory sorting (slots on a key)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Obfuscated inventory sorter"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ SingleCharClsPct = 0.7; HighEntropyPct = 0.5; AvgEntropy = 7.0 }); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0; ObfNameRatio = 0.8; StrReadableRatio = 0.1 }) } }
+        @{ Label = "Nuker (breaks blocks, no input)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockbreakRatio = 1.0 }) } }
+        @{ Label = "Vein miner (breaks on a key)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockbreakRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Triggerbot (attacks, no input)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ attackRatio = 1.0; entityscanRatio = 1.0 }) } }
+        @{ Label = "Reach display (crosshair, no attack)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Velocity (packet listen + motion)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ pktlistenRatio = 1.0; motionRatio = 1.0 }) } }
+        @{ Label = "Replay recorder (listen, no motion)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ pktlistenRatio = 1.0; renderRatio = 1.0 }) } }
+        @{ Label = "Freecam (writes rotation + renders)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Third-person camera (renders only)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0 }) } }
+        @{ Label = "Baritone-style pathing"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
+        @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
     )
     $pass = 0; $fail = 0
     foreach ($c in $cases) {

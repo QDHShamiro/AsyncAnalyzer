@@ -317,8 +317,14 @@ def ps_bands():
         return []
     g = m.groups()
     hi, hn, mi, mn, lo, ln, cn = int(g[0]), g[1], int(g[2]), g[3], int(g[4]), g[5], g[6]
-    return [(cn, "0-%d" % (lo - 1)), (ln, "%d-%d" % (lo, mi - 1)),
-            (mn, "%d-%d" % (mi, hi - 1)), (hn, "%d-100" % hi)]
+    bands = [(cn, "0-%d" % (lo - 1)), (ln, "%d-%d" % (lo, mi - 1)),
+             (mn, "%d-%d" % (mi, hi - 1)), (hn, "%d-100" % hi)]
+    # ServerRule is a rename of Review rather than its own threshold, so it does not
+    # appear in the band expression. Insert it where it actually sits, and only if
+    # the rename is really in the shipped script.
+    if re.search(r'\$band -eq "%s"\) \{ \$band = "ServerRule" \}' % re.escape(ln), ps):
+        bands.insert(2, ("ServerRule", "%d-%d" % (lo, mi - 1)))
+    return bands
 
 
 BAND_TEXT = {

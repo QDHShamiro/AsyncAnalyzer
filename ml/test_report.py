@@ -18,10 +18,15 @@ def check(name, ok, detail=""):
     results.append((name, ok, detail))
 
 def band_edges(src, func):
-    """The score thresholds a verdict function turns into band names."""
+    """The score thresholds a verdict function turns into band names.
+
+    Searches forward from the function to its band assignment rather than inside a
+    fixed window - a window has to be widened every time a rule is added, and the
+    day someone forgets, this reports "no thresholds found" instead of checking them.
+    """
     i = src.index("function " + func)
-    body = src[i:i + 12000]
-    m = re.search(r'\$band\s*=\s*if\s*\(\$score\s*-ge\s*(\d+)\).*?-ge\s*(\d+).*?-ge\s*(\d+)', body, re.S)
+    m = re.search(r'\$band\s*=\s*if\s*\(\$score\s*-ge\s*(\d+)\)[^\n]*?-ge\s*(\d+)[^\n]*?-ge\s*(\d+)',
+                  src[i:])
     return tuple(int(g) for g in m.groups()) if m else None
 
 
@@ -50,6 +55,25 @@ styled = set(re.findall(r'^\s*"(\w+)"\s*\{ return @\{ c = "#', REPORT, re.M))
 for b in ("Confirmed", "Likely", "Review"):
     check(f"band {b} has an explicit style", b in styled, f"styled={sorted(styled)}")
 check("Clean falls through to the default arm", "default     { return @{ c =" in REPORT)
+check("the server-rule band has a style", '"ServerRule" { return @{ c =' in REPORT)
+
+# A server-rule finding is a different KIND of finding, not a stronger one. If it
+# ever starts raising a score instead of renaming a band, a rule question turns
+# into an accusation - which is the exact thing this band exists to prevent.
+for src_name, src_text in (("PowerShell", REPORT), ("verdict.py", (ROOT / "ml" / "verdict.py").read_text(encoding="utf-8"))):
+    pass
+PS_VERDICT = (ROOT / "src" / "50-analysis.ps1").read_text(encoding="utf-8")
+PY_VERDICT = (ROOT / "ml" / "verdict.py").read_text(encoding="utf-8")
+check("server-rule only renames a band that is already Review",
+      'if ($policy -and $band -eq "Review") { $band = "ServerRule" }' in PS_VERDICT)
+check("the Python port renames it the same way",
+      'if policy and b == "Review":' in PY_VERDICT)
+check("a policy behaviour never scores above Review in PowerShell",
+      all(int(m) <= 35 for m in re.findall(
+          r'\$score = \[Math\]::Max\(\$score, (\d+)\)\n\s*\$policy = \$true', PS_VERDICT)),
+      str(re.findall(r'\$score = \[Math\]::Max\(\$score, (\d+)\)\n\s*\$policy = \$true', PS_VERDICT)))
+check("the guaranteed-clean cap cannot override a hard rule",
+      "-not $ctx.HashKnownCheat -and ($ft.PackageHits.Count -eq 0) -and -not $ctx.CheatSite" in PS_VERDICT)
 
 # a Clean headline must never claim proof
 clean_arm = REPORT[REPORT.index("default     { return @{ c ="):]
