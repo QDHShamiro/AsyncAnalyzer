@@ -132,6 +132,7 @@ of 0 means more as that number grows.
 | `222e20f` | 174 ██████ | 0 | ok | ok | ok |
 | `local` | 177 ███████ | 0 | ok | ok | ok |
 | `b3efb99` | 174 ██████ | 0 | ok | ok | ok |
+| `bca1c5c` | 174 ██████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
