@@ -524,10 +524,13 @@ $script:suspiciousPatterns = @(
 
 Add-Type -Assembly "System.IO.Compression.FileSystem" -ErrorAction SilentlyContinue
 
-$script:patternRegex = [regex]::new(
-    '(?<![A-Za-z])(' + (($script:suspiciousPatterns | ForEach-Object { [regex]::Escape($_) } | Select-Object -Unique) -join '|') + ')(?![A-Za-z])',
-    [System.Text.RegularExpressions.RegexOptions]::Compiled
-)
+function Build-PatternRegex {
+    $script:patternRegex = [regex]::new(
+        '(?<![A-Za-z])(' + (($script:suspiciousPatterns | ForEach-Object { [regex]::Escape($_) } | Select-Object -Unique) -join '|') + ')(?![A-Za-z])',
+        [System.Text.RegularExpressions.RegexOptions]::Compiled
+    )
+}
+Build-PatternRegex
 
 $script:cheatStringSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 foreach ($s in $script:cheatStrings) { [void]$script:cheatStringSet.Add($s) }
@@ -942,6 +945,18 @@ function Invoke-CloudUpdate {
             }
         }
         if ($s.processNames)     { $script:pendingProcessNames = @($s.processNames) }
+        if ($s.moduleNames) {
+            # Cheat MODULE names confirmed in two independent open-source clients. The
+            # list is curated for collisions on purpose - names like Timer/Step/Reach are
+            # everyday identifiers and VeinMiner/Freecam are mods people actually run.
+            $added = $false
+            foreach ($mn in $s.moduleNames) {
+                if ($mn -and $script:suspiciousPatterns -notcontains [string]$mn) {
+                    $script:suspiciousPatterns += [string]$mn; $added = $true
+                }
+            }
+            if ($added) { Build-PatternRegex }
+        }
         if ($s.telemetry -and -not $env:ASYNCANALYZER_ENDPOINT) { $script:Telemetry = $s.telemetry }
     } catch {}
 
@@ -1079,10 +1094,12 @@ $script:bcBehaviour = [ordered]@{
     'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
     'rotation'   = '\.setYRot|\.setXRot|\.setYaw|\.setPitch|\.method_36456|\.method_36457'
     'attack'     = 'MultiPlayerGameMode\.attack|ServerboundInteractPacket|PlayerInteractEntityC2SPacket|\.swing|class_2824'
-    'pktlisten'  = 'ClientPacketListener|ClientPlayNetworkHandler|class_634'
+    # Both Wurst and Meteor hook the network layer itself, not just the listener.
+    # Qualified on purpose - a bare 'Connection' is an everyday identifier.
+    'pktlisten'  = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|net/minecraft/network/Connection|class_2535'
     'entityscan' = 'entitiesForRendering|getEntities|method_18112|\.getEntityList'
     'render'     = 'VertexConsumer|RenderSystem|BufferBuilder|MatrixStack|PoseStack|Tessellator|class_4587'
-    'input'      = 'KeyMapping|KeyBinding|GLFW\.glfwGetKey|\.isPressed|client/input|class_304'
+    'input'      = 'KeyMapping|KeyBinding|GLFW\.glfwGetKey|\.isPressed|client/input|class_304|client/KeyboardHandler|client/MouseHandler'
     'reflect'    = 'java/lang/reflect|\.getDeclaredMethod|\.setAccessible|Class\.forName|MethodHandles|\.getDeclaredField'
     'classload'  = '\.defineClass|URLClassLoader|defineAnonymousClass|\.defineHiddenClass'
     'crypto'     = 'javax/crypto|Cipher\.|SecretKeySpec|IvParameterSpec'
@@ -1116,7 +1133,8 @@ $script:bcPreFilter = [regex]::new(
      'PlayerInteractEntityC2SPacket|class_2824|ClientPacketListener|ClientPlayNetworkHandler|' +
      'class_634|entitiesForRendering|getEntities|method_18112|getEntityList|VertexConsumer|' +
      'RenderSystem|BufferBuilder|MatrixStack|PoseStack|Tessellator|class_4587|KeyMapping|' +
-     'KeyBinding|glfwGetKey|isPressed|client/input|class_304|java/lang/reflect|getDeclaredMethod|' +
+     'KeyBinding|glfwGetKey|isPressed|client/input|class_304|KeyboardHandler|MouseHandler|' +
+     'net/minecraft/network/Connection|class_2535|java/lang/reflect|getDeclaredMethod|' +
      'setAccessible|forName|MethodHandles|getDeclaredField|defineClass|URLClassLoader|' +
      'defineAnonymousClass|defineHiddenClass|javax/crypto|Cipher|SecretKeySpec|IvParameterSpec|' +
      'getRuntime|ProcessBuilder|java/net/Socket|HttpURLConnection|openConnection|java/net/http|' +

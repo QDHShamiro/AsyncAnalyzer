@@ -100,12 +100,16 @@ BEHAVIOUR = {
                       r"\.method_36456", r"\.method_36457"],
     "bc_attack":     [r"MultiPlayerGameMode\.attack", r"ServerboundInteractPacket",
                       r"PlayerInteractEntityC2SPacket", r"\.swing", r"class_2824"],
-    "bc_pktlisten":  [r"ClientPacketListener", r"ClientPlayNetworkHandler", r"class_634"],
+    # Both Wurst and Meteor hook the network layer itself, not just the listener.
+    # Qualified on purpose - a bare "Connection" is an everyday identifier.
+    "bc_pktlisten":  [r"ClientPacketListener", r"ClientPlayNetworkHandler", r"class_634",
+                      r"net/minecraft/network/Connection", r"class_2535"],
     "bc_entityscan": [r"entitiesForRendering", r"getEntities", r"method_18112", r"\.getEntityList"],
     "bc_render":     [r"VertexConsumer", r"RenderSystem", r"BufferBuilder", r"MatrixStack",
                       r"PoseStack", r"Tessellator", r"class_4587"],
     "bc_input":      [r"KeyMapping", r"KeyBinding", r"GLFW\.glfwGetKey", r"\.isPressed",
-                      r"client/input", r"class_304"],
+                      r"client/input", r"class_304",
+                      r"client/KeyboardHandler", r"client/MouseHandler"],
     # malware / loader side
     "bc_reflect":    [r"java/lang/reflect", r"\.getDeclaredMethod", r"\.setAccessible",
                       r"Class\.forName", r"MethodHandles", r"\.getDeclaredField"],
@@ -147,6 +151,7 @@ _PREFILTER = re.compile(b"|".join(
         b"setYRot", b"setXRot", b"setYaw", b"setPitch", b"method_36456", b"method_36457",
         b"MultiPlayerGameMode", b"ServerboundInteractPacket", b"PlayerInteractEntityC2SPacket",
         b"class_2824", b"ClientPacketListener", b"ClientPlayNetworkHandler", b"class_634",
+        b"net/minecraft/network/Connection", b"class_2535", b"KeyboardHandler", b"MouseHandler",
         b"entitiesForRendering", b"getEntities", b"method_18112", b"getEntityList",
         b"VertexConsumer", b"RenderSystem", b"BufferBuilder", b"MatrixStack", b"PoseStack",
         b"Tessellator", b"class_4587", b"KeyMapping", b"KeyBinding", b"glfwGetKey",
