@@ -34,6 +34,20 @@ $script:Review       = 0
 $script:Flagged      = 0
 $script:SystemIssues = 0
 $script:DeepMemory   = [bool]$DeepMemory
+# A ghost client (Doomsday and friends) is usually INJECTED into the running game
+# instead of sitting in the mods folder, so no file scan can ever see it. When
+# Minecraft is actually running, switch the live-memory check on by itself - it is
+# the only thing that catches an injected client. Read-only, and announced openly
+# in the transparency notice so the scanned person knows it happened.
+$script:MemoryAuto = $false
+if (-not $script:DeepMemory) {
+    try {
+        if (@(Get-Process -Name javaw, java -ErrorAction SilentlyContinue).Count -gt 0) {
+            $script:DeepMemory = $true
+            $script:MemoryAuto = $true
+        }
+    } catch {}
+}
 $script:DeepScan     = [bool]$DeepScan
 $script:AssumeYes    = [bool]$Yes
 $script:NoUpdate     = [bool]$NoUpdate
@@ -576,6 +590,7 @@ $script:cheatDownloadSources = @("DoomsdayClient","PrestigeClient","198Macros","
 # Extra cheat-download domains merged from signatures.json (community-extendable, no script edit needed).
 # Each entry: @{ match = 'domain-or-substring'; name = 'DisplayName' }.
 $script:cheatDomainMap = @()
+$script:pendingProcessNames = @()
 $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:goodMeta         = @{}
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -908,6 +923,7 @@ function Invoke-CloudUpdate {
                 }
             }
         }
+        if ($s.processNames)     { $script:pendingProcessNames = @($s.processNames) }
         if ($s.telemetry -and -not $env:ASYNCANALYZER_ENDPOINT) { $script:Telemetry = $s.telemetry }
     } catch {}
 
@@ -1282,10 +1298,30 @@ function Get-ModVerdict($ctx) {
         }
     }
 
+    # A cheat that hides inside / behind a legitimate mod:
+    #   Verified   = the SHA1 matched an official release byte-for-byte. That file IS
+    #                that mod, so its own behaviour is never a cheat. Cap stays.
+    #   LegitModId = the mod id was read out of fabric.mod.json. That is SELF-DECLARED
+    #                and trivially forged - a cheat can simply write "id":"sodium".
+    #                Capping on it alone let an injector score 20/100 (Clean).
+    # So a self-declared identity only protects a jar that carries no hard evidence.
+    # Claiming to be a known mod WHILE carrying injector/cheat evidence is impersonation.
+    $hardEvidence = $ctx.HashKnownCheat -or ($ft.PackageHits.Count -gt 0) -or $ft.JavaAgent -or
+                    ($ft.HiddenPayload -gt 0) -or (@($ft.LoaderIds).Count -ge 3) -or $ctx.CheatSite -or $ft.FakeIdentity
+
     $capped = $false
-    if ($ctx.Verified -or $ctx.LegitModId) {
+    if ($ctx.Verified) {
         if ($score -gt 20) { $capped = $true }
         $score = [Math]::Min($score, 20)
+    } elseif ($ctx.LegitModId) {
+        if ($hardEvidence) {
+            $claimed = if ($ft.ModId) { $ft.ModId } else { "a known mod" }
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Impersonation: claims to be '$claimed' but the hash matches no official release and it carries injector/cheat evidence $([char]0x2014) the real '$claimed' never does this")
+        } else {
+            if ($score -gt 20) { $capped = $true }
+            $score = [Math]::Min($score, 20)
+        }
     }
     if ($capped) { $reasons.Insert(0, "Known-good / verified mod $([char]0x2014) the matches below are part of the mod's own function, not a cheat") }
 
@@ -1404,6 +1440,9 @@ function Invoke-SelfTest {
         @{ Label = "Verified mod that contains scary strings"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ StrongStrings = @('AutoCrystal', 'KillAura'); HttpDownload = $true; ReflectionCount = 2 }) } }
         @{ Label = "Random-named jar, unverified"; Bands = @("Review"); Over = @{ RandomName = $true; Features = (New-TestFeatures @{ AvgEntropy = 5.6; ReflectionCount = 1 }) } }
         @{ Label = "Random-named jar but verified"; Bands = @("Clean"); Over = @{ RandomName = $true; Verified = $true; Features = (New-TestFeatures @{ AvgEntropy = 5.6 }) } }
+        @{ Label = "Cheat hiding behind a legit mod id"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; HiddenPayload = 3; PackageHits = @('org/chainlibs'); StrongStrings = @('AutoCrystal','KillAura'); HighEntropyPct = 0.4; AvgEntropy = 7.0; ReflectionCount = 4 }) } }
+        @{ Label = "Legit mod tampered with (agent added)"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; ReflectionCount = 3 }) } }
+        @{ Label = "Real verified mod shipping its own agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
         @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
@@ -3391,7 +3430,16 @@ W "      CurseForge / Megabase $([char]0x2014) only the file hash is sent, never
 W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud, no key)." Green
 W "    $([char]0x2713) Verified mods are never flagged. Flags come with a reason + score." Green
 W "    $([char]0x2139) By default it only scans your mods folder. A deep, whole-PC scan is" DarkGray
-W "      optional and asked for separately. Reading live game memory needs -DeepMemory." DarkGray
+W "      optional and asked for separately." DarkGray
+if ($script:MemoryAuto) {
+    W "    $([char]0x2139) Minecraft is running $([char]0x2014) the live-memory check is ON automatically." Yellow
+    W "      That is the only way to catch a ghost client injected into the game." DarkGray
+    W "      It only READS the game's memory. Nothing is changed, nothing uploaded." DarkGray
+} elseif ($script:DeepMemory) {
+    W "    $([char]0x2139) Live-memory check is ON (-DeepMemory) $([char]0x2014) read-only, changes nothing." DarkGray
+} else {
+    W "    $([char]0x2139) Minecraft is not running, so there is no live game memory to check." DarkGray
+}
 W "    $([char]0x2713) Self-improving: it learns from every scan (all local) and auto-updates" Green
 W "      its model from GitHub, so detection keeps getting better over time." Green
 Write-Host ""
@@ -3868,6 +3916,12 @@ $script:cheatProcessNames = [System.Collections.Generic.HashSet[string]]::new([S
     "anchorbot","anchor-bot","anchormacro","anchor-macro","anchoraura","anchor-aura",
     "macroclient","macro-client","autoanchor","auto-anchor"
 ) | ForEach-Object { [void]$script:cheatProcessNames.Add($_) }
+# External ghost clients (Koid and friends) never appear in the mods folder at all -
+# they run as their own process. Let signatures.json add those names too. This list is
+# built further down the file than Invoke-CloudUpdate runs, hence the pending stash.
+if ($script:pendingProcessNames) {
+    foreach ($pn in $script:pendingProcessNames) { if ($pn) { [void]$script:cheatProcessNames.Add([string]$pn) } }
+}
 
 $script:suspiciousProcessPatterns = @(
     '^[a-z]{1,4}\d{3,}$',

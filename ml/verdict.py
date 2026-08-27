@@ -81,8 +81,25 @@ def verdict(raw):
         if score < floor:
             score = floor
 
-    if raw.get("verified") or raw.get("legit_modid"):
+    # Mirror of the PS cap: a hash-verified file IS that mod (cap stays), but a
+    # SELF-DECLARED mod id only protects a jar carrying no hard evidence. Claiming
+    # to be a known mod while carrying injector/cheat evidence is impersonation.
+    hard_evidence = (
+        raw.get("hash_known_cheat")
+        or raw.get("pkgpath")
+        or raw.get("java_agent")
+        or raw.get("hidden_payload", 0) > 0
+        or len(raw.get("loader_ids", []) or []) >= 3
+        or raw.get("cheatsite")
+        or raw.get("fake_identity")
+    )
+    if raw.get("verified"):
         score = min(score, 20)
+    elif raw.get("legit_modid"):
+        if hard_evidence:
+            score = max(score, 85)
+        else:
+            score = min(score, 20)
 
     return {"score": score, "band": band(score), "probability": round(p * 100)}
 

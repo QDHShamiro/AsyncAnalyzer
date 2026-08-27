@@ -116,6 +116,7 @@ function summary(s) {
     id: s.id, serverTs: s.serverTs, scanner: s.scanner, targetUser: s.targetUser,
     pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion,
     flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length,
+    session: s.session || null,
   };
 }
 
@@ -139,6 +140,7 @@ const server = http.createServer(async (req, res) => {
       pcName: String(body.pcName || '').slice(0, 80),
       modPath: String(body.modPath || '').slice(0, 300),
       verdict: String(body.verdict || 'clean').slice(0, 20),
+      session: body.session || null,
       totals: body.totals || {},
       flagged: (body.flagged || []).slice(0, 200),
       review: (body.review || []).slice(0, 200),

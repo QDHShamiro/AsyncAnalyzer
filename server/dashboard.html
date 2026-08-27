@@ -47,10 +47,13 @@ tr.row{cursor:pointer;}tr.row:hover td{background:var(--surface2);}
   <div class="bar">
     <input id="key" type="password" placeholder="View key (if your server set one)" style="flex:1;min-width:200px;">
     <input id="q" placeholder="Search name / scanner / PC..." style="flex:1;min-width:180px;">
+    <label style="display:flex;align-items:center;gap:6px;white-space:nowrap;color:#8b949e;font-size:13px;">
+      <input type="checkbox" id="onlyFlagged"> only flagged / review
+    </label>
     <button onclick="load()">Refresh</button>
   </div>
   <div class="stats" id="stats"></div>
-  <table id="tbl"><thead><tr><th>When</th><th>Scanned by</th><th>Target</th><th>PC</th><th>Verdict</th><th>Flagged</th></tr></thead><tbody id="rows"></tbody></table>
+  <table id="tbl"><thead><tr><th>When</th><th>Scanned by</th><th>Target</th><th>PC</th><th>Overall (AI)</th><th>Verdict</th><th>Flagged</th></tr></thead><tbody id="rows"></tbody></table>
   <div id="empty" class="empty" style="display:none;">No scans yet. Run AsyncAnalyzer with the team endpoint configured.</div>
 </div>
 
@@ -67,9 +70,25 @@ async function load(){
   if(r.status===401){alert('Wrong view key');return;}
   var j=await r.json();DATA=j.scans||[];render();
 }
+function bandColor(b){return b==='Confirmed'?'#f85149':b==='Likely'?'#fb8500':b==='Review'?'#e3b341':'#2ecc71';}
+function overall(sv){
+  if(!sv) return '<span class="muted">-</span>';
+  var c=bandColor(sv.band);
+  return '<span style="display:inline-block;min-width:34px;text-align:right;font-weight:600;color:'+c+'">'+(sv.score||0)+'</span>'+
+         '<span class="muted" style="margin-left:6px">'+esc(sv.band||'')+'</span>';
+}
 function render(){
   var q=document.getElementById('q').value.toLowerCase();
-  var rows=DATA.filter(function(s){return (s.scanner+' '+s.targetUser+' '+s.pcName).toLowerCase().indexOf(q)>=0;});
+  var of=document.getElementById('onlyFlagged');
+  var onlyF=of&&of.checked;
+  var rows=DATA.filter(function(s){
+    if(onlyF){
+      var b=s.session&&s.session.band;
+      var hot=(s.verdict==='flagged'||s.verdict==='review'||b==='Confirmed'||b==='Likely'||b==='Review');
+      if(!hot) return false;
+    }
+    return (s.scanner+' '+s.targetUser+' '+s.pcName).toLowerCase().indexOf(q)>=0;
+  });
   var f=DATA.filter(function(s){return s.verdict==='flagged';}).length;
   var rv=DATA.filter(function(s){return s.verdict==='review';}).length;
   document.getElementById('stats').innerHTML=
@@ -80,7 +99,7 @@ function render(){
   document.getElementById('rows').innerHTML=rows.map(function(s){
     return '<tr class="row" onclick="detail(\''+s.id+'\')"><td class="muted">'+esc((s.serverTs||'').replace('T',' ').slice(0,16))+
       '</td><td>'+esc(s.scanner)+'</td><td><b>'+esc(s.targetUser||'—')+'</b></td><td class="muted">'+esc(s.pcName)+
-      '</td><td>'+pill(s.verdict)+'</td><td>'+(s.flaggedCount||0)+(s.reviewCount?(' <span class="muted">+'+s.reviewCount+' rev</span>'):'')+'</td></tr>';
+      '</td><td>'+overall(s.session)+'</td><td>'+pill(s.verdict)+'</td><td>'+(s.flaggedCount||0)+(s.reviewCount?(' <span class="muted">+'+s.reviewCount+' rev</span>'):'')+'</td></tr>';
   }).join('');
 }
 async function detail(id){
@@ -101,11 +120,19 @@ async function detail(id){
     '<h2>'+esc(s.targetUser||s.pcName||'Scan')+' '+pill(s.verdict)+'</h2>'+
     '<div class="muted" style="margin:4px 0 14px">'+esc((s.serverTs||'').replace('T',' ').slice(0,19))+' · scanned by '+esc(s.scanner)+' · PC '+esc(s.pcName)+' · tool v'+esc(s.toolVersion)+'</div>'+
     '<div class="muted mono" style="margin-bottom:12px">'+esc(s.modPath||'')+'</div>'+
+    (s.session?('<div class="mod" style="--band:'+bandColor(s.session.band)+';margin-bottom:14px">'+
+      '<div class="mod-head"><span class="badge" style="background:'+bandColor(s.session.band)+'">OVERALL SCAN VERDICT</span>'+
+      '<span class="mod-name">'+esc(s.session.band||'')+'</span>'+
+      '<span class="mod-score">'+(s.session.score||0)+'<small>/100</small></span></div>'+
+      '<div class="muted" style="margin:6px 0">AI judged the whole scan &mdash; mods, system, processes, JVM and history</div>'+
+      '<ul class="reasons">'+(s.session.reasons||[]).map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div>'):'')+
     (mods.length?mods.map(card).join(''):'<p class="muted">No flagged or review mods.</p>')+
     (sys?('<h3 style="margin-top:16px">System issues</h3><ul class="reasons">'+sys+'</ul>'):'');
   document.getElementById('modal').style.display='flex';
 }
 document.getElementById('q').addEventListener('input',render);
+var only=document.getElementById('onlyFlagged');
+if(only) only.addEventListener('change',render);
 try{document.getElementById('key').value=localStorage.getItem('aa_key')||'';}catch(e){}
 load();
 </script>

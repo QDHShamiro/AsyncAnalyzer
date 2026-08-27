@@ -186,6 +186,31 @@ def main():
         mark = "PASS" if ok else "FAIL"
         print(f"  [{mark}] {label:32s} score={v['score']:3d} band={v['band']:9s} (want {sorted(allowed)})")
 
+    # A cheat that hides behind a VALID mod identity. The mod id lives in
+    # fabric.mod.json, which the jar writes itself - so it must never be able to
+    # buy immunity. Hash-verified files still get their cap (they ARE that mod).
+    print("\n=== Impersonation: cheat hiding inside/behind a legit mod ===")
+    CH = dict(pkgpath=1, java_agent=1, agent_retransform=1, hidden_payload=3,
+              strong_count=5, high_entropy_pct=0.4, singlechar_cls_pct=0.3,
+              avg_entropy=7.0, reflection_count=4, runtime_exec=1)
+    IMP = [
+        ("cheat declaring itself 'sodium'", dict(CH, legit_modid=1), {"Confirmed"}),
+        ("legit mod tampered with (agent added)", dict(java_agent=1, legit_modid=1, reflection_count=3), {"Confirmed"}),
+        ("cheat with no identity claim", dict(CH), {"Confirmed"}),
+        ("REAL Sodium, hash-verified", dict(verified=1, legit_modid=1, reflection_count=3, avg_entropy=6.3), {"Clean"}),
+        ("real mod from a mirror, unverified+clean", dict(legit_modid=1, reflection_count=3, avg_entropy=6.3), {"Clean"}),
+        ("anticheat: legit id + detection strings", dict(legit_modid=1, strong_count=5, reflection_count=3), {"Clean"}),
+        ("architectury: legit id + 2 loaders", dict(legit_modid=1, loader_ids=["fabric", "forge"], reflection_count=2), {"Clean"}),
+        ("verified mod shipping its own agent", dict(verified=1, java_agent=1), {"Clean"}),
+    ]
+    for label, raw, allowed in IMP:
+        v = verdict.verdict(raw)
+        ok = v["band"] in allowed
+        passed += ok
+        failed += not ok
+        print(f"  [{'PASS' if ok else 'FAIL'}] {label:42s} score={v['score']:3d} band={v['band']:9s}"
+              f" (want {sorted(allowed)})")
+
     # real known-clean library jars must all be Clean
     jars = os.path.join(HERE, "jars_legit")
     if os.path.isdir(jars):

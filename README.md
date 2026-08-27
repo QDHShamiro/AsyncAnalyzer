@@ -42,7 +42,8 @@ mods), and scans it.
 | 📈 **Self-improving** | Every scan makes it smarter — it remembers verified & cheat hashes, nudges its own model, and auto-updates from GitHub. |
 | ✅ **No false flags** | Verified mods (Modrinth/CurseForge) are **hard-capped as safe**. Anticheats full of `killaura`/`reach` strings are recognised, not flagged. **0 false positives** on 37 real libraries. |
 | 🔎 **Explains itself** | Every flag shows the AI probability *and* the exact reasons — package path, obfuscation, signatures, network behaviour. |
-| 🔒 **Trustworthy** | Read-only. Only your mods folder by default. Live-memory & whole-PC scans are opt-in. |
+| 👻 **Catches ghost clients** | Ghost clients are *injected* into the running game, not dropped in `mods`. If Minecraft is running, the live-memory check turns on by itself (announced openly) — the only way to see an injected client. External clients that run as their own process are caught by name. |
+| 🔒 **Trustworthy** | Read-only. Only your mods folder by default. The whole-PC scan is opt-in and asked for separately. |
 | 🎨 **Beautiful report** | A dark-mode HTML report with score bars, badges and reasons — shareable as *"proof I don't cheat."* |
 
 ---
@@ -60,6 +61,8 @@ Instead of *"one bad word = FLAGGED"*, every mod gets a **0–100 score**:
 | 🔴 **Confirmed** | 85–100 | Cheat. |
 
 The score blends the **AI model** with hard rules that always win: a known-cheat hash, a cheat-client package path (`net/ccbluex`, `org/chainlibs`…), or a known cheat download site. Verified / known-good mods are capped safe no matter what.
+
+**A cheat can't hide behind a legit mod.** The mod id (`"id":"sodium"`) lives in the jar's own `fabric.mod.json` — the jar writes it itself, so it proves nothing. A **hash-verified** file really is that mod and stays capped safe; but a jar that merely *claims* a known mod id while carrying injector/cheat evidence is treated as **impersonation → Confirmed**. That covers both a cheat pretending to be Sodium and a real mod someone injected cheat code into (its hash stops matching the moment it's tampered with).
 
 **Nothing slips through as "unknown".** A jar with a random / hash-style filename (like `hb4zz1xxrd4.jar` — exactly how Doomsday and ghost clients ship) that *isn't* verified is floored to **Review** so you always see it, instead of it hiding in an "unknown" pile. A random name **never on its own** makes something a flag — it just gets surfaced for a look. If it *also* has a cheat package path, a cheat download site or a known hash, the hard rules push it to **Confirmed**.
 
@@ -159,7 +162,7 @@ The dashboard shows who scanned whom, when, the verdict, and every flagged mod w
 | `-Path "C:\…\mods"` | Scan an exact folder. |
 | `-SelfTest` | Verify the AI + verdict logic on your machine, then exit. |
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
-| `-DeepMemory` | Also read live Minecraft memory for loaded cheats. |
+| `-DeepMemory` | Force the live-memory check on. It already turns on by itself whenever Minecraft is running. |
 | `-Share` | Export confirmed cheat hashes locally to contribute them. |
 | `-NoUpdate` | Skip the GitHub model/signature auto-update. |
 | `-NoLearn` | Don't adapt the local model this run. |
@@ -208,11 +211,11 @@ The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassis
 | Test | Result |
 |---|---|
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
-| `ml/test_verdict.py` | **42/42** — cheats caught, 37 real libs Clean, anticheats Clean |
+| `ml/test_verdict.py` | **52/52** — cheats caught, 37 real libs Clean, anticheats Clean, impersonation closed |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
 | `ml/test_session.py` | **20/20** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
-| `-SelfTest` (in-tool) | 13 known cases — 8 mod-level + 5 whole-scan — all pass |
+| `-SelfTest` (in-tool) | 23 known cases — mod-level, impersonation and whole-scan — all pass |
 
 ---
 

@@ -108,7 +108,7 @@ export default {
       if (!viewOK()) return json({ error: 'bad view key' }, 401);
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '200') || 200, 1000);
       const rows = (await env.DB.prepare('SELECT data FROM scans ORDER BY ts DESC LIMIT ?').bind(limit).all()).results || [];
-      const scans = rows.map(r => { const s = JSON.parse(r.data); return { id: s.id, serverTs: s.serverTs, scanner: s.scanner, targetUser: s.targetUser, pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion, flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length }; });
+      const scans = rows.map(r => { const s = JSON.parse(r.data); return { id: s.id, serverTs: s.serverTs, scanner: s.scanner, targetUser: s.targetUser, pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion, flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length, session: s.session || null }; });
       return json({ scans, viewProtected: !!VIEW_KEY });
     }
 

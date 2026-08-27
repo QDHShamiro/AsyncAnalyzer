@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "note": "Community cheat-intelligence list. AsyncAnalyzer auto-downloads this on start (unless -NoUpdate). Add confirmed cheat SHA1 hashes to knownCheatHashes, known-legit hashes to knownGoodHashes, distinctive cheat-client package paths to packagePaths, distinctive cheat-client filename tokens to clientTokens, and cheat download sites to downloadDomains. Keep clientTokens distinctive/compound (e.g. 'ghostclient', never bare 'ghost') so legit mods are never false-flagged. Everyone who runs the tool then benefits.",
+  "version": 4,
+  "note": "Community cheat-intelligence list. AsyncAnalyzer auto-downloads this on start (unless -NoUpdate). knownCheatHashes = confirmed cheat SHA1s. knownGoodHashes = known-legit SHA1s. packagePaths = distinctive cheat Java packages. clientTokens = distinctive cheat-client filename tokens. downloadDomains = cheat download sites. processNames = EXTERNAL ghost clients that run as their own process and never appear in the mods folder. Keep clientTokens and processNames distinctive/compound (e.g. 'ghostclient', never bare 'ghost') so legit mods and normal programs are never false-flagged. Everyone who runs the tool then benefits.",
   "telemetry": {
     "enabled": false,
     "endpoint": "",
@@ -62,21 +62,89 @@
     "trilliumclient",
     "raven-b",
     "koidclient",
-    "slinkyclient"
+    "slinkyclient",
+    "virginclient"
   ],
   "downloadDomains": [
-    { "match": "doomsdayclient", "name": "DoomsdayClient" },
-    { "match": "prestigeclient", "name": "PrestigeClient" },
-    { "match": "198macros", "name": "198Macros" },
-    { "match": "dqrkis", "name": "Dqrkis" },
-    { "match": "vape.gg", "name": "Vape" },
-    { "match": "novoline", "name": "Novoline" },
-    { "match": "liquidbounce.net", "name": "LiquidBounce" },
-    { "match": "meteorclient.com", "name": "Meteor" },
-    { "match": "wurstclient.net", "name": "Wurst" },
-    { "match": "rusherhack.org", "name": "RusherHack" },
-    { "match": "sigmaclient", "name": "Sigma" },
-    { "match": "moon.vip", "name": "MoonClient" },
-    { "match": "entropyclient", "name": "Entropy" }
+    {
+      "match": "doomsdayclient",
+      "name": "DoomsdayClient"
+    },
+    {
+      "match": "prestigeclient",
+      "name": "PrestigeClient"
+    },
+    {
+      "match": "198macros",
+      "name": "198Macros"
+    },
+    {
+      "match": "dqrkis",
+      "name": "Dqrkis"
+    },
+    {
+      "match": "vape.gg",
+      "name": "Vape"
+    },
+    {
+      "match": "novoline",
+      "name": "Novoline"
+    },
+    {
+      "match": "liquidbounce.net",
+      "name": "LiquidBounce"
+    },
+    {
+      "match": "meteorclient.com",
+      "name": "Meteor"
+    },
+    {
+      "match": "wurstclient.net",
+      "name": "Wurst"
+    },
+    {
+      "match": "rusherhack.org",
+      "name": "RusherHack"
+    },
+    {
+      "match": "sigmaclient",
+      "name": "Sigma"
+    },
+    {
+      "match": "moon.vip",
+      "name": "MoonClient"
+    },
+    {
+      "match": "entropyclient",
+      "name": "Entropy"
+    },
+    {
+      "match": "entropy.club",
+      "name": "Entropy"
+    },
+    {
+      "match": "slinky.gg",
+      "name": "Slinky"
+    },
+    {
+      "match": "koidclient",
+      "name": "Koid"
+    },
+    {
+      "match": "virginclient",
+      "name": "VirginClient"
+    }
+  ],
+  "processNames": [
+    "koid",
+    "slinky",
+    "entropyclient",
+    "virginclient",
+    "doomsdayclient",
+    "vapeclient",
+    "novoline",
+    "sigmaclient",
+    "rusherhack",
+    "prestigeclient"
   ]
 }
