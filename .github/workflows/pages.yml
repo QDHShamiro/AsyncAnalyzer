@@ -1,6 +1,11 @@
-# Publishes the public site. Deploying from a workflow rather than from a branch
-# folder means `enablement: true` below can switch Pages on through the API, so
-# the site goes live without anyone opening the repository settings.
+# Publishes the public site.
+#
+# Pages has to be switched on once by hand (Settings -> Pages -> Source -> GitHub
+# Actions). The workflow tries to do it through the API, but creating a Pages site
+# with the workflow token is not permitted by default. Until someone flips that
+# switch this run SUCCEEDS with a warning rather than failing: a workflow that is
+# permanently red for something waiting on a human teaches people to ignore red,
+# and then a real failure goes unnoticed too.
 name: Site
 
 on:
@@ -26,6 +31,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.pages.outcome == 'success' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,42 +44,38 @@ jobs:
       - name: Build the site
         run: python3 ml/site.py
 
-      # enablement lets the workflow switch Pages on through the API when the
-      # repository allows it. It is not allowed by default - the token comes back
-      # with "Resource not accessible by integration" - so this is allowed to fail
-      # and the next step explains the single setting that fixes it, rather than
-      # leaving a red run with an API error in it.
       - id: pages
         uses: actions/configure-pages@v5
         continue-on-error: true
         with:
           enablement: true
 
-      - name: Explain how to switch Pages on
-        if: steps.pages.outcome == 'failure'
+      - name: Say how to switch Pages on
+        if: steps.pages.outcome != 'success'
         run: |
-          echo "::error title=GitHub Pages is not enabled::The site is built and ready, but Pages has to be turned on once."
+          echo "::warning title=GitHub Pages is off::The site built fine. Turn Pages on once: Settings -> Pages -> Source -> GitHub Actions."
           {
-            echo "## The site is built, but Pages is off"
+            echo "## The site is built. Pages is not switched on yet."
             echo
-            echo "This workflow cannot switch it on by itself: creating a Pages site with the"
-            echo "workflow token is not permitted by default, so the API returns"
-            echo '`Resource not accessible by integration`.'
+            echo "This workflow cannot switch it on by itself - creating a Pages site with the"
+            echo 'workflow token returns `Resource not accessible by integration`.'
             echo
-            echo "**One click fixes it, once:**"
+            echo "**One click, once:**"
             echo
             echo "Settings -> Pages -> Build and deployment -> Source -> **GitHub Actions**"
             echo
-            echo "Every push after that deploys automatically. Nothing else needs setting."
+            echo "Every push after that deploys automatically. This run is green because"
+            echo "nothing is broken - it is waiting on that one setting."
           } >> "$GITHUB_STEP_SUMMARY"
-          exit 1
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outcome == 'success'
         with:
           path: docs
 
   deploy:
     needs: build
+    if: needs.build.outputs.ready == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

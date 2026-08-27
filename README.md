@@ -341,8 +341,9 @@ this repo are never hand-typed.
 > *Settings → Pages → Build and deployment → Source → **GitHub Actions***.
 > The workflow tries to do it itself, but creating a Pages site with the workflow
 > token is not permitted by default (`Resource not accessible by integration`), so
-> it says so in the run summary instead of failing silently. Every push after that
-> deploys on its own.
+> it says so in the run summary. The run stays **green** while it waits &mdash; a
+> workflow that is permanently red for something waiting on a human teaches people
+> to ignore red. Every push after that one click deploys on its own.
 
 The whole site — [overview](https://qdhshamiro.github.io/AsyncAnalyzer/),
 [benchmarks](https://qdhshamiro.github.io/AsyncAnalyzer/benchmarks.html) and
