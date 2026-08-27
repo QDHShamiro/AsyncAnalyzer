@@ -224,8 +224,9 @@ def main():
             r = bytecode.extract_jar(jp, max_classes=120)
             classes += r["classes_parsed"]
             tr = rules(r)
-            if any(tr[k] for k in CHEAT_RULES):
-                cheat_fp.append(os.path.basename(jp))
+            hit = [k for k in CHEAT_RULES if tr[k]]
+            if hit:
+                cheat_fp.append((os.path.basename(jp), hit))
             elif tr["agent"]:
                 agent_fp.append(os.path.basename(jp))
         elapsed = time.time() - t0
@@ -245,9 +246,13 @@ def main():
         out("| matched the Java-agent rule | %d |" % len(agent_fp))
         out()
         if cheat_fp:
-            out("Flagged: " + ", ".join("`%s`" % f for f in cheat_fp))
+            out("Flagged: " + ", ".join("`%s` (%s)" % (f, "+".join(h)) for f, h in cheat_fp))
             out()
-            failures.append("%d real libraries flagged by a cheat rule" % len(cheat_fp))
+            # Name the rule and the library. The corpus differs between a developer
+            # machine and CI - some repositories are unreachable from a sandbox - so
+            # "3 libraries flagged" leaves whoever reads it unable to act.
+            failures.append("cheat rule false positives: " + "; ".join(
+                "%s tripped %s" % (f, "+".join(h)) for f, h in cheat_fp))
         if agent_fp:
             out("The agent matches are **correct, not false positives** — every one of these")
             out("genuinely ships instrumentation: " + ", ".join("`%s`" % f for f in agent_fp) + ".")

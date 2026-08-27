@@ -1277,6 +1277,10 @@ $script:bcBehaviour = [ordered]@{
     # is the innocent reason a class locates its own jar and then deletes a file,
     # and naming it is what lets the self-wipe signal exclude it.
     'nativetemp' = 'createTempFile|createTempDirectory|System\.load|\.loadLibrary|java\.io\.tmpdir'
+    # Opening or writing an archive. A mod loader, a remapper or a shader cache
+    # legitimately locates its own jar and deletes files - it is tooling that
+    # processes archives for a living. A client deleting itself never opens one.
+    'archive'    = 'java/util/jar|java/util/zip|JarFile|ZipFile|JarOutputStream|ZipOutputStream|JarInputStream|ZipInputStream|JarEntry|ZipEntry'
 }
 # Derived per-class signals. Not patterns: combinations that only mean something
 # when ONE class does all of it. Jar-level ratios cannot express that - in a large
@@ -1474,7 +1478,7 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             }
             # A class that finds its own jar and deletes a file, and is not
             # unpacking a native library: that is a jar removing itself.
-            if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp']) {
+            if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp'] -and -not $hit['archive']) {
                 $hit['selfwipe'] = $true
             }
             foreach ($k in $script:bcReflectiveNames.Keys) {

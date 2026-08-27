@@ -169,7 +169,7 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             }
             # A class that finds its own jar and deletes a file, and is not
             # unpacking a native library: that is a jar removing itself.
-            if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp']) {
+            if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp'] -and -not $hit['archive']) {
                 $hit['selfwipe'] = $true
             }
             foreach ($k in $script:bcReflectiveNames.Keys) {

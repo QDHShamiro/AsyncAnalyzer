@@ -148,6 +148,13 @@ BEHAVIOUR = {
     # and naming it is what lets the self-wipe signal exclude it.
     "bc_nativetemp": [r"createTempFile", r"createTempDirectory", r"System\.load",
                       r"\.loadLibrary", r"java\.io\.tmpdir"],
+    # Opening or writing an archive. A mod loader, a remapper or a shader cache
+    # legitimately locates its own jar and deletes files - it is tooling that
+    # processes archives for a living. A client deleting itself has no reason to
+    # open one.
+    "bc_archive":    [r"java/util/jar", r"java/util/zip", r"JarFile", r"ZipFile",
+                      r"JarOutputStream", r"ZipOutputStream", r"JarInputStream",
+                      r"ZipInputStream", r"JarEntry", r"ZipEntry"],
 }
 
 # Derived per-class signals. Not regexes: they are combinations that only mean
@@ -159,7 +166,8 @@ DERIVED = {
     # a class that finds its own jar and deletes a file, and is not unpacking a
     # native library: that is a jar removing itself
     "bc_selfwipe": lambda hits: ("bc_selfpath" in hits and "bc_filedelete" in hits
-                                 and "bc_nativetemp" not in hits),
+                                 and "bc_nativetemp" not in hits
+                                 and "bc_archive" not in hits),
 }
 _COMPILED = {k: re.compile("|".join(v)) for k, v in BEHAVIOUR.items()}
 
@@ -212,7 +220,9 @@ _PREFILTER = re.compile(b"|".join(
         b"method_18800", b"method_18798",
         b"getProtectionDomain", b"getCodeSource", b"ProtectionDomain", b"CodeSource",
         b"deleteOnExit", b"deleteIfExists", b"createTempFile", b"createTempDirectory",
-        b"loadLibrary", b"tmpdir",
+        b"loadLibrary", b"tmpdir", b"java/util/jar", b"java/util/zip", b"JarFile",
+        b"ZipFile", b"JarOutputStream", b"ZipOutputStream", b"JarInputStream",
+        b"ZipInputStream", b"JarEntry", b"ZipEntry",
     ]))
 
 

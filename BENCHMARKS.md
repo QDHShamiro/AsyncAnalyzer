@@ -69,8 +69,8 @@ abnormal; in an ordinary application classpath it is not.
 | | |
 |---|---|
 | classes parsed | 121301 |
-| time | ~65 s |
-| per class | ~0.5 ms |
+| time | ~70 s |
+| per class | ~0.6 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
