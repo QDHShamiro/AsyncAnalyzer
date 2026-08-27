@@ -68,8 +68,8 @@ abnormal; in an ordinary application classpath it is not.
 | | |
 |---|---|
 | classes parsed | 119006 |
-| time | ~35 s |
-| per class | ~0.3 ms |
+| time | ~45 s |
+| per class | ~0.4 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -135,6 +135,7 @@ of 0 means more as that number grows.
 | `bca1c5c` | 174 ██████ | 0 | ok | ok | ok |
 | `af6c847` | 174 ██████ | 0 | ok | ok | ok |
 | `e817099` | 174 ██████ | 0 | ok | ok | ok |
+| `75de5c0` | 174 ██████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
