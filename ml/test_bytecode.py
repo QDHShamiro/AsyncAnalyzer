@@ -90,21 +90,42 @@ def coverage_test():
         filler = sorted(glob.glob(os.path.join(out, "clean", "Keybinds*.class")))[0]
         cb = open(cheat, "rb").read()
         fb = open(filler, "rb").read()
+        lb = open(sorted(glob.glob(os.path.join(out, "cheat", "Loader*.class")))[0], "rb").read()
         passed = failed = 0
-        print("\n=== Depth independence (cheat buried in a 300-class jar) ===")
-        for pos in (5, 40, 150, 299):
+
+        def build_probe(pos, total, payload):
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w") as z:
-                for i in range(300):
-                    z.writestr("p/C%04d.class" % i, cb if i == pos else fb)
+                for i in range(total):
+                    z.writestr("p/C%05d.class" % i, payload if i == pos else fb)
             probe = os.path.join(tmp, "probe.jar")
             open(probe, "wb").write(buf.getvalue())
-            r = bytecode.extract_jar(probe, max_classes=40)   # DEFAULT (fast) mode
-            ok = r["bc_movepacket"] > 0 and r["bc_rotation"] > 0
-            passed += ok
-            failed += not ok
-            print("  [%s] cheat at class %3d/300, fast mode -> detected=%s" % (
-                "PASS" if ok else "FAIL", pos, ok))
+            return probe
+
+        print("\n=== Depth independence (default fast mode) ===")
+        for total in (300, 1000, 5000):
+            for frac in (0.0, 0.13, 0.5, 0.999):
+                pos = int(total * frac)
+                r = bytecode.extract_jar(build_probe(pos, total, cb), max_classes=40)
+                ok = r["bc_movepacket"] > 0 and r["bc_rotation"] > 0
+                passed += ok
+                failed += not ok
+                print("  [%s] aim cheat at %5d of %5d -> detected=%s" % (
+                    "PASS" if ok else "FAIL", pos, total, ok))
+
+        # a dropper hidden in the very last class of a huge jar
+        r = bytecode.extract_jar(build_probe(4999, 5000, lb), max_classes=40)
+        ok = r["bc_crypto_ratio"] > 0 and (r["bc_classload_ratio"] > 0 or r["bc_reflect_ratio"] > 0)
+        passed += ok
+        failed += not ok
+        print("  [%s] dropper at  4999 of  5000 -> detected=%s" % ("PASS" if ok else "FAIL", ok))
+
+        # and the same jar with no cheat class in it must stay quiet
+        r = bytecode.extract_jar(build_probe(-1, 5000, fb), max_classes=40)
+        quiet = not (r["bc_movepacket"] > 0 and r["bc_rotation"] > 0) and r["bc_crypto"] == 0
+        passed += quiet
+        failed += not quiet
+        print("  [%s] clean 5000-class jar stays quiet" % ("PASS" if quiet else "FAIL"))
         return passed, failed
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
