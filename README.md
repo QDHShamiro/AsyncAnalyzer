@@ -353,7 +353,7 @@ describe a rule the tool no longer runs.
 
 | | |
 |---|---|
-| **False flags on real software** | **0** of **179** real libraries — through the *full* verdict chain, against **all 12** cheat rules, not just one |
+| **False flags on real software** | **0** of **184** real libraries — through the *full* verdict chain, against **all 12** cheat rules, not just one |
 | Aim / killaura / pathing / timer | detected, independent of where it hides (class 0 → 4995 of 5000) |
 | Combat, movement, world, ghost utilities | **198 of 222** reconstructed cheat variants caught &mdash; scaffold, no-fall, blink, speed, nuker, inventory-move, velocity, triggerbot, autoclicker, freecam, Baritone-style pathing |
 | Dropper (decrypt → defineClass) | detected |
@@ -381,14 +381,16 @@ Reproduce it yourself from a clean checkout:
 python3 ml/fetch_jars.py && python3 ml/benchmark.py
 ```
 
-`fetch_jars.py` pulls **179** real libraries — from Maven Central, and now also
-from Mojang's, Sponge's and Fabric's own repositories, so Mixin, Fabric's tooling
-and Minecraft's own libraries are in there. Those are the closest publicly
-downloadable thing to a real mod, and Mixin in particular rewrites bytecode for a
-living. Every download is verified to be a real jar containing classes: an error
-page saved as a `.jar` and two empty aggregator jars had been silently counted as
-libraries, and it now reports every declared library it could **not** fetch instead
-of letting the corpus quietly shrink.
+`fetch_jars.py` pulls the negative class from Maven Central and, for the
+Minecraft-ecosystem entries, from Mojang's, Sponge's and Fabric's own repositories.
+CI currently gets **184** of 189 declared. Every download is verified to be a real
+jar containing classes — an error page saved as a `.jar` and two empty aggregator
+jars had been silently counted as libraries — and whatever it could **not** fetch is
+listed by name at the end of the run, so the declared list cannot quietly drift away
+from what is actually on disk again.
+
+The benchmark always counts what is on disk, so the headline number stays honest
+whatever the fetcher managed to get.
 
 ## ✅ Proof it works
 

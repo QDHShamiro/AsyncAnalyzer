@@ -17,7 +17,7 @@ BASE = "https://repo1.maven.org/maven2"
 # going to false-flag something, it flags that first.
 REPOS = {
     "mojang": "https://libraries.minecraft.net",
-    "sponge": "https://repo.spongepowered.org/maven",
+    "sponge": "https://repo.spongepowered.org/repository/maven-public",
     "fabric": "https://maven.fabricmc.net",
 }
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jars_legit")
@@ -37,7 +37,7 @@ LIBS = [
  ("com/electronwill/night-config","core","3.6.7"),("com/electronwill/night-config","toml","3.6.7"),
  ("org/json","json","20240303"),("com/esotericsoftware","kryo","5.6.0"),
  # networking - crypto + sockets, must not look like exfiltration
- ("io/netty","netty-all","4.1.108.Final"),("io/netty","netty-handler","4.1.108.Final"),
+ ("io/netty","netty-handler","4.1.108.Final"),
  ("io/netty","netty-buffer","4.1.108.Final"),("io/netty","netty-codec","4.1.108.Final"),
  ("io/netty","netty-transport","4.1.108.Final"),("io/netty","netty-common","4.1.108.Final"),
  ("com/squareup/okhttp3","okhttp","4.12.0"),("org/apache/httpcomponents","httpclient","4.5.14"),
@@ -46,9 +46,11 @@ LIBS = [
  ("org/apache/logging/log4j","log4j-core","2.23.1"),("org/apache/logging/log4j","log4j-api","2.23.1"),
  ("org/slf4j","slf4j-api","2.0.13"),("ch/qos/logback","logback-classic","1.5.6"),
  ("ch/qos/logback","logback-core","1.5.6"),
- # minecraft ecosystem. Only brigadier is on Maven Central; the rest come from
- # Mojang's, Sponge's and Fabric's own repositories.
- ("com/mojang","brigadier","1.0.18"),
+ # minecraft ecosystem. These come from Mojang's, Sponge's and Fabric's own
+ # repositories, not Maven Central. This sandbox's network policy blocks all
+ # three, so they only resolve in CI - which is why the fetcher reports what it
+ # could not get rather than assuming a coordinate is right because it looks it.
+ ("com/mojang","brigadier","1.0.18","mojang"),
  ("com/mojang","datafixerupper","8.0.16","mojang"),
  ("com/mojang","authlib","6.0.54","mojang"),("com/mojang","logging","1.2.7","mojang"),
  ("com/mojang","blocklist","1.0.10","mojang"),("com/mojang","patchy","2.2.10","mojang"),
