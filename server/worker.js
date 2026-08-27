@@ -72,8 +72,20 @@ export default {
       };
       await env.DB.prepare('INSERT INTO scans (id, ts, scanner, target, pc, verdict, data) VALUES (?,?,?,?,?,?,?)')
         .bind(id, rec.serverTs, rec.scanner, rec.targetUser, rec.pcName, rec.verdict, JSON.stringify(rec)).run();
-      for (const h of (b.newCheat || [])) if (h) await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind) VALUES (?,?)').bind(String(h), 'cheat').run();
-      for (const h of (b.newGood || [])) if (h) await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind) VALUES (?,?)').bind(String(h), 'good').run();
+      // Pooled hashes reach every client on their next run, so a wrong one becomes a
+      // team-wide false positive nobody can trace. Record the source with each hash.
+      const addSig = async (h, kind) => {
+        try {
+          await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind, scanner, target, scan_id, ts) VALUES (?,?,?,?,?,?)')
+            .bind(String(h), kind, rec.scanner, rec.targetUser, id, rec.serverTs).run();
+        } catch {
+          // a database created before attribution existed still has the 2-column table
+          await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind) VALUES (?,?)')
+            .bind(String(h), kind).run();
+        }
+      };
+      for (const h of (b.newCheat || [])) if (h) await addSig(h, 'cheat');
+      for (const h of (b.newGood || [])) if (h) await addSig(h, 'good');
       if (Array.isArray(b.samples) && b.samples.length) {
         const m = await getModel(env);
         let n = 0;
@@ -97,6 +109,22 @@ export default {
     if (req.method === 'GET' && url.pathname === '/api/model') {
       const m = await getModel(env);
       return json({ version: m.version, trainedCount: m.trainedCount || 0, feature_order: m.feature_order, intercept: m.intercept, weights: m.weights });
+    }
+
+    // auditable view: which hash came from whose scan (view-gated, not public)
+    if (req.method === 'GET' && url.pathname === '/api/signatures/audit') {
+      if (!viewOK()) return json({ error: 'bad view key' }, 401);
+      const rows = (await env.DB.prepare('SELECT * FROM sigs').all()).results || [];
+      return json({ count: rows.length, hashes: rows });
+    }
+
+    // Revoking matters more than adding: without it a single wrong confirmation is
+    // permanent for the whole team.
+    if (req.method === 'DELETE' && url.pathname.startsWith('/api/signatures/')) {
+      if ((req.headers.get('x-key') || '') !== WRITE_KEY) return json({ error: 'bad key' }, 401);
+      const h = decodeURIComponent(url.pathname.split('/').pop());
+      const r = await env.DB.prepare('DELETE FROM sigs WHERE hash = ?').bind(h).run();
+      return json({ ok: true, removed: r.meta ? r.meta.changes : 0 });
     }
 
     if (req.method === 'GET' && url.pathname === '/api/smodel') {

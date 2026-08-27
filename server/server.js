@@ -35,7 +35,8 @@ function load(file, def) { try { return JSON.parse(fs.readFileSync(file, 'utf8')
 function save(file, obj) { fs.writeFileSync(file, JSON.stringify(obj)); }
 
 let scans = load(SCANS_FILE, []);
-let sigs = load(SIGS_FILE, { knownCheatHashes: [], knownGoodHashes: [] });
+let sigs = load(SIGS_FILE, { knownCheatHashes: [], knownGoodHashes: [], meta: {} });
+if (!sigs.meta) sigs.meta = {};   // older stores predate attribution
 
 // ---- shared (federated) model: trained by every team member's scans ----
 const MODEL_FILE = path.join(DATA_DIR, 'model.json');
@@ -154,9 +155,16 @@ const server = http.createServer(async (req, res) => {
 
     // aggregate shared learning
     let changed = false;
+    // Pooled hashes reach every client on their next run, so a wrong one becomes a
+    // team-wide false positive that nobody can trace. Record who contributed each
+    // hash and from which scan, so a bad entry can be found and removed.
     const gc = new Set(sigs.knownCheatHashes), gg = new Set(sigs.knownGoodHashes);
-    for (const h of (body.newCheat || [])) { if (h && !gc.has(h)) { gc.add(h); changed = true; } }
-    for (const h of (body.newGood || [])) { if (h && !gg.has(h)) { gg.add(h); changed = true; } }
+    const note = (h, kind) => {
+      sigs.meta[h] = { kind, scanner: rec.scanner, target: rec.targetUser,
+                       scanId: rec.id, ts: rec.serverTs };
+    };
+    for (const h of (body.newCheat || [])) { if (h && !gc.has(h)) { gc.add(h); note(h, 'cheat'); changed = true; } }
+    for (const h of (body.newGood || [])) { if (h && !gg.has(h)) { gg.add(h); note(h, 'good'); changed = true; } }
     if (changed) { sigs.knownCheatHashes = [...gc]; sigs.knownGoodHashes = [...gg]; save(SIGS_FILE, sigs); }
 
     // federated model training: every team member's labelled samples train ONE shared model
@@ -180,6 +188,30 @@ const server = http.createServer(async (req, res) => {
   // shared signatures (public — just hashes)
   if (req.method === 'GET' && url.pathname === '/api/signatures') {
     return send(res, 200, { version: 100, knownCheatHashes: sigs.knownCheatHashes, knownGoodHashes: sigs.knownGoodHashes });
+  }
+
+  // auditable view: which hash came from whose scan (view-gated, not public)
+  if (req.method === 'GET' && url.pathname === '/api/signatures/audit') {
+    if (VIEW_KEY && (url.searchParams.get('key') || req.headers['x-key']) !== VIEW_KEY) {
+      return send(res, 401, { error: 'bad view key' });
+    }
+    const rows = [...sigs.knownCheatHashes, ...sigs.knownGoodHashes]
+      .map(h => ({ hash: h, ...(sigs.meta[h] || { kind: 'unknown' }) }));
+    return send(res, 200, { count: rows.length, hashes: rows });
+  }
+
+  // Revoking matters more than adding: without this a single wrong confirmation
+  // is permanent for the whole team.
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/signatures/')) {
+    if ((req.headers['x-key'] || '') !== WRITE_KEY) return send(res, 401, { error: 'bad key' });
+    const h = decodeURIComponent(url.pathname.split('/').pop());
+    const before = sigs.knownCheatHashes.length + sigs.knownGoodHashes.length;
+    sigs.knownCheatHashes = sigs.knownCheatHashes.filter(x => x !== h);
+    sigs.knownGoodHashes = sigs.knownGoodHashes.filter(x => x !== h);
+    delete sigs.meta[h];
+    const removed = before - (sigs.knownCheatHashes.length + sigs.knownGoodHashes.length);
+    if (removed) save(SIGS_FILE, sigs);
+    return send(res, 200, { ok: true, removed });
   }
 
   // the shared, team-trained model (every client pulls this)

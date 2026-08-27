@@ -95,6 +95,8 @@ script. Set `"enabled": false` to turn team uploads off for everyone instantly.
 | GET | `/api/history?limit=` | `?key=VIEW_KEY` (if set) | scan summaries, newest first |
 | GET | `/api/scan/:id` | `?key=VIEW_KEY` (if set) | one full scan |
 | GET | `/api/signatures` | public | pooled cheat/good hashes |
+| GET | `/api/signatures/audit` | `?key=VIEW_KEY` | the same hashes **with who contributed each one** |
+| DELETE | `/api/signatures/:hash` | `x-key: WRITE_KEY` | remove a hash from the pool |
 | GET | `/api/model` | public | the shared, team-trained **mod** model (clients pull this) |
 | GET | `/api/smodel` | public | the shared, team-trained **overall-scan** model (clients pull this too) |
 | GET | `/` | — | the dashboard |
@@ -105,6 +107,28 @@ bounded, base-anchored SGD step per sample, so **two shared models learn from ev
 team member's scans**: one that judges single mods, and one that judges a whole scan
 (mods + system + processes + JVM + history). Clients fetch `/api/model` each run and use it. The base-anchoring
 means the shared model adapts to new cheats but can't drift into false positives.
+
+### Pooled hashes are automatic — so they must be revocable
+
+A confirmed cheat hash from any member reaches every other client on their next
+run. That is the point, and it is also the risk: if the tool ever confirms a
+legitimate mod by mistake, that hash would become a permanent, team-wide false
+positive. So every pooled hash records **who contributed it and from which scan**
+(`/api/signatures/audit`), and any hash can be removed:
+
+```bash
+curl -X DELETE -H "x-key: $WRITE_KEY" https://your-backend/api/signatures/<sha1>
+```
+
+Upgrading a database created before this: the worker falls back to the old
+2-column insert automatically, but to get attribution run
+
+```sql
+ALTER TABLE sigs ADD COLUMN scanner TEXT;
+ALTER TABLE sigs ADD COLUMN target  TEXT;
+ALTER TABLE sigs ADD COLUMN scan_id TEXT;
+ALTER TABLE sigs ADD COLUMN ts      TEXT;
+```
 
 > The write key lives in the (public) tool config, so treat it as append-only: worst
 > case someone posts junk scans, which you can clear. Rotate it anytime by changing the
