@@ -11,8 +11,7 @@ function Run-SystemChecks {
         }
     }
     if ($hostsFlags.Count -gt 0) {
-        Write-SystemFlag "WARN" "Hosts file is blocking suspicious domains:"
-        foreach ($f in $hostsFlags) { W "  $([char]0x2502)         $f" Red }
+        Write-SystemFlag "WARN" "Hosts file is blocking suspicious domains:" $hostsFlags
         Write-Detail "The hosts file overrides DNS and redirects domain names to fake IPs." `
             "Blocking Modrinth/Mojang/anticheat domains prevents ban syncs and cheat detection." `
             "Cheaters add entries like '127.0.0.1 hypixel.net' to break AC connections." `
@@ -25,8 +24,7 @@ function Run-SystemChecks {
         $defExc   = $mpExcReg.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | Select-Object -ExpandProperty Name
         $javaExc  = $defExc | Where-Object { $_ -match 'java|minecraft|jdk|jre|mod|\.minecraft|launcher' }
         if ($javaExc) {
-            Write-SystemFlag "WARN" "Windows Defender exclusions cover Java/Minecraft paths:"
-            foreach ($e in $javaExc) { W "  $([char]0x2502)         $e" Red }
+            Write-SystemFlag "WARN" "Windows Defender exclusions cover Java/Minecraft paths:" @($javaExc)
             Write-Detail "Defender exclusions tell Windows Security to never scan specific folders." `
                 "Excluding the Minecraft folder means any malware inside a mod is never detected." `
                 "Cheat installers add these via PowerShell or registry to protect themselves." `
@@ -49,8 +47,7 @@ function Run-SystemChecks {
         }
     }
     if ($ifeoFlags.Count -gt 0) {
-        Write-SystemFlag "FAIL" "IFEO hijacking detected:"
-        foreach ($f in $ifeoFlags) { W "  $([char]0x2502)         $f" Red }
+        Write-SystemFlag "FAIL" "IFEO hijacking detected:" $ifeoFlags
         Write-Detail "Image File Execution Options (IFEO) allows replacing any EXE with another." `
             "When javaw.exe is hijacked, every Minecraft launch runs a cheat injector first." `
             "Set via Registry Editor at HKLM\...\Image File Execution Options\javaw.exe" `
@@ -91,8 +88,7 @@ function Run-SystemChecks {
         }
     }
     if ($bamFlags.Count -gt 0) {
-        Write-SystemFlag "FAIL" "BAM registry: suspicious executables recently executed:"
-        foreach ($f in $bamFlags) { W "  $([char]0x2502)         $f" Red }
+        Write-SystemFlag "FAIL" "BAM registry: suspicious executables recently executed:" $bamFlags
         Write-Detail "BAM (Background Activity Monitor) logs every executable launched, stored in registry." `
             "Logged EXE names match known cheat clients or malware. Proves they were run on this PC." `
             "BAM data persists for 7 days. Check HKLM\SYSTEM\...\bam\State\UserSettings." ""
@@ -106,8 +102,7 @@ function Run-SystemChecks {
             $_.TaskName -match 'update|sync|helper|service|loader|check|runner|updater|java'
         }
         if ($suspTasks) {
-            Write-SystemFlag "WARN" ("Suspicious scheduled tasks found: " + @($suspTasks).Count)
-            foreach ($t in $suspTasks | Select-Object -First 5) { W "  $([char]0x2502)         $($t.TaskName)" Yellow }
+            Write-SystemFlag "WARN" ("Suspicious scheduled tasks found: " + @($suspTasks).Count) @($suspTasks | ForEach-Object { $_.TaskName })
             Write-Detail "Scheduled tasks run programs automatically at login, on a timer, or on events." `
                 "These tasks launch Java or scripts with generic names like 'updater'." `
                 "Malware uses scheduled tasks to persist across reboots." `
@@ -132,8 +127,7 @@ function Run-SystemChecks {
         $prefFlags = Get-ChildItem $prefetchDir -Filter "*.pf" -ErrorAction SilentlyContinue |
                      Where-Object { $_.Name -match 'CHEAT|HACK|INJECT|STEALER|MINER|PAYLOAD|EXPLOIT|LOADER|LIQUIDBOUNCE|WURST|METEOR|VAPE|RISE|SIGMA|BARITONE' }
         if ($prefFlags) {
-            Write-SystemFlag "WARN" "Prefetch shows suspicious programs were recently executed:"
-            foreach ($p in $prefFlags) { W "  $([char]0x2502)         $($p.Name)" Yellow }
+            Write-SystemFlag "WARN" "Prefetch shows suspicious programs were recently executed:" @($prefFlags | ForEach-Object { $_.Name })
             Write-Detail "Windows Prefetch (.pf files) records every program launched to speed up restarts." `
                 "These filenames match known cheat clients, injectors, or malware tools." `
                 "Prefetch data persists even if the original program was deleted." ""
@@ -159,8 +153,7 @@ function Run-SystemChecks {
         }
     }
     if ($runFlags.Count -gt 0) {
-        Write-SystemFlag "WARN" "Startup registry entries launching Java/scripts:"
-        foreach ($f in $runFlags) { W "  $([char]0x2502)         $f" Yellow }
+        Write-SystemFlag "WARN" "Startup registry entries launching Java/scripts:" $runFlags
         Write-Detail "Run/RunOnce registry keys launch programs automatically at every Windows login." `
             "These entries auto-start Java processes or encoded PowerShell scripts." `
             "Malware uses this to reload itself after every reboot." `
@@ -233,6 +226,8 @@ function Run-ServiceCheck {
             W "  $([char]0x2502)    WHAT: $($svc.WhatDoes)" White
             W "  $([char]0x2502)    WHY : $($svc.WhySecurity)" DarkGray
             W "  $([char]0x2502)" DarkCyan
+            Add-Finding "WARN" "Windows services" "$($svc.DisplayName) is $status, expected $($svc.Expected)" `
+                @() $svc.WhatDoes $svc.WhySecurity "" "Open services.msc and set '$($svc.Name)' back to $($svc.Expected)." | Out-Null
         }
     } else {
         W "  $([char]0x2502)" DarkCyan

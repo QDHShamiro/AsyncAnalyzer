@@ -6,9 +6,16 @@
         Write-Host ""
         Write-InjectionCard "javaw / java process" $jvmFlags
         $script:SystemIssues += $jvmFlags.Count
+        Add-Finding "FAIL" "Live game process" "$($jvmFlags.Count) injection trace(s) in the running Java process" `
+            @($jvmFlags) `
+            "The scan attached to the running javaw/java process and read its loaded agents, its open localhost ports and its heap." `
+            "This is what the mods folder cannot show: code that is live in the game right now, whether or not any file on disk still contains it." `
+            "Deleting a jar does not remove what is already loaded, so these traces survive a last-second cleanup." `
+            "Do not let the player close the game before this is reviewed $([char]0x2014) closing it destroys this evidence." | Out-Null
     } else {
         Write-Host ""
         W "  $([char]0x2713) JVM $([char]0x2014) no agents, no localhost listeners, no heap signatures" DarkGray
+        Add-Finding "OK" "Live game process" "Running Java process $([char]0x2014) no agents, no localhost listeners, no cheat signatures in the heap" | Out-Null
     }
 }
 

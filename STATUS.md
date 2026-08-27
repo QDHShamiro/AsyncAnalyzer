@@ -8,14 +8,13 @@ A Minecraft mod cheat scanner (Windows PowerShell, one-liner distributed) with a
 
 ## Repo & branch
 - Repo: `QDHShamiro/AsyncAnalyzer`
-- **Work branch: `claude/mod-analyzer-improvement-c88trb`** (NOT merged to main yet).
+- **Everything is on `main`.** The one-liner points at `main`, so every push ships
+  immediately to everyone who runs it. There is no staging branch - that is why the
+  checks below are not optional.
 - To continue locally:
   ```bash
-  git fetch origin
-  git checkout claude/mod-analyzer-improvement-c88trb
-  git pull
+  git fetch origin main && git checkout main && git pull
   ```
-- The live one-liner still points at `main`, so end users run the OLD version until this branch is merged. **Merge this branch to `main` to ship all improvements.**
 
 ## Run / verify (Windows)
 ```powershell
@@ -31,16 +30,16 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
 `AsyncAnalyzer.ps1` is **assembled** from `src/*.ps1` by `python3 build.py`. Edit the section files, not the shipped one - a build overwrites it, and CI fails on `build.py --check` if the two drift. The build is a plain ordered concatenation (PowerShell runs top to bottom and the file is full of order-dependent top-level code), which is what let the split be proven: the first build was byte-for-byte identical to the file that had been shipping. See `src/README.md` for the section map.
 
 ## File map
-- `AsyncAnalyzer.ps1` (~4590 lines) — the whole tool. Key sections:
+- `AsyncAnalyzer.ps1` (~5847 lines, **generated** - edit `src/`) — the whole tool. Key sections:
   - Data lists (cheat strings / weak strings / package paths / legit modids / client tokens) ~line 30–470.
   - Embedded AI model (`$script:mlWeights`, `$script:mlIntercept`, v2) + `Invoke-MlModel`, `Get-JarFeatures`, `Get-ModFeatureVector`, `Get-ModVerdict`, `Write-VerdictCard` ~line 480–850.
   - Self-improvement: `Load/Save-LearnState`, `Update-ModelOnline` (SGD), `Invoke-CloudUpdate`, `Get-MinecraftName`, `Send-ScanResult` ~line 850–1000.
   - `Find-MinecraftModFolders` + **`Get-ScanTargets`** (autonomous target choice: every OPEN instance + configured paths). `Get-BestModFolder`/`Ask-YesNo` are now unreachable leftovers.
   - Autonomy: `Invoke-SelfElevate`, `Set-AutoDepth`, `Request-DeepEscalation`, `Add-ScanGap`/`Write-ScanGaps`, `Save-ScanSummary`.
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
-  - `New-HtmlReport` (dark-mode report), `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
+  - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (42/42), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (192), `test_bytecode.py` (198), `test_session.py` (27), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (35), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -90,7 +89,7 @@ The mod model scores ONE jar. A **session model** now scores the WHOLE scan and 
 - **Federated:** the scan payload carries `sessionSample` + `session`; `server.js` and `worker.js` both train a shared session model and serve it at **`/api/smodel`**, which clients pull each run.
 - Persisted in `learned.json` as `sweights` / `sintercept` / `ssamples` / `sessionModelVersion`.
 
-Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan pattern **13% → 39%** across 30 scans from 3 simulated team members while clean scans stayed Clean (3%) and hard-confirmed stayed Confirmed (86%). `-SelfTest` is now **13 cases** (8 mod + 5 whole-scan) and all 5 new ones were verified against the PS-embedded weights.
+Proven: `ml/test_session.py` 27/27; live backend test learned a novel whole-scan pattern **13% → 39%** across 30 scans from 3 simulated team members while clean scans stayed Clean (3%) and hard-confirmed stayed Confirmed (86%). `-SelfTest` is now **42 cases** (23 mod + 8 whole-scan + 11 report) and every new one was verified against the PS-embedded weights.
 
 ## Also changed
 - **The tool no longer opens anything on your PC.** `New-HtmlReport` used to call `Invoke-Item` (opening the report in your default app) and `Start-Process explorer.exe /select` (popping a file-explorer window). Both removed — it just prints the path now. Better for trust and it stops the window spam at the end of a scan.
@@ -113,16 +112,23 @@ Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
 - **CI owns both generated files.** Run the benchmark locally as much as you like, but do NOT commit the regenerated files - the bot writes them on every push to main, and committing your own copy produces a merge conflict every time (it already did once). If you do hit that conflict: resolve it by regenerating rather than hand-editing, and for the history take the UNION of both sides keyed by commit.
-- `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all six suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
+- `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all seven suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
 - **Regression gates fail the build**: no real library flagged by a cheat rule; aim + dropper always detected; detection independent of hiding depth.
-- Corpus: `ml/fetch_jars.py` pulls **122** real libraries from Maven Central (cached in CI). Chosen to be hard: LWJGL (Minecraft's own input/GL library), AspectJ + OpenTelemetry (real Java agents), JNA, Spring, BouncyCastle.
+- Corpus: `ml/fetch_jars.py` pulls **177** real libraries from Maven Central (cached in CI). Chosen to be hard: LWJGL (Minecraft's own input/GL library), AspectJ + OpenTelemetry (real Java agents), JNA, Spring, BouncyCastle.
 - Two results are reported honestly instead of tuned away: 11 libraries match the Java-agent rule (correct - they really are agents; the rule is scoped to a jar in a mods folder), and ESP is left undetected on purpose (identical behaviour to a mob-radar minimap).
 - To add data: extend the `LIBS` list in `fetch_jars.py` (clean side) or `ml/corpus_src/` (behaviour side), then rerun the benchmark.
 
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
-- [ ] **Live Windows test** - THE open item. Shamiro decided: run `-SelfTest` (expect **26/26**) and one real scan BEFORE merging PR #2. Nothing has ever run in real PowerShell.
-- [ ] Merge branch → main to ship.
+- [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
+      Run `-SelfTest` (expect **42/42**), then one real scan with Minecraft running.
+      Check specifically: (a) UAC appears and declining it still scans, (b) every open
+      instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
+      `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is
+      filled in. The bytecode parser and the repaired memory API have only ever been
+      checked statically.
+- [ ] **GitHub Pages** — Shamiro has to click it once: Settings → Pages → branch `main`,
+      folder `/docs`. The page is already generated and committed.
 - [ ] Optional: Discord webhook on flagged scan; dashboard login; more 2025/2026 cheat families.
 
 ## Recent detection improvement (this session) — Doomsday / ghost / random-named jars
@@ -130,6 +136,40 @@ The trigger: a real scan showed `hb4zz1xxrd4.jar` (a Doomsday download) as `? So
 
 1. **`Get-ModVerdict` random-name floor** (`AsyncAnalyzer.ps1`, just before the verified-cap block): an **unverified** jar with a random / hash-style filename is floored to **Review** (35; 55 if it also has obfuscation / capability corroboration). It is **never** floored into a flag (Likely/Confirmed) by the name alone — real Doomsday still reaches Confirmed only via the existing hard rules (package path ≥80, cheat site ≥75, known hash =100). Verified / legit-modid jars are exempt (they're capped ≤20), so a legitimately hash-renamed known mod is unaffected. `Test-RandomFilename` already classifies `hb4zz1xxrd4` as random (0 vowels in the alpha run).
 2. **`ml/signatures.json` → a real community cheat DB (version 3):** more `packagePaths` (`net/wurstclient`, `com/gamesense`, `org/rusherhack`, …), more distinctive `clientTokens` (`ghostclient`, `moonlightclient`, `entropyclient`, … — all compound, never bare words), and a **new `downloadDomains`** array (`doomsdayclient`, `vape.gg`, `wurstclient.net`, …). `downloadDomains` is wired data-driven: the loader merges it into `$script:cheatDomainMap` + `$script:cheatDownloadSources`, and `Get-DownloadSource` consults it — so a team can add a new cheat site with **no script edit**, and it propagates via auto-update.
-3. **2 new `-SelfTest` cases** (now 8 total): "random-named jar, unverified → Review" and "random-named jar but verified → Clean".
+3. **2 new `-SelfTest` cases**: "random-named jar, unverified → Review" and "random-named jar but verified → Clean".
 
-Verified here (no Windows): `ml/test_verdict.py` 44/44 (incl. the two random-name cases + all 37 real libs still Clean), `ml/test_selflearn.py` 4/4, brace/here-string balance identical to HEAD, and a Python mirror of `Test-RandomFilename` catches `hb4zz1xxrd4.jar` + 4 other hash-names while giving **0 false positives** on 20 real mod filenames. Still to do on Windows: run `-SelfTest` (expect 8/8) and a real scan.
+Verified here (no Windows): `ml/test_verdict.py` green (incl. the two random-name cases + every real lib still Clean), `ml/test_selflearn.py` 4/4, brace/here-string balance identical to HEAD, and a Python mirror of `Test-RandomFilename` catches `hb4zz1xxrd4.jar` + 4 other hash-names while giving **0 false positives** on 20 real mod filenames.
+
+## The screenshare report (newest work)
+The report used to be a summary. It is now the **document a staff member acts on**,
+because that is who actually reads it - during the screenshare, with the suspect
+watching, after the console has already closed.
+
+- **The overall-scan verdict is the headline.** Before, the banner showed a *mod-count*
+  verdict ("Clean - no cheats detected") while the whole-scan AI further down could say
+  "LIKELY CHEATING" off a live memory hit. Two different answers on one page; the wrong
+  one was on top. Now there is one verdict and it is the session verdict.
+- **Coverage is a section, not a footnote.** What was checked, and beside it *what could
+  not be checked*, from `$script:ScanGaps`. If anything is missing and the verdict is
+  Clean or Review, that is said directly under the headline. A clean result only covers
+  what it lists, and the page has to say so where it cannot be skipped.
+- **Every finding carries its reasoning.** `Add-Finding` collects level, area, the exact
+  items (paths, PIDs, hashes, memory addresses) and the WHAT/WHY/HOW/FIX text.
+  `Write-SystemFlag` and `Write-Detail` were hooked instead of editing ~12 call sites,
+  so every system check records itself with no chance of one being forgotten. The PC
+  scan, JVM scan, service check and BAM scan record theirs explicitly.
+- **Checks that passed are kept**, collapsed - they are the proof of what was looked at.
+- **The score scale draws the real band edges** (30/60/85). `ml/test_report.py` fails the
+  build if those ever stop matching `Get-SessionVerdict`/`Get-ModVerdict` - a scale that
+  misplaces its own thresholds is worse than no scale.
+- **Prints to PDF** black-on-white, so it can be attached to a ban appeal, and *Copy
+  summary* puts a plain-text version on the clipboard for a ticket.
+- `New-HtmlReport` takes an optional output path so `-SelfTest` can render the whole
+  thing to a temp file and check it - the report is no longer the untested part.
+
+Two bugs found while doing this, both only visible on Windows:
+- `@($undefined)` in PowerShell is a **one-element array containing `$null`**, not an
+  empty one. Every list the report iterates is now filtered, or an unset list would have
+  produced phantom rows in the file inventory.
+- `Write-SystemFlag` printed its evidence items via loose `foreach` loops at each call
+  site, so none of them reached the report. Items are now passed to the flag itself.

@@ -664,13 +664,40 @@ function Write-InjectionCard([string]$FileName, [object]$Flags) {
     Write-Host ""
 }
 
-function Write-SystemFlag([string]$Level, [string]$Msg) {
+# The console scrolls past and the staff member reading the report was not sitting
+# in front of it. Every check records what it looked at and what it concluded, so
+# the report can print the reasoning instead of a bare "3 system issues".
+function Add-Finding {
+    param(
+        [string]$Level, [string]$Area, [string]$Title,
+        [string[]]$Items = @(),
+        [string]$What = "", [string]$Why = "", [string]$How = "", [string]$Fix = ""
+    )
+    $f = [PSCustomObject]@{
+        Level = $Level; Area = $Area; Title = $Title; Items = @($Items)
+        What  = $What;  Why   = $Why;  How   = $How;  Fix   = $Fix
+    }
+    [void]$script:Findings.Add($f)
+    $script:LastFinding = $f
+    return $f
+}
+
+function Write-SystemFlag([string]$Level, [string]$Msg, [string[]]$Items = @()) {
     switch ($Level) {
         "FAIL" { W "  $([char]0x2502) " DarkRed -NoNewline; W " FAIL " White -NoNewline; W "  $Msg" Red }
         "WARN" { W "  $([char]0x2502) " DarkYellow -NoNewline; W " WARN " Black -NoNewline; W "  $Msg" Yellow }
         "OK"   { W "  $([char]0x2502) " DarkGreen -NoNewline; W "  OK  " White -NoNewline; W "  $Msg" Green }
         "INFO" { W "  $([char]0x2502) " DarkGray -NoNewline; W "  ??  " White -NoNewline; W "  $Msg" DarkGray }
     }
+    $items = @($Items)
+    if ($items.Count -gt 0) {
+        $itemColor = if ($Level -eq "FAIL") { "Red" } elseif ($Level -eq "WARN") { "Yellow" } else { "DarkGray" }
+        # The console gets a readable excerpt; the report keeps every single one,
+        # because on a screenshare the full list is the evidence.
+        foreach ($i in ($items | Select-Object -First 8)) { W "  $([char]0x2502)         $i" $itemColor }
+        if ($items.Count -gt 8) { W "  $([char]0x2502)         ... and $($items.Count - 8) more (all of them are in the report)" DarkGray }
+    }
+    Add-Finding $Level $script:SysArea $Msg $items | Out-Null
 }
 
 function Write-Detail([string]$what, [string]$why, [string]$how, [string]$fix) {
@@ -678,9 +705,16 @@ function Write-Detail([string]$what, [string]$why, [string]$how, [string]$fix) {
     if ($why)  { W ("  $([char]0x2502)    WHY  : " + $why) DarkGray }
     if ($how)  { W ("  $([char]0x2502)    HOW  : " + $how) DarkGray }
     if ($fix)  { W ("  $([char]0x2502)    FIX  : " + $fix) DarkCyan }
+    # Attaches to the flag that was just printed - every call site prints the flag
+    # first and the reasoning right after, so the pairing is the existing order.
+    if ($script:LastFinding) {
+        $script:LastFinding.What = $what; $script:LastFinding.Why = $why
+        $script:LastFinding.How  = $how;  $script:LastFinding.Fix = $fix
+    }
 }
 
 function Write-SysSection([string]$Title) {
+    $script:SysArea = $Title
     Write-Host ""
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) " + $Title + " " + ("$([char]0x2500)" * [Math]::Max(0, 65 - $Title.Length)) + "$([char]0x2510)") DarkCyan
 }

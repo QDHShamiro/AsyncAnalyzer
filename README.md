@@ -42,6 +42,26 @@ powershell -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercon
 Nothing waits for a keypress, so the result is written to the HTML report **and** to
 `%APPDATA%\AsyncAnalyzer\last-scan.txt`.
 
+### 📄 The report
+
+`%TEMP%\AsyncAnalyzer_Report.html` is the document a staff member reads while the
+screenshare is still running, so it is ordered the way that question gets answered:
+
+1. **The verdict**, in words, with the score placed on a scale that draws the real
+   band edges (30 / 60 / 85) — so a number is never just an opinion.
+2. **What it rests on** — every reason the overall-scan AI used, numbered.
+3. **Coverage** — what was checked, and beside it *what could not be checked*. If
+   anything is missing and the verdict is clean, that is said right under the
+   headline, not buried. A clean result only covers what it lists.
+4. **Scan record** — time (local *and* UTC), PC, Windows user, whether it ran as
+   admin, whether Minecraft was running, which folders were scanned, report ID.
+5. **Every finding** — with the exact paths, hashes, PIDs and memory addresses, plus
+   what the check does, why it matters, how it gets there and what to do about it.
+6. **The full file inventory**, searchable.
+
+*Copy summary* puts a plain-text version on the clipboard for a ticket or a Discord
+thread. Ctrl+P produces a clean black-on-white PDF.
+
 - Want to pick manually or paste a path? Add `-Ask`.
 
 - Know the exact folder? Add `-Path "C:\...\mods"`.
@@ -59,7 +79,7 @@ Nothing waits for a keypress, so the result is written to the HTML report **and*
 | 🔎 **Explains itself** | Every flag shows the AI probability *and* the exact reasons — package path, obfuscation, signatures, network behaviour. |
 | 👻 **Catches ghost clients** | Ghost clients are *injected* into the running game, not dropped in `mods`. If Minecraft is running, the live-memory check turns on by itself (announced openly) — the only way to see an injected client. External clients that run as their own process are caught by name. |
 | 🔒 **Trustworthy** | Read-only. Only your mods folder by default. The whole-PC scan is opt-in and asked for separately. |
-| 🎨 **Beautiful report** | A dark-mode HTML report with score bars, badges and reasons — shareable as *"proof I don't cheat."* |
+| 📄 **A report staff can act on** | The HTML report is written for the person running the screenshare: the overall verdict first, then what it rests on, then **what could not be checked**, then every finding with its reasoning and the exact paths, hashes and PIDs behind it. Prints to PDF cleanly, so it can be attached to a ban appeal. |
 
 ---
 
@@ -283,7 +303,8 @@ ml/
 ├── test_session.py    # proves the overall-scan AI scores + learns correctly
 ├── model.json         # trained weights + version + metrics
 ├── test_verdict.py    # end-to-end tests (cheats, clean, anticheat, verified)
-└── test_selflearn.py  # proves self-learning helps without false positives
+├── test_selflearn.py  # proves self-learning helps without false positives
+└── test_report.py     # static checks on the screenshare report (thresholds, honesty, encoding)
 ```
 
 Retrain anytime:
@@ -333,11 +354,12 @@ python3 ml/fetch_jars.py && python3 ml/benchmark.py
 | Test | Result |
 |---|---|
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
-| `ml/test_verdict.py` | **92/92** — cheats caught, 37 real libs Clean, anticheats Clean, impersonation closed |
+| `ml/test_verdict.py` | **192/192** — cheats caught, real libs Clean, anticheats Clean, impersonation closed |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
 | `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
-| `-SelfTest` (in-tool) | 33 known cases — mod-level, impersonation and whole-scan — all pass |
+| `-SelfTest` (in-tool) | 42 known cases — mod-level, impersonation, whole-scan **and the report itself** (it renders end to end and is checked, so the document staff read is never the untested part) |
+| `ml/test_report.py` | **35/35** — the score scale draws the engine's real band edges, a clean verdict never claims proof, an incomplete scan says so, no template variable is silently undefined |
 
 ---
 

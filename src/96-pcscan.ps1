@@ -372,6 +372,18 @@ function Run-BamScan {
     # .jar specifically: a mod that ran on this PC and is now gone is a much sharper
     # signal than any deleted .exe, so the session AI scores it separately.
     $script:Evidence.DeletedJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' }).Count
+    if ($deletedEntries.Count -gt 0) {
+        $delJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' })
+        $lvl = if ($delJars.Count -gt 0) { "FAIL" } else { "WARN" }
+        Add-Finding $lvl "Execution history (BAM)" "$($deletedEntries.Count) program(s) ran on this PC and are no longer on disk" `
+            @($deletedEntries | ForEach-Object { "$($_.Time)   $($_.Path)" }) `
+            "Windows records every executable that starts (Background Activity Monitor). The recorded paths were checked against the disk." `
+            "$(if ($delJars.Count -gt 0) { "$($delJars.Count) of them are .jar files. A mod that ran on this PC and was then deleted is the classic 'wiped it before the screenshare' pattern." } else { "The file was deleted after it ran, so a file scan alone can no longer see it." })" `
+            "BAM only keeps entries since the last logon, so this list is what ran in this session $([char]0x2014) not the full history." `
+            "Ask what each of these was before accepting an explanation." | Out-Null
+    } else {
+        Add-Finding "OK" "Execution history (BAM)" "Execution history $([char]0x2014) every program that ran since the last logon is still on disk" | Out-Null
+    }
     New-HtmlReport
     Write-Host ""
 
@@ -1238,6 +1250,55 @@ function Run-PCscan {
     $script:Evidence.CheatProcs   = $flaggedProcs.Count
     $script:Evidence.CheatFolders = $foundFolders.Count
     $script:Evidence.StrayJars    = $fsFlags.Count
+
+    # Same numbers as the summary above, but recorded with the actual names behind
+    # them - a count on its own proves nothing to the staff member reading this.
+    $script:SysArea = "Rest of the PC"
+    if ($flaggedProcs.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($flaggedProcs.Count) running process(es) match a known cheat" `
+            @($flaggedProcs | ForEach-Object { "$($_.Name) (PID $($_.PID))  $($_.Path)  $([char]0x2014) $($_.Reason)" }) `
+            "Every running process was compared against the known cheat-client and injector names." `
+            "A cheat client does not have to sit in the mods folder - plenty run as their own program next to the game." `
+            "" "Note the PIDs before anything is closed." | Out-Null
+    }
+    if ($foundFolders.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($foundFolders.Count) known cheat folder(s) on disk" @($foundFolders) `
+            "Folder names across the user profile were matched against known cheat-client install paths." `
+            "An install folder stays behind even when the jar itself was deleted before the screenshare." | Out-Null
+    }
+    if ($fsFlags.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($fsFlags.Count) suspicious .jar file(s) outside the mods folder" `
+            @($fsFlags | ForEach-Object { "$($_.Path)  $([char]0x2014) $($_.Hits)" }) `
+            "Jars outside the scanned mods folders were checked with the same rules as the mods themselves." `
+            "Moving a cheat jar out of the mods folder before a screenshare is the most common hiding place." | Out-Null
+    }
+    if ($pyFlags.Count -gt 0) {
+        Add-Finding "WARN" "Rest of the PC" "$($pyFlags.Count) suspicious .py script(s)" `
+            @($pyFlags | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
+            "Python scripts were scanned for autoclicker, macro and packet-sending code." `
+            "Not every macro is a cheat - a script that moves the mouse for you on a server that bans it, is." | Out-Null
+    }
+    if ($exeFlags.Count -gt 0) {
+        Add-Finding "WARN" "Rest of the PC" "$($exeFlags.Count) suspicious .exe file(s)" `
+            @($exeFlags | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
+            "Executables in the usual download and game folders were matched against known injector and cheat-loader names." | Out-Null
+    }
+    if ($dllFlags.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($dllFlags.Count) suspicious DLL(s) loaded inside the Java process" `
+            @($dllFlags | ForEach-Object { "PID $($_.PID) ($($_.Process))  $($_.DLL)" }) `
+            "The module list of the running Java process was read and compared against known injector DLLs." `
+            "A DLL loaded into javaw.exe is running inside the game with full access to it." | Out-Null
+    }
+    if ($startupFlags.Count -gt 0) {
+        Add-Finding "WARN" "Rest of the PC" "$($startupFlags.Count) suspicious autostart entr(y/ies)" `
+            @($startupFlags | ForEach-Object { "$($_.Key) $([char]0x2192) $($_.Name) = $($_.Value)" }) `
+            "Autostart locations were read to see what launches itself at login." `
+            "Cheat loaders use autostart so they are running again before the game is." | Out-Null
+    }
+    if ($flaggedProcs.Count -eq 0 -and $foundFolders.Count -eq 0 -and $fsFlags.Count -eq 0 -and
+        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $startupFlags.Count -eq 0) {
+        Add-Finding "OK" "Rest of the PC" "Processes, folders, stray jars, scripts, executables, loaded DLLs and autostart $([char]0x2014) nothing cheat-like" | Out-Null
+    }
     W "  Startup flags       : " DarkGray -NoNewline; W "$($startupFlags.Count)" $(if($startupFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Cheat folders found : " DarkGray -NoNewline; W "$($foundFolders.Count)" $(if($foundFolders.Count -gt 0){"Red"}else{"Green"})
     W "  Flagged JARs        : " DarkGray -NoNewline; W "$($fsFlags.Count)" $(if($fsFlags.Count -gt 0){"Red"}else{"Green"})

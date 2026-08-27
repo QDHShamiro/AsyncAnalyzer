@@ -81,6 +81,11 @@ $unknownMods  = [System.Collections.Generic.List[object]]::new()
 $reviewMods   = [System.Collections.Generic.List[object]]::new()
 $flaggedMods  = [System.Collections.Generic.List[object]]::new()
 $script:BamDeleted = @()
+# Every check appends here (see Add-Finding): level, area, what was found, and the
+# WHAT/WHY/HOW/FIX reasoning. The HTML report is built from this list.
+$script:Findings   = [System.Collections.Generic.List[object]]::new()
+$script:LastFinding = $null
+$script:SysArea    = "System"
 $script:FlaggedModsList = [System.Collections.Generic.List[string]]::new()
 $script:ReviewModsList  = [System.Collections.Generic.List[string]]::new()
 $script:SpinFrames   = @("$([char]0x28FE)","$([char]0x28FD)","$([char]0x28FB)","$([char]0x28BF)","$([char]0x287F)","$([char]0x28DF)","$([char]0x28EF)","$([char]0x28F7)")

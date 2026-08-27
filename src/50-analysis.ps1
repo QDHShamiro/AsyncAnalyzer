@@ -478,8 +478,66 @@ function Invoke-SelfTest {
         $tag = if ($ok) { "PASS" } else { "FAIL" }
         W ("  [$tag] " + $sc.Label.PadRight(40) + " score=$($sv.Score)  band=$($sv.Band)  (want $($sc.Bands -join '/'))") $col
     }
+
     Write-Host ""
-    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) model + verdict logic OK on this machine." Green }
+    W "  Screenshare report (the document staff actually read)" Cyan
+    Write-Host ""
+    # These run the real functions, not a copy of them. The last case renders the
+    # whole report end to end - it is the only thing that proves the template
+    # parses and every call inside it resolves on a real Windows PowerShell.
+    $rCases = @(
+        @{ Label = "Clean verdict never claims proof"; Test = { -not ((Get-BandStyle "Clean").say -match "proof") } }
+        @{ Label = "Clean verdict points at the coverage box"; Test = { (Get-BandStyle "Clean").say -match "coverage" } }
+        @{ Label = "Confirmed verdict is labelled CONFIRMED"; Test = { (Get-BandStyle "Confirmed").short -eq "CONFIRMED" } }
+        @{ Label = "Unknown band falls back to clean"; Test = { (Get-BandStyle "nonsense").short -eq "CLEAN" } }
+        @{ Label = "Score scale clamps a negative score"; Test = { (New-ScoreScale -14 "#fff") -match "width:0%" } }
+        @{ Label = "Score scale clamps above 100"; Test = { (New-ScoreScale 250 "#fff") -match "width:100%" } }
+        @{ Label = "Score scale draws the real band edges"; Test = {
+            $sc = New-ScoreScale 50 "#fff"
+            ($sc -match "left:30%") -and ($sc -match "left:60%") -and ($sc -match "left:85%") } }
+        @{ Label = "A finding keeps its reasoning"; Test = {
+            $before = $script:Findings.Count
+            $f = Add-Finding "WARN" "SelfTest" "probe" @("item-a") "what" "why" "how" "fix"
+            $ok = ($f.Level -eq "WARN") -and ($f.Items[0] -eq "item-a") -and ($f.Why -eq "why")
+            while ($script:Findings.Count -gt $before) { $script:Findings.RemoveAt($script:Findings.Count - 1) }
+            $ok } }
+        @{ Label = "Write-Detail attaches to the flag before it"; Test = {
+            $before = $script:Findings.Count
+            Write-SystemFlag "OK" "self-test probe" | Out-Null
+            Write-Detail "w" "y" "h" "f"
+            $ok = ($script:Findings[$script:Findings.Count - 1].What -eq "w")
+            while ($script:Findings.Count -gt $before) { $script:Findings.RemoveAt($script:Findings.Count - 1) }
+            $ok } }
+        @{ Label = "Gaps are reported, never swallowed"; Test = {
+            $before = $script:ScanGaps.Count
+            Add-ScanGap "self-test probe gap"
+            Add-ScanGap "self-test probe gap"
+            $ok = ($script:ScanGaps.Count -eq $before + 1)
+            while ($script:ScanGaps.Count -gt $before) { $script:ScanGaps.RemoveAt($script:ScanGaps.Count - 1) }
+            $ok } }
+        @{ Label = "Full report renders and is written"; Test = {
+            $tmp = Join-Path $env:TEMP "AsyncAnalyzer_SelfTest.html"
+            $out = New-HtmlReport $tmp
+            $ok = $false
+            if ($out -and (Test-Path $out)) {
+                $txt = Get-Content $out -Raw
+                $ok = ($txt -match "COVERAGE|Coverage") -and ($txt -match "Could NOT be checked") -and
+                      ($txt -match "</html>") -and ($txt.Length -gt 4000)
+                Remove-Item $out -ErrorAction SilentlyContinue
+            }
+            $ok } }
+    )
+    foreach ($rc in $rCases) {
+        $ok = $false
+        try { $ok = [bool](& $rc.Test) } catch { $ok = $false }
+        if ($ok) { $pass++ } else { $fail++ }
+        $col = if ($ok) { "Green" } else { "Red" }
+        $tag = if ($ok) { "PASS" } else { "FAIL" }
+        W ("  [$tag] " + $rc.Label) $col
+    }
+
+    Write-Host ""
+    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) model, verdict logic and report OK on this machine." Green }
     else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
     Write-Host ""
 }
