@@ -48,19 +48,19 @@ median of ~220 classes. Detection must not depend on where it hides.
 
 ## False flags on real software — the number that matters
 
-Negative class: **185 real libraries** from Maven Central (ASM, ByteBuddy,
+Negative class: **186 real libraries** from Maven Central (ASM, ByteBuddy,
 Netty, Guava, Kotlin, Spring, BouncyCastle, LWJGL — the library Minecraft
 itself uses for input and OpenGL — mockito, log4j, …).
 
 | | count |
 |---|---:|
-| real libraries tested | 185 |
+| real libraries tested | 186 |
 | **flagged by any of the 12 cheat rules** | **0** |
 | rules checked | aim, scaffold, speed, invmove, dropper, nodinput, targeting, autoclick, velocity, nuker, freecam, esp |
-| matched the Java-agent rule | 13 |
+| matched the Java-agent rule | 14 |
 
 The agent matches are **correct, not false positives** — every one of these
-genuinely ships instrumentation: `aspectjweaver-1.9.22.jar`, `byte-buddy-1.14.12.jar`, `byte-buddy-agent-1.14.12.jar`, `byte-buddy-dep-1.14.12.jar`, `h2-2.2.224.jar`, `javassist-3.30.2-GA.jar`, `jol-core-0.17.jar`, `kotlinx-coroutines-core-jvm-1.8.0.jar`, `mockito-core-5.11.0.jar`, `opentelemetry-javaagent-2.4.0.jar`, `pitest-1.16.1.jar`, `spring-context-6.1.6.jar`, `spring-instrument-6.1.6.jar`.
+genuinely ships instrumentation: `aspectjweaver-1.9.22.jar`, `byte-buddy-1.14.12.jar`, `byte-buddy-agent-1.14.12.jar`, `byte-buddy-dep-1.14.12.jar`, `h2-2.2.224.jar`, `javassist-3.30.2-GA.jar`, `jol-core-0.17.jar`, `kotlinx-coroutines-core-jvm-1.8.0.jar`, `mockito-core-5.11.0.jar`, `opentelemetry-javaagent-2.4.0.jar`, `pitest-1.16.1.jar`, `sponge-mixin-0.13.2+mixin.0.8.5.jar`, `spring-context-6.1.6.jar`, `spring-instrument-6.1.6.jar`.
 That rule is scoped to *a jar sitting in a mods folder*, where an agent is
 abnormal; in an ordinary application classpath it is not.
 
@@ -68,9 +68,9 @@ abnormal; in an ordinary application classpath it is not.
 
 | | |
 |---|---|
-| classes parsed | 121567 |
-| time | ~35 s |
-| per class | ~0.3 ms |
+| classes parsed | 122556 |
+| time | ~50 s |
+| per class | ~0.4 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -84,7 +84,7 @@ so a normal run only pays for the unverified remainder.
 - **ESP is not decidable from bytecode.** ESP and a mob-radar minimap perform the
   same operations. The tool surfaces that behaviour for review rather than
   accusing, and deciding it needs identity (hash verification), not a bigger model.
-- A false-flag count of 0 means none of *these* 185 libraries were flagged.
+- A false-flag count of 0 means none of *these* 186 libraries were flagged.
   It is evidence, not a guarantee.
 
 ## End-to-end verdict — the whole chain, as a user sees it
@@ -103,7 +103,7 @@ rules and the banding together.
 | a random-named jar, verified | Clean | Clean |
 | a mod with an injected agent | Confirmed | Confirmed |
 
-Through the same full chain, **0 of 185** real libraries come out as anything
+Through the same full chain, **0 of 186** real libraries come out as anything
 other than Clean.
 
 ## Team learning — does sharing scans actually help?
@@ -128,7 +128,6 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
-| `2b72478` | 119 ████ | 0 | ok | ok | ok |
 | `2b56a3b` | 174 ██████ | 0 | ok | ok | ok |
 | `222e20f` | 174 ██████ | 0 | ok | ok | ok |
 | `local` | 177 ███████ | 0 | ok | ok | ok |
@@ -140,6 +139,7 @@ of 0 means more as that number grows.
 | `86e5b7c` | 184 ███████ | 0 | ok | ok | ok |
 | `5f73c7c` | 185 ███████ | 0 | ok | ok | ok |
 | `4d830af` | 185 ███████ | 0 | ok | ok | ok |
+| `71b5528` | 186 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
