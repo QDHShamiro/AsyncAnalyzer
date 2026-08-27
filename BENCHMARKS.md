@@ -31,13 +31,13 @@ median of ~220 classes. Detection must not depend on where it hides.
 
 ## False flags on real software — the number that matters
 
-Negative class: **122 real libraries** from Maven Central (ASM, ByteBuddy,
+Negative class: **119 real libraries** from Maven Central (ASM, ByteBuddy,
 Netty, Guava, Kotlin, Spring, BouncyCastle, LWJGL — the library Minecraft
 itself uses for input and OpenGL — mockito, log4j, …).
 
 | | count |
 |---|---:|
-| real libraries tested | 122 |
+| real libraries tested | 119 |
 | **flagged by a cheat rule (aim / esp / dropper)** | **0** |
 | matched the Java-agent rule | 11 |
 
@@ -50,9 +50,9 @@ abnormal; in an ordinary application classpath it is not.
 
 | | |
 |---|---|
-| classes parsed | 77834 |
-| time | ~30 s |
-| per class | ~0.4 ms |
+| classes parsed | 77286 |
+| time | ~20 s |
+| per class | ~0.3 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -66,7 +66,7 @@ so a normal run only pays for the unverified remainder.
 - **ESP is not decidable from bytecode.** ESP and a mob-radar minimap perform the
   same operations. The tool surfaces that behaviour for review rather than
   accusing, and deciding it needs identity (hash verification), not a bigger model.
-- A false-flag count of 0 means none of *these* 122 libraries were flagged.
+- A false-flag count of 0 means none of *these* 119 libraries were flagged.
   It is evidence, not a guarantee.
 
 ## History
@@ -78,6 +78,7 @@ of 0 means more as that number grows.
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
 | `local` | 122 ████ | 0 | ok | ok | ok |
+| `2b72478` | 119 ████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
