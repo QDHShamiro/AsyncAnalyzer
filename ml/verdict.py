@@ -62,6 +62,25 @@ def verdict(raw):
     if raw.get("filename_client"):
         score = max(score, 60)
 
+    # Behaviour read out of the bytecode (see ml/bytecode.py). Survives string
+    # encryption, because calling a Minecraft method means naming it in the pool.
+    bc = raw.get("bytecode") or {}
+    if bc.get("classes_parsed", 0) > 0:
+        # aim/killaura: forging your own movement packet with a computed rotation
+        if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_rotation_ratio", 0) > 0:
+            score = max(score, 85)
+        # dropper: decrypt, then define a class from the plaintext
+        if bc.get("bc_crypto_ratio", 0) >= 0.5 and (
+                bc.get("bc_classload_ratio", 0) > 0 or bc.get("bc_reflect_ratio", 0) >= 0.5):
+            score = max(score, 85)
+        if bc.get("bc_instrument_ratio", 0) > 0:
+            score = max(score, 80)
+        # ESP and a mob-radar minimap are the same behaviour and the bytecode does not
+        # contain what separates them -> surface for review, never accuse.
+        if (bc.get("bc_render_ratio", 0) > 0 and bc.get("bc_entityscan_ratio", 0) > 0
+                and not (raw.get("verified") or raw.get("legit_modid"))):
+            score = max(score, 35)
+
     # Random / hash-style filename on an unverified mod: floor to Review (never a flag)
     # so it is surfaced instead of slipping through as "unknown". Verified / legit mods
     # are exempt (capped safe below). Mirrors Get-ModVerdict in AsyncAnalyzer.ps1.

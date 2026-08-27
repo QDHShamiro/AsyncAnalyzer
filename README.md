@@ -84,6 +84,35 @@ flowchart LR
 
 ---
 
+## 🧬 It reads what a mod *does*, not what it says
+
+Scraping strings out of a jar loses to any cheat that encrypts them. So the analyser parses
+the **constant pool** of each class — the symbol table. To call a Minecraft method you have
+to name it there. You can obfuscate your own class names; you cannot obfuscate the API you
+call.
+
+That gives behaviour instead of text:
+
+| behaviour | meaning | verdict |
+|---|---|---|
+| writes a rotation **and** forges its own movement packet | the aim/killaura fingerprint — no legit mod fakes its own movement | 🔴 **Confirmed** |
+| decrypts data **then** defines a class from it | loader / dropper | 🔴 **Confirmed** |
+| ships Java-agent hooks | can rewrite game code while it runs | 🟠 **Likely** |
+| renders **and** sweeps every entity | ESP… **or** a mob-radar minimap | 🟡 **Review**, never an accusation |
+
+That last row is the honest part. **ESP and a mob radar genuinely do the same thing** — the
+information that separates them isn't in the bytecode, and no amount of AI recovers it. So
+an unverified mod doing it gets surfaced for a human look; a *verified* minimap stays Clean.
+
+> Measured on 239 samples of real compiled bytecode (77 real Maven libraries as the clean
+> side): **precision 1.000, 0 false flags**, recall 0.875 — where every miss is that
+> ambiguous ESP/radar class. Full numbers and limits in [`ml/BAKEOFF.md`](ml/BAKEOFF.md).
+
+**Does a bigger AI help?** I tested it properly: logistic regression vs. a neural network
+vs. gradient-boosted trees, 5-fold cross-validation. **All three scored identically.** The
+behavioural features do the work, not the model — so the simple one ships. Claiming a neural
+net here would be marketing, not engineering.
+
 ## 🔭 The overall-scan verdict
 
 Single files aren't the whole story — a ghost client can be injected into the running
@@ -188,6 +217,7 @@ The dashboard shows who scanned whom, when, the verdict, and every flagged mod w
 | `-Ask` | Pick the install from a list / paste a path manually. |
 | `-Path "C:\…\mods"` | Scan an exact folder. |
 | `-SelfTest` | Verify the AI + verdict logic on your machine, then exit. |
+| `-Deep` | Analyse **every** class in every jar instead of a sample. Slower, for when you're really investigating someone. |
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
 | `-DeepMemory` | Force the live-memory check on. It already turns on by itself whenever Minecraft is running. |
 | `-Share` | Export confirmed cheat hashes locally to contribute them. |
@@ -242,7 +272,7 @@ The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassis
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
 | `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
-| `-SelfTest` (in-tool) | 26 known cases — mod-level, impersonation and whole-scan — all pass |
+| `-SelfTest` (in-tool) | 33 known cases — mod-level, impersonation and whole-scan — all pass |
 
 ---
 

@@ -11,6 +11,7 @@ param(
     [switch]$Reset,
     [switch]$Share,
     [switch]$Ask,
+    [switch]$Deep,
     [string]$Path = ""
 )
 
@@ -34,6 +35,12 @@ $script:Review       = 0
 $script:Flagged      = 0
 $script:SystemIssues = 0
 $script:DeepMemory   = [bool]$DeepMemory
+# Behavioural bytecode analysis reads every class's constant pool, so it is the
+# expensive part of a scan. Default reads a sample per jar (fast enough to sit
+# through during a screenshare); -Deep reads far more, for when you are actually
+# investigating someone.
+$script:Deep         = [bool]$Deep
+$script:BcMaxClasses = if ($Deep) { 400 } else { 40 }
 # A ghost client (Doomsday and friends) is usually INJECTED into the running game
 # instead of sitting in the mods folder, so no file scan can ever see it. When
 # Minecraft is actually running, switch the live-memory check on by itself - it is
@@ -1058,6 +1065,154 @@ function Invoke-MlModel($raw) {
     return 1.0 / (1.0 + [Math]::Exp(-$z))
 }
 
+# ---------------------------------------------------------------------------
+# Behavioural bytecode analysis - reads what a mod DOES, not what it says.
+#
+# String scraping loses to any cheat that encrypts its strings. The constant
+# pool does not: to call a Minecraft method you must name it there. You can
+# obfuscate your own symbols; you cannot obfuscate the API you call.
+#
+# Only the constant pool is parsed. It sits at the head of every class file, so
+# this stays affordable even over a large mods folder.
+# ---------------------------------------------------------------------------
+$script:bcBehaviour = [ordered]@{
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
+    'rotation'   = '\.setYRot|\.setXRot|\.setYaw|\.setPitch|\.method_36456|\.method_36457'
+    'attack'     = 'MultiPlayerGameMode\.attack|ServerboundInteractPacket|PlayerInteractEntityC2SPacket|\.swing|class_2824'
+    'pktlisten'  = 'ClientPacketListener|ClientPlayNetworkHandler|class_634'
+    'entityscan' = 'entitiesForRendering|getEntities|method_18112|\.getEntityList'
+    'render'     = 'VertexConsumer|RenderSystem|BufferBuilder|MatrixStack|PoseStack|Tessellator|class_4587'
+    'input'      = 'KeyMapping|KeyBinding|GLFW\.glfwGetKey|\.isPressed|client/input|class_304'
+    'reflect'    = 'java/lang/reflect|\.getDeclaredMethod|\.setAccessible|Class\.forName|MethodHandles|\.getDeclaredField'
+    'classload'  = '\.defineClass|URLClassLoader|defineAnonymousClass|\.defineHiddenClass'
+    'crypto'     = 'javax/crypto|Cipher\.|SecretKeySpec|IvParameterSpec'
+    'exec'       = 'Runtime\.getRuntime|ProcessBuilder|Runtime\.exec'
+    'net'        = 'java/net/Socket|HttpURLConnection|\.openConnection|java/net/http|URL\.openStream'
+    'unsafe'     = 'sun/misc/Unsafe|jdk/internal/misc/Unsafe'
+    'instrument' = 'java/lang/instrument|Instrumentation\.'
+}
+# Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
+# than a Methodref. Deliberately tiny - broad names like setAccessible are
+# everyday library code and would drag legitimate jars in.
+$script:bcReflectiveNames = @{
+    'classload'  = '^(defineClass|defineAnonymousClass|defineHiddenClass)$'
+    'instrument' = '^(premain|agentmain|retransformClasses)$'
+}
+
+function Read-ClassConstantPool([byte[]]$b) {
+    # returns @{ Symbols = <string>; Strings = @(...) } or $null when unparseable
+    if ($null -eq $b -or $b.Length -lt 10) { return $null }
+    if ($b[0] -ne 0xCA -or $b[1] -ne 0xFE -or $b[2] -ne 0xBA -or $b[3] -ne 0xBE) { return $null }
+    $u2 = { param($p) return ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1] }
+    $count = & $u2 8
+    $pos = 10
+    $tags = New-Object 'int[]' ($count + 1)
+    $utf  = New-Object 'string[]' ($count + 1)
+    $refA = New-Object 'int[]' ($count + 1)
+    $refB = New-Object 'int[]' ($count + 1)
+    $i = 1
+    while ($i -lt $count) {
+        if ($pos -ge $b.Length) { return $null }
+        $tag = [int]$b[$pos]; $pos++
+        $tags[$i] = $tag
+        switch ($tag) {
+            1 {
+                $len = & $u2 $pos; $pos += 2
+                if ($pos + $len -gt $b.Length) { return $null }
+                $utf[$i] = [System.Text.Encoding]::UTF8.GetString($b, $pos, $len)
+                $pos += $len
+            }
+            7  { $refA[$i] = & $u2 $pos; $pos += 2 }
+            8  { $pos += 2 }
+            9  { $refA[$i] = & $u2 $pos; $refB[$i] = & $u2 ($pos + 2); $pos += 4 }
+            10 { $refA[$i] = & $u2 $pos; $refB[$i] = & $u2 ($pos + 2); $pos += 4 }
+            11 { $refA[$i] = & $u2 $pos; $refB[$i] = & $u2 ($pos + 2); $pos += 4 }
+            12 { $refA[$i] = & $u2 $pos; $refB[$i] = & $u2 ($pos + 2); $pos += 4 }
+            15 { $pos += 3 }
+            16 { $pos += 2 }
+            17 { $pos += 4 }
+            18 { $pos += 4 }
+            19 { $pos += 2 }
+            20 { $pos += 2 }
+            3  { $pos += 4 }
+            4  { $pos += 4 }
+            5  { $pos += 8; $i++ }   # long and double take two pool slots
+            6  { $pos += 8; $i++ }
+            default { return $null }
+        }
+        $i++
+    }
+    $sb = New-Object System.Text.StringBuilder
+    $strings = [System.Collections.Generic.List[string]]::new()
+    for ($k = 1; $k -lt $count; $k++) {
+        switch ($tags[$k]) {
+            1 { [void]$strings.Add($utf[$k]) }
+            7 { [void]$sb.AppendLine($utf[$refA[$k]]) }
+            { $_ -in 9, 10, 11 } {
+                $ci = $refA[$k]; $ni = $refB[$k]
+                if ($tags[$ci] -eq 7 -and $tags[$ni] -eq 12) {
+                    [void]$sb.AppendLine(($utf[$refA[$ci]] + "." + $utf[$refA[$ni]]))
+                }
+            }
+        }
+    }
+    return @{ Symbols = $sb.ToString(); Strings = $strings }
+}
+
+function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
+    $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
+            StrReadableRatio = 0.0; StrEntropy = 0.0 }
+    foreach ($k in $script:bcBehaviour.Keys) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
+    $short = 0; $names = 0; $readable = 0; $totalStr = 0; $entSum = 0.0; $entN = 0
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
+    } catch { return $f }
+    try {
+        $n = 0
+        foreach ($e in $zip.Entries) {
+            if (-not $e.FullName.EndsWith('.class')) { continue }
+            if ($MaxClasses -gt 0 -and $n -ge $MaxClasses) { break }
+            $n++
+            if ($e.Length -gt 2MB) { $f.ClassesFailed++; continue }
+            try {
+                $ms = New-Object System.IO.MemoryStream
+                $st = $e.Open(); $st.CopyTo($ms); $st.Close()
+                $bytes = $ms.ToArray(); $ms.Dispose()
+                $cp = Read-ClassConstantPool $bytes
+            } catch { $cp = $null }
+            if ($null -eq $cp) { $f.ClassesFailed++; continue }
+            $f.ClassesParsed++
+            $hit = @{}
+            foreach ($k in $script:bcBehaviour.Keys) {
+                if ($cp.Symbols -match $script:bcBehaviour[$k]) { $hit[$k] = $true }
+            }
+            foreach ($k in $script:bcReflectiveNames.Keys) {
+                if ($hit.ContainsKey($k)) { continue }
+                foreach ($s in $cp.Strings) {
+                    if ($s -match $script:bcReflectiveNames[$k]) { $hit[$k] = $true; break }
+                }
+            }
+            foreach ($k in $hit.Keys) { $f[$k]++ }
+
+            $simple = [System.IO.Path]::GetFileNameWithoutExtension($e.FullName)
+            $names++
+            if ($simple.Length -le 2) { $short++ }
+            foreach ($s in $cp.Strings) {
+                $totalStr++
+                if ($s.Length -ge 4 -and $s -match '^[\x20-\x7e]+$') { $readable++ }
+                elseif ($s.Length -ge 8) { $entSum += (Get-ShannonEntropy ([System.Text.Encoding]::UTF8.GetBytes($s))); $entN++ }
+            }
+        }
+    } finally { $zip.Dispose() }
+    if ($f.ClassesParsed -gt 0) {
+        foreach ($k in $script:bcBehaviour.Keys) { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
+    }
+    if ($names -gt 0)    { $f.ObfNameRatio = [double]$short / [double]$names }
+    if ($totalStr -gt 0) { $f.StrReadableRatio = [double]$readable / [double]$totalStr }
+    if ($entN -gt 0)     { $f.StrEntropy = $entSum / [double]$entN }
+    return $f
+}
+
 function Get-JarFeatures([string]$FilePath) {
     $f = @{
         StrongStrings = [System.Collections.Generic.List[string]]::new()
@@ -1297,6 +1452,33 @@ function Get-ModVerdict($ctx) {
     }
     foreach ($tp in (@($contribs | Sort-Object C -Descending | Select-Object -First 4))) { [void]$reasons.Add("Factor: $($tp.Name)") }
 
+    # ---- behaviour, read out of the bytecode (survives string encryption) ----
+    $bc = $ctx.Bytecode
+    if ($bc -and $bc.ClassesParsed -gt 0) {
+        # The aim / killaura fingerprint, verified against real cheat source: forging your
+        # own outgoing movement packet while writing a computed rotation into it. Measured
+        # separation on the corpus was total - no legitimate mod fakes its own movement.
+        if ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint; normal mods never do this")
+        }
+        # Loader / dropper: decrypt something, then define a class out of the plaintext.
+        if ($bc.cryptoRatio -ge 0.5 -and ($bc.classloadRatio -gt 0 -or $bc.reflectRatio -ge 0.5)) {
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Behaviour: decrypts data and defines classes from it at runtime $([char]0x2014) loader/dropper pattern")
+        }
+        # Deliberately NOT an accusation. ESP and a mob-radar minimap are the same
+        # behaviour, and the bytecode does not contain what separates them. Surface it.
+        if ($bc.renderRatio -gt 0 -and $bc.entityscanRatio -gt 0 -and -not ($ctx.Verified -or $ctx.LegitModId)) {
+            $score = [Math]::Max($score, 35)
+            [void]$reasons.Add("Behaviour: draws from a full entity sweep $([char]0x2014) that is what ESP does, but also what a mob-radar minimap does. Unverified, so worth a look, not a verdict")
+        }
+        if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
+            $score = [Math]::Max($score, 80)
+            [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
+        }
+    }
+
     # Random / hash-style filename on an unverified mod: never let it slip through as "unknown".
     # Floor it to Review (never a flag) so it is surfaced for a manual look. Verified / legit mods
     # are exempt (they are capped safe below), so a legitimately hash-renamed known mod is unaffected.
@@ -1425,6 +1607,13 @@ function Write-VerdictCard($mod) {
     Write-Host ""
 }
 
+function New-TestBytecode($over) {
+    $b = @{ ClassesParsed = 10; ClassesFailed = 0; ObfNameRatio = 0.0; StrReadableRatio = 0.9; StrEntropy = 0.0 }
+    foreach ($k in $script:bcBehaviour.Keys) { $b[$k] = 0; $b[$k + 'Ratio'] = 0.0 }
+    if ($over) { foreach ($k in $over.Keys) { $b[$k] = $over[$k] } }
+    return $b
+}
+
 function New-TestFeatures($over) {
     $f = @{
         StrongStrings = @(); WeakStrings = @(); PackageHits = @(); Patterns = @(); FullwidthStr = $false
@@ -1441,7 +1630,7 @@ function New-TestFeatures($over) {
 function Invoke-SelfTest {
     W "  AsyncAnalyzer self-test $([char]0x2014) verifying the local AI model + verdict logic" Cyan
     Write-Host ""
-    $base = @{ Verified = $false; LegitModId = $false; HashKnownCheat = $false; CheatSite = $false; CheatSiteName = $null; FilenameClient = $false; FilenameToken = ""; RandomName = $false }
+    $base = @{ Verified = $false; LegitModId = $false; HashKnownCheat = $false; CheatSite = $false; CheatSiteName = $null; FilenameClient = $false; FilenameToken = ""; RandomName = $false; Bytecode = $null }
     $cases = @(
         @{ Label = "Doomsday-style cheat"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ PackageHits = @('org/chainlibs'); StrongStrings = @('AutoCrystal', 'KillAura', 'AutoAnchor', 'TriggerBot'); SingleCharClsPct = 0.35; HighEntropyPct = 0.35; AvgEntropy = 6.9; FullwidthStr = $true; ReflectionCount = 3 }) } }
         @{ Label = "Clean optimization mod (legit id)"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ ReflectionCount = 3; AvgEntropy = 6.3 }) } }
@@ -1454,6 +1643,13 @@ function Invoke-SelfTest {
         @{ Label = "Cheat hiding behind a legit mod id"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; HiddenPayload = 3; PackageHits = @('org/chainlibs'); StrongStrings = @('AutoCrystal','KillAura'); HighEntropyPct = 0.4; AvgEntropy = 7.0; ReflectionCount = 4 }) } }
         @{ Label = "Legit mod tampered with (agent added)"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; ReflectionCount = 3 }) } }
         @{ Label = "Real verified mod shipping its own agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true }) } }
+        @{ Label = "Aim cheat by behaviour alone"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0 }) } }
+        @{ Label = "Freecam mod (rotation, no packet)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0 }) } }
+        @{ Label = "Chat macro (packet, no rotation)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Minimap w/ mob radar, unverified"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
+        @{ Label = "Minimap w/ mob radar, verified"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
+        @{ Label = "Dropper by behaviour (encrypted)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ cryptoRatio = 1.0; classloadRatio = 1.0; reflectRatio = 1.0; StrReadableRatio = 0.1 }) } }
+        @{ Label = "Reflection-heavy lib, no cheat behaviour"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 5 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0 }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
         @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
@@ -3634,6 +3830,8 @@ if (-not $SkipModCheck) {
             }
 
             $feat = Get-JarFeatures $jar.FullName
+            $bcFeat = $null
+            if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }
 
             $checkName = $jar.Name -replace '\.(temp|disabled|bak|old|backup)(\.jar)$','$2'
             $fnMatch   = Get-FilenameSimilarityMatch $checkName
@@ -3649,6 +3847,7 @@ if (-not $SkipModCheck) {
                 Features = $feat; Verified = $verified; LegitModId = $legitModId
                 HashKnownCheat = $hashKnownCheat; CheatSite = $cheatSite; CheatSiteName = $dlName
                 FilenameClient = $filenameClient; FilenameToken = $filenameToken; RandomName = $randomName
+                Bytecode = $bcFeat
             }
             $verdict = Get-ModVerdict $ctx
             $mechCheat = $feat.JavaAgent -or ($feat.HiddenPayload -gt 0)
