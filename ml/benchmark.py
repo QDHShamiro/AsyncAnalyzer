@@ -29,6 +29,8 @@ import sys
 import tempfile
 import time
 
+import re
+
 import bytecode
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -97,6 +99,14 @@ def main():
         corpus = build_corpus(tmp)
         if not corpus:
             return 2
+
+        import json as _json
+        _ps = open(os.path.join(ROOT, "AsyncAnalyzer.ps1"), encoding="utf-8").read()
+        _m = re.search(r'\$script:Version\s*=\s*"([^"]+)"', _ps)
+        tool_ver = _m.group(1) if _m else "?"
+        mod_ver = _json.load(open(os.path.join(HERE, "model.json")))["version"]
+        sess_ver = _json.load(open(os.path.join(HERE, "session_model.json")))["version"]
+        sig_ver = _json.load(open(os.path.join(HERE, "signatures.json")))["version"]
 
         out("# AsyncAnalyzer — detection benchmark")
         out()
@@ -318,7 +328,12 @@ def main():
                  dict(total_mods=140, verified=90, random_named=4, mc_running=1)]
         w, b = _copy.deepcopy(_s.WEIGHTS), _s.INTERCEPT
         before = _s.verdict(NOVEL, w, b)["score"]
-        for _ in range(15):
+        curve_novel, curve_clean = [], []
+        for _ in range(16):
+            curve_novel.append(_s.verdict(NOVEL, w, b)["score"])
+            curve_clean.append(max(_s.verdict(c, w, b)["score"] for c in CLEAN))
+            if len(curve_novel) > 15:
+                break
             w, b = _s.sgd_step(w, b, _s.raw_to_vector(NOVEL), 1)
             for c in CLEAN:
                 w, b = _s.sgd_step(w, b, _s.raw_to_vector(c), 0)
@@ -398,6 +413,37 @@ def main():
 
         with open(os.path.join(ROOT, "BENCHMARKS.md"), "w") as f:
             f.write("\n".join(lines) + "\n")
+
+        # ------------------------------------------------------- public page ---
+        # docs/index.html is the same measurements as a page anyone can read.
+        # Generated from the template so it cannot drift from the numbers above -
+        # a benchmark page that is edited by hand stops being a benchmark.
+        try:
+            tpl = open(os.path.join(HERE, "page_template.html"), encoding="utf-8").read()
+            det_rows = []
+            PILL_OK = '<span class="pill ok"><i class="dot"></i>Confirmed</span>'
+            PILL_REV = '<span class="pill rev"><i class="dot"></i>Review</span>'
+            for nm, rule, why in FAM:
+                shown = why.split("—")[0].strip().replace("**", "")
+                pill = PILL_REV if rule == "esp" else PILL_OK
+                det_rows.append('          <tr><td>%s</td><td>%s</td>'
+                                '<td class="w">%s</td></tr>' % (nm, pill, shown))
+            page = (tpl.replace("{{TOOL}}", tool_ver)
+                       .replace("{{MODEL}}", str(mod_ver))
+                       .replace("{{SMODEL}}", str(sess_ver))
+                       .replace("{{SIGS}}", str(sig_ver))
+                       .replace("{{LIBS}}", str(len(libs)))
+                       .replace("{{FP}}", str(len(e2e_fp)))
+                       .replace("{{NOVEL}}", repr(curve_novel))
+                       .replace("{{CLEAN}}", repr(curve_clean))
+                       .replace("{{STAMP}}", stamp)
+                       .replace("{{DETECTION_ROWS}}", "\n".join(det_rows)))
+            docs = os.path.join(ROOT, "docs")
+            os.makedirs(docs, exist_ok=True)
+            with open(os.path.join(docs, "index.html"), "w", encoding="utf-8") as f:
+                f.write(page)
+        except Exception as e:
+            print("could not write docs/index.html: %s" % e, file=sys.stderr)
 
         if failures:
             print("\nREGRESSION: " + "; ".join(failures), file=sys.stderr)
