@@ -11,7 +11,8 @@ $script:bcPreFilter = [regex]::new(
      'getRuntime|ProcessBuilder|java/net/Socket|HttpURLConnection|openConnection|java/net/http|' +
      'openStream|sun/misc/Unsafe|jdk/internal/misc/Unsafe|java/lang/instrument|Instrumentation|' +
      'premain|agentmain|retransformClasses|' +
-     'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798'),
+     'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798|' +
+     'getProtectionDomain|getCodeSource|ProtectionDomain|CodeSource|deleteOnExit|deleteIfExists'),
     [System.Text.RegularExpressions.RegexOptions]::Compiled)
 
 function Read-ClassConstantPool([byte[]]$b) {
@@ -109,6 +110,7 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
             StrReadableRatio = 0.0; StrEntropy = 0.0 }
     foreach ($k in $script:bcBehaviour.Keys) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
+    foreach ($k in $script:bcDerived) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     $short = 0; $names = 0; $readable = 0; $totalStr = 0; $entSum = 0.0; $entN = 0
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
@@ -165,6 +167,11 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             foreach ($k in $script:bcBehaviour.Keys) {
                 if ($cp.Symbols -match $script:bcBehaviour[$k]) { $hit[$k] = $true }
             }
+            # A class that finds its own jar and deletes a file, and is not
+            # unpacking a native library: that is a jar removing itself.
+            if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp']) {
+                $hit['selfwipe'] = $true
+            }
             foreach ($k in $script:bcReflectiveNames.Keys) {
                 if ($hit.ContainsKey($k)) { continue }
                 foreach ($s in $cp.Strings) {
@@ -189,6 +196,7 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     } finally { $zip.Dispose() }
     if ($f.ClassesParsed -gt 0) {
         foreach ($k in $script:bcBehaviour.Keys) { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
+        foreach ($k in $script:bcDerived)        { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
     }
     if ($names -gt 0)    { $f.ObfNameRatio = [double]$short / [double]$names }
     if ($totalStr -gt 0) { $f.StrReadableRatio = [double]$readable / [double]$totalStr }

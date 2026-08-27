@@ -297,6 +297,15 @@ function Get-ModVerdict($ctx) {
             $score = [Math]::Max($score, 60)
             [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them")
         }
+        # A jar that works out where its own file is and then deletes it. Measured
+        # per CLASS, not per jar: plenty of legitimate libraries locate their own jar
+        # somewhere and delete a temp file somewhere else, and treating that as one
+        # signal matched sixteen of them. One class doing both, without the
+        # native-unpacking markers that explain the innocent version, matched none.
+        if ($bc.selfwipeRatio -gt 0) {
+            $score = [Math]::Max($score, 85)
+            [void]$reasons.Add("Behaviour: locates its own jar file and deletes it $([char]0x2014) the mod removes itself. No legitimate mod does this; it is what a client does so that nothing is left in the folder afterwards")
+        }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
@@ -536,6 +545,11 @@ function Invoke-SelfTest {
         @{ Label = "Baritone-style pathing"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
         @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Jar that deletes itself"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        @{ Label = "Library unpacking a native lib"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; filedeleteRatio = 1.0; nativetempRatio = 1.0 }) } }
+        @{ Label = "Mod that reads its own jar location"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Jetpack mod (writes velocity)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Update checker (http + reflection)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ netRatio = 1.0; reflectRatio = 1.0; inputRatio = 1.0 }) } }
     )
     $pass = 0; $fail = 0
     foreach ($c in $cases) {
@@ -639,3 +653,67 @@ function Invoke-SelfTest {
 }
 
 function Enc([string]$s) { return [System.Net.WebUtility]::HtmlEncode([string]$s) }
+
+function Invoke-HashOnly([string]$Folder) {
+    # The single biggest gap in this tool is that signatures.json contains no real
+    # cheat hashes, and the reason is not technical: whoever has the jars is not
+    # the person who edits the file. So this does exactly one thing - turn a folder
+    # of jars into a block of JSON that can be pasted straight in.
+    #
+    # It reads. It does not scan, upload, move, rename or delete anything, and it
+    # does not need the internet. That matters, because the folders people would
+    # run this on are the ones they are least willing to hand over.
+    Write-Host ""
+    W "  AsyncAnalyzer $([char]0x2014) hash only" Cyan
+    Write-Host ""
+    if (-not (Test-Path $Folder -PathType Container)) {
+        W "  $([char]0x2717) Not a folder: $Folder" Red
+        Write-Host ""
+        return
+    }
+    W "  Reading $Folder" DarkGray
+    W "  Nothing is uploaded, changed or deleted $([char]0x2014) this only computes SHA1." DarkGray
+    Write-Host ""
+
+    $files = @(Get-ChildItem -Path $Folder -Filter "*.jar" -File -ErrorAction SilentlyContinue)
+    $files += @(Get-ChildItem -Path $Folder -Filter "*.litemod" -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
+        W "  No .jar or .litemod files in that folder." Yellow
+        Write-Host ""
+        return
+    }
+
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($f in ($files | Sort-Object Name)) {
+        $h = Get-FileSHA1 $f.FullName
+        if (-not $h) { W "  $([char]0x2717) could not read $($f.Name)" DarkYellow; continue }
+        [void]$rows.Add(@{ Name = $f.Name; Hash = $h })
+        W "  $h  " DarkGray -NoNewline; W $f.Name White
+    }
+    if ($rows.Count -eq 0) { Write-Host ""; return }
+
+    # Ready to paste into ml/signatures.json -> knownCheatHashes.
+    $json = ($rows | ForEach-Object { '    "' + $_.Hash + '",   // ' + $_.Name }) -join "`r`n"
+    $json = $json -replace ',(\s+//[^\r\n]*)$', '$1'
+    $out = @"
+Paste this into ml/signatures.json, inside "knownCheatHashes":
+
+$json
+"@
+    Write-Host ""
+    W "  $($rows.Count) file(s) hashed." Green
+    try {
+        $dir = Join-Path $env:APPDATA "AsyncAnalyzer"
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+        $file = Join-Path $dir "hashes.txt"
+        $out | Out-File -FilePath $file -Encoding UTF8
+        W "  Saved: $file" Green
+        W "  Open it, copy the block, paste it into signatures.json $([char]0x2014) or just send the file." DarkGray
+    } catch { W "  Could not write the file: $($_.Exception.Message)" Red }
+    Write-Host ""
+    W "  Only add hashes of files you are CERTAIN are cheats." Yellow
+    W "  A pooled hash reaches every client on their next run, so a wrong one" DarkGray
+    W "  becomes a team-wide false accusation. It is revocable, but it is easier" DarkGray
+    W "  to be sure now than to explain later." DarkGray
+    Write-Host ""
+}

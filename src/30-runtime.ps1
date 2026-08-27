@@ -592,7 +592,21 @@ $script:bcBehaviour = [ordered]@{
     'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\.startDestroyBlock|\.destroyBlock|\.method_2910'
     'container'  = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703'
     'motion'     = '\.setDeltaMovement|\.getDeltaMovement|\.setVelocity|\.method_18800|\.method_18798'
+    # A jar working out where its own file is. Ordinary code has no reason to - it
+    # is how something finds itself in order to delete itself.
+    'selfpath'   = '\.getProtectionDomain|\.getCodeSource|ProtectionDomain|CodeSource'
+    'filedelete' = 'File\.delete|\.deleteOnExit|Files\.delete|Files\.deleteIfExists'
+    # Unpacking a bundled native library and cleaning up the copy afterwards. This
+    # is the innocent reason a class locates its own jar and then deletes a file,
+    # and naming it is what lets the self-wipe signal exclude it.
+    'nativetemp' = 'createTempFile|createTempDirectory|System\.load|\.loadLibrary|java\.io\.tmpdir'
 }
+# Derived per-class signals. Not patterns: combinations that only mean something
+# when ONE class does all of it. Jar-level ratios cannot express that - in a large
+# library "something locates its own jar" and "something deletes a file" are
+# usually unrelated classes, which is exactly how the first version of this signal
+# matched sixteen legitimate bytecode libraries.
+$script:bcDerived = @('selfwipe')
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are
 # everyday library code and would drag legitimate jars in.

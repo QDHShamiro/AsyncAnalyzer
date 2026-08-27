@@ -1,4 +1,5 @@
 if ($SelfTest) { Invoke-SelfTest; return }
+if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
 [void](Set-AutoDepth)

@@ -13,7 +13,8 @@ param(
     [switch]$Ask,
     [switch]$Deep,
     [switch]$NoElevate,
-    [string]$Path = ""
+    [string]$Path = "",
+    [string]$HashOnly = ""
 )
 
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {

@@ -19,7 +19,9 @@ import bytecode
 HERE = os.path.dirname(os.path.abspath(__file__))
 random.seed(20260827)
 
-FEATURES = ([k + "_ratio" for k in sorted(bytecode.BEHAVIOUR)] +
+# Derived signals belong here too - leaving them out silently produced a column
+# of zeroes, which reads exactly like "this rule catches nothing".
+FEATURES = ([k + "_ratio" for k in sorted(list(bytecode.BEHAVIOUR) + list(bytecode.DERIVED))] +
             ["obf_name_ratio", "str_readable_ratio", "str_entropy", "log_classes"])
 
 MC_STUB = '''package mc;
@@ -46,6 +48,7 @@ public class MC {
   public static class ServerboundChatPacket { public ServerboundChatPacket(String m){} }
   public static class HitResult { public Entity entity; public double dist; }
   public static class Camera { public HitResult getCrosshairTarget(){return null;} }
+  public static class Options { public boolean fancyGraphics; }
   public static class AbstractContainerMenu { public int slots; public void clicked(int s,int b){} }
 }
 '''
@@ -165,8 +168,16 @@ def body(kind, obf):
       in.close();
     } catch (Exception e) {}'''
     if kind == "selfdel":
+        # The wipe: the jar asks the JVM where its own file is, then deletes it.
+        # Shelling out to `del` was the old model and it is not what this actually
+        # looks like - and "runs another program" matched 59 real libraries, so it
+        # could never ship. Locating yourself in order to delete yourself is a
+        # combination ordinary code has no reason to perform.
         return '''    try {
-      Runtime.getRuntime().exec("cmd /c del self.jar");
+      java.security.CodeSource cs = getClass().getProtectionDomain().getCodeSource();
+      java.io.File self = new java.io.File(cs.getLocation().toURI());
+      self.deleteOnExit();
+      java.nio.file.Files.deleteIfExists(self.toPath());
     } catch (Exception e) {}'''
     if kind == "freecam":
         # the camera detaches: it keeps its OWN position, updated from input, while
@@ -181,6 +192,51 @@ def body(kind, obf):
         return '''    hit++;
     if (hit % 3 == 0) { gm.attack(me, me); me.swing(0); }'''
     # clean behaviours
+    if kind == "jetpack":
+        # A tech mod's jetpack writes the player's velocity directly - the same
+        # bc_motion the velocity and speed rules read. It never forges a packet and
+        # never listens to one, which is what keeps it apart from them.
+        return '''    if (!bind.isPressed()) return;
+    me.setDeltaMovement(0.0, 0.6, 0.0);'''
+    if kind == "grapple":
+        return '''    if (!bind.isPressed()) return;
+    me.setDeltaMovement(me.getDeltaMovement() * 1.2, 0.4, 0.0);
+    MC.RenderSystem.setShader(); stack.pushPose(); buf.vertex(me.x, me.y, me.z); stack.popPose();'''
+    if kind == "elytraboost":
+        return '''    if (!bind.isPressed()) return;
+    if (!me.onGround) me.setDeltaMovement(0.0, 0.1, 0.0);'''
+    if kind == "bigutility":
+        # One large QoL mod doing several ordinary things at once - reads keys,
+        # clicks slots, draws a HUD, walks the entity list for a nameplate. Every
+        # ingredient of several cheat rules, none of the combinations.
+        return '''    if (!bind.isPressed()) return;
+    for (int i = 0; i < menu.slots; i++) menu.clicked(i, 0);
+    MC.RenderSystem.setShader(); stack.pushPose();
+    for (MC.Entity e : level.entitiesForRendering()) buf.vertex(e.x, e.y + 2.0, e.z);
+    stack.popPose();'''
+    if kind == "updatecheck":
+        # Fetches its own version over HTTP and applies the answer reflectively -
+        # exactly the shape of a ghost client's config pull. This is why that rule
+        # does not ship: this mod is completely ordinary.
+        return '''    try {
+      java.io.InputStream in = ((java.net.HttpURLConnection) new java.net.URL("https://api/v").openConnection()).getInputStream();
+      for (java.lang.reflect.Field f : getClass().getDeclaredFields()) { f.setAccessible(true); f.get(this); }
+      in.close();
+    } catch (Exception e) {}'''
+    if kind == "resourceclean":
+        # A mod that tidies up its own cache directory on shutdown. It deletes
+        # files - but never asks where its own jar is.
+        return '''    try {
+      java.io.File cache = new java.io.File("cache/tmp");
+      java.nio.file.Files.deleteIfExists(cache.toPath());
+    } catch (Exception e) {}'''
+    if kind == "modloader":
+        # A loader-style mod that reads its own jar location to enumerate what it
+        # ships - the other half of the self-delete pair, on its own and harmless.
+        return '''    try {
+      java.security.CodeSource cs = getClass().getProtectionDomain().getCodeSource();
+      if (cs.getLocation() != null) hit++;
+    } catch (Exception e) {}'''
     if kind == "printer":
         # Litematica-style schematic printer: places blocks through the game's own
         # interaction manager while a key is held. No forged movement, no forged
@@ -273,6 +329,7 @@ FIELDS = [
     ("stack", "  private MC.PoseStack stack;"),
     ("menu",  "  private MC.AbstractContainerMenu menu;"),
     ("cam",   "  private MC.Camera cam;"),
+    ("opts",  "  private MC.Options opts;"),
     ("blob",  "  private byte[] blob = new byte[16];"),
     ("k",     "  private byte[] k = new byte[16];"),
     ("hit",   "  private int hit;"),
@@ -317,6 +374,7 @@ def variants():
         # utility / ghost
         ["invmove"], ["httpcfg"], ["selfdel"], ["freecam"],
         ["httpcfg", "selfdel"], ["invmove", "aim"], ["freecam", "esp"],
+        ["selfdel", "httpcfg", "load"],
         # a ghost client is a bundle, not one module
         ["aim", "scaffold", "velocity"], ["reach", "nofall", "freecam"],
         ["httpcfg", "load", "invmove"],
@@ -341,6 +399,14 @@ def variants():
         ["replay"], ["replay", "cfg"],
         ["shoulder"], ["shoulder", "zoom"], ["shoulder", "map"],
         ["sprint"], ["sprint", "key"],
+        # Legit mods that touch the SAME Minecraft APIs the new rules read. Every
+        # other negative in this corpus is a Maven library that never calls the
+        # Minecraft API at all, so it cannot test an MC-specific rule - these can.
+        ["jetpack"], ["jetpack", "key"], ["grapple"], ["elytraboost"],
+        ["bigutility"], ["bigutility", "zoom"],
+        ["updatecheck"], ["updatecheck", "cfg"],
+        ["resourceclean"], ["modloader"], ["modloader", "cfg"],
+        ["jetpack", "grapple", "elytraboost"],
         # realistic packs: several legit utilities in one jar
         ["printer", "invsort", "key"], ["radar", "reachdisp", "zoom"],
         ["shoulder", "sprint", "map"], ["veinmine", "invsort", "cfg"],

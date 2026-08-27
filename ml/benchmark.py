@@ -57,6 +57,8 @@ def rules(r):
         "invmove": g("bc_container_ratio") > 0 and g("bc_movepacket_ratio") > 0,
         "dropper": (g("bc_crypto_ratio") >= 0.5
                     and (g("bc_classload_ratio") > 0 or g("bc_reflect_ratio") >= 0.5)),
+        # per-class: one class that finds its own jar and deletes it
+        "selfwipe": g("bc_selfwipe_ratio") > 0,
         # likely
         "nodinput": g("bc_movepacket_ratio") > 0 and g("bc_input_ratio") == 0,
         "targeting": g("bc_entityscan_ratio") > 0 and g("bc_attack_ratio") > 0,
@@ -75,7 +77,7 @@ def rules(r):
 
 # Every rule that can produce an accusation. A real library tripping any of these
 # fails the build - that is the gate the whole corpus exists to protect.
-CHEAT_RULES = ("aim", "scaffold", "speed", "invmove", "dropper",
+CHEAT_RULES = ("aim", "scaffold", "speed", "invmove", "dropper", "selfwipe",
                "nodinput", "targeting", "autoclick", "velocity", "nuker", "freecam", "esp")
 
 

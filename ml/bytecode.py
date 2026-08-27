@@ -137,6 +137,29 @@ BEHAVIOUR = {
                       r"class_2813", r"AbstractContainerMenu", r"ScreenHandler", r"class_1703"],
     "bc_motion":     [r"\.setDeltaMovement", r"\.getDeltaMovement", r"\.setVelocity",
                       r"\.method_18800", r"\.method_18798"],
+    # A jar working out where its own file is. Ordinary code has no reason to -
+    # it is how something finds itself in order to delete itself.
+    "bc_selfpath":   [r"\.getProtectionDomain", r"\.getCodeSource", r"ProtectionDomain",
+                      r"CodeSource"],
+    "bc_filedelete": [r"File\.delete", r"\.deleteOnExit", r"Files\.delete",
+                      r"Files\.deleteIfExists"],
+    # Unpacking a bundled native library and cleaning up the copy afterwards. This
+    # is the innocent reason a class locates its own jar and then deletes a file,
+    # and naming it is what lets the self-wipe signal exclude it.
+    "bc_nativetemp": [r"createTempFile", r"createTempDirectory", r"System\.load",
+                      r"\.loadLibrary", r"java\.io\.tmpdir"],
+}
+
+# Derived per-class signals. Not regexes: they are combinations that only mean
+# something when ONE class does all of it. Jar-level ratios cannot express that -
+# in a big library "something locates its own jar" and "something deletes a file"
+# are usually unrelated classes, which is exactly how the first version of the
+# self-wipe rule matched sixteen bytecode libraries.
+DERIVED = {
+    # a class that finds its own jar and deletes a file, and is not unpacking a
+    # native library: that is a jar removing itself
+    "bc_selfwipe": lambda hits: ("bc_selfpath" in hits and "bc_filedelete" in hits
+                                 and "bc_nativetemp" not in hits),
 }
 _COMPILED = {k: re.compile("|".join(v)) for k, v in BEHAVIOUR.items()}
 
@@ -187,6 +210,9 @@ _PREFILTER = re.compile(b"|".join(
         b"AbstractContainerMenu", b"ScreenHandler", b"class_1703",
         b"setDeltaMovement", b"getDeltaMovement", b"setVelocity",
         b"method_18800", b"method_18798",
+        b"getProtectionDomain", b"getCodeSource", b"ProtectionDomain", b"CodeSource",
+        b"deleteOnExit", b"deleteIfExists", b"createTempFile", b"createTempDirectory",
+        b"loadLibrary", b"tmpdir",
     ]))
 
 
@@ -207,8 +233,8 @@ def extract_jar(path, max_classes=0):
     only bounds how many classes get their string statistics measured, which is an
     average and does not need full coverage.
     """
-    out = {k: 0 for k in BEHAVIOUR}
-    out.update({k + "_ratio": 0.0 for k in BEHAVIOUR})
+    out = {k: 0 for k in list(BEHAVIOUR) + list(DERIVED)}
+    out.update({k + "_ratio": 0.0 for k in list(BEHAVIOUR) + list(DERIVED)})
     out.update(classes_parsed=0, classes_failed=0, obf_name_ratio=0.0,
                str_readable_ratio=0.0, str_entropy=0.0)
     short_names = total_names = 0
@@ -260,6 +286,9 @@ def extract_jar(path, max_classes=0):
             for k, rx in _COMPILED.items():
                 if rx.search(blob):
                     hit_here.add(k)
+            for k, fn in DERIVED.items():
+                if fn(hit_here):
+                    hit_here.add(k)
             for k, rx in _REFLECTIVE_NAMES.items():
                 if k in hit_here:
                     continue
@@ -288,7 +317,7 @@ def extract_jar(path, max_classes=0):
     # (it is a TLS library); a packed loader does it in nearly all of them. The
     # raw count hides that difference and was the cause of a netty false positive.
     n = out["classes_parsed"]
-    for k in BEHAVIOUR:
+    for k in list(BEHAVIOUR) + list(DERIVED):
         out[k + "_ratio"] = (out[k] / float(n)) if n else 0.0
     if total_names:
         out["obf_name_ratio"] = short_names / float(total_names)
