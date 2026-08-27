@@ -108,7 +108,8 @@ Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan
 - Mirrored + pinned in `ml/test_autoscan.py` (16 cases), including that escalation changes only search breadth.
 
 ## Benchmarks & CI (public, continuous)
-- `ml/benchmark.py` -> generates `BENCHMARKS.md`. **Never hand-edit that file**; regenerate it.
+- `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
+- **CI owns both generated files.** Run the benchmark locally as much as you like, but do NOT commit the regenerated files - the bot writes them on every push to main, and committing your own copy produces a merge conflict every time (it already did once). If you do hit that conflict: resolve it by regenerating rather than hand-editing, and for the history take the UNION of both sides keyed by commit.
 - `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all six suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
 - **Regression gates fail the build**: no real library flagged by a cheat rule; aim + dropper always detected; detection independent of hiding depth.
 - Corpus: `ml/fetch_jars.py` pulls **122** real libraries from Maven Central (cached in CI). Chosen to be hard: LWJGL (Minecraft's own input/GL library), AspectJ + OpenTelemetry (real Java agents), JNA, Spring, BouncyCastle.
