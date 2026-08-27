@@ -55,7 +55,16 @@ LIBS = [
  ("com/mojang","authlib","6.0.54","mojang"),("com/mojang","logging","1.2.7","mojang"),
  ("com/mojang","blocklist","1.0.10","mojang"),("com/mojang","patchy","2.2.10","mojang"),
  ("com/mojang","text2speech","1.17.9","mojang"),
- ("org/spongepowered","mixin","0.8.5","sponge"),
+ # Mixin: the framework nearly every mod is built on, and it rewrites bytecode for
+ # a living - the single most valuable negative in this list. It is NOT on Maven
+ # Central (probed: 404), only on Sponge's own repository, whose layout could not be
+ # verified from the sandbox and which two guesses failed to hit. Fabric ships a
+ # fork of it on the repository CI already fetches access-widener and mapping-io
+ # from, so that is the grounded attempt rather than a third guess at Sponge's path.
+ # If this one does not land either, leave it: the fetcher reports it as missing,
+ # 13 genuine instrumentation libraries are already in the corpus, and guessing
+ # coordinates in a loop is not measurement.
+ ("net/fabricmc","sponge-mixin","0.13.2+mixin.0.8.5","fabric"),
  ("net/fabricmc","tiny-mappings-parser","0.3.0+build.17","fabric"),
  ("net/fabricmc","tiny-remapper","0.8.6","fabric"),
  ("net/fabricmc","access-widener","2.1.0"),
