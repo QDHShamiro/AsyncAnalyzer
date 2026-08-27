@@ -91,9 +91,16 @@ Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan
 ## Also changed
 - **The tool no longer opens anything on your PC.** `New-HtmlReport` used to call `Invoke-Item` (opening the report in your default app) and `Start-Process explorer.exe /select` (popping a file-explorer window). Both removed — it just prints the path now. Better for trust and it stops the window spam at the end of a scan.
 
+## Injected ghost clients + deletion evidence (session model v2)
+- **Memory scan rewritten** (`Run-JVMScan`): findings are deduped and structured instead of one flat string per region. Each reports **which** hack (a named *client* from `$script:distinctiveClientTokens` - so `signatures.json` extends the memory scan too) vs a *module* (what it is doing: autocrystal, killaura, holefill...), **where** (process, PID, memory address) and **how many hits** (1 hit could be chat text, dozens means loaded code). One compiled regex alternation replaces ~70 IndexOf passes per region.
+- `-DeepMemory` **turns itself on when Minecraft is running** (`$script:MemoryAuto`), announced openly in the transparency notice. That is the only way to see an injected client.
+- **Session model -> v2 (15 features)**: added `deleted_jars`, `mc_running`, `mem_client`; `bam_deleted` lowered 1.5 -> 1.0 to avoid double counting. New hard rules: a named client in live memory -> **>=85 Confirmed**; `.jar`s deleted **while Minecraft still runs** -> **>=60 Likely** (the wipe-before-the-screenshare pattern). Same deletions with the game closed stay Clean - people update mods.
+- `mc_running` deliberately has weight **0.0**: the game being open is not evidence of anything, it only gates the deletion rule.
+- Auto-labelling: `mem_client` counts as a cheat label; deleted jars alone still teach nothing.
+
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
-- [ ] **Live Windows test** of the whole flow (auto-detect, scan, report, team upload).
+- [ ] **Live Windows test** - THE open item. Shamiro decided: run `-SelfTest` (expect **26/26**) and one real scan BEFORE merging PR #2. Nothing has ever run in real PowerShell.
 - [ ] Merge branch → main to ship.
 - [ ] Optional: Discord webhook on flagged scan; dashboard login; more 2025/2026 cheat families.
 

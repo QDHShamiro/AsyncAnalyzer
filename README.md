@@ -38,7 +38,7 @@ mods), and scans it.
 
 | | |
 |---|---|
-| 🧠 **Two real AIs, offline** | One model scores every **mod** (22 features), a second scores the **whole scan** (12 features: mods + system + processes + JVM + history). Both run entirely in PowerShell — no cloud, no API key, nothing uploaded. |
+| 🧠 **Two real AIs, offline** | One model scores every **mod** (22 features), a second scores the **whole scan** (15 signals: mods + system + processes + live JVM memory + deleted-file history). Both run entirely in PowerShell — no cloud, no API key, nothing uploaded. |
 | 📈 **Self-improving** | Every scan makes it smarter — it remembers verified & cheat hashes, nudges its own model, and auto-updates from GitHub. |
 | ✅ **No false flags** | Verified mods (Modrinth/CurseForge) are **hard-capped as safe**. Anticheats full of `killaura`/`reach` strings are recognised, not flagged. **0 false positives** on 37 real libraries. |
 | 🔎 **Explains itself** | Every flag shows the AI probability *and* the exact reasons — package path, obfuscation, signatures, network behaviour. |
@@ -89,7 +89,7 @@ flowchart LR
 Single files aren't the whole story — a ghost client can be injected into the running
 game, run from a folder outside `mods`, or be deleted right before the screenshare. So
 after **every** stage has run (mods, system checks, processes, JVM, deleted-file
-history), a second AI scores the **scan as a whole** and prints one clear answer:
+history), a second AI (15 signals) scores the **scan as a whole** and prints one clear answer:
 
 ```
 ╔═════════════════════════════════════════════════════════════════════════╗
@@ -98,6 +98,33 @@ history), a second AI scores the **scan as a whole** and prints one clear answer
 ║  Score 2/100    AI probability 2%                                       ║
 ╚═════════════════════════════════════════════════════════════════════════╝
 ```
+
+### 👻 Injected ghost clients — what it actually tells you
+
+Doomsday and friends inject themselves into the **running game**, so the jar may already
+be deleted. When Minecraft is running the live-memory check turns on by itself and reports
+three things, not just "something found":
+
+```
+◉ INJECTED CHEAT CLIENT: doomsday
+    identified live in javaw.exe (PID 8124) at 0x1F4A0000, 37 hit(s). This IS a cheat
+    and it is loaded in the running game right now — it is not in the mods folder at all.
+◉ Cheat module active in memory: autocrystal
+    found in javaw.exe (PID 8124) at 0x1F51C000, 12 hit(s). A cheat feature is live in the game.
+```
+
+- **Which hack** — a named client (from the same community list in `signatures.json`, so
+  adding a client there teaches the memory scan too) vs. a **module** that tells you what
+  it's doing (`autocrystal`, `killaura`, `holefill`…).
+- **Where** — process, PID and memory address, plus how many hits (1 hit could be chat
+  text; dozens means loaded code).
+- **Whether it's a cheat** — a named client in the live heap sets the overall verdict to
+  **Confirmed**, because the cheat is running *right now*.
+
+**Deleted it right before the screenshare?** If `.jar` files ran on this PC and are now
+gone **while Minecraft is still open**, the overall verdict goes to at least **Likely** —
+the classic wipe-before-the-check pattern. If the game isn't running, the same deletions
+stay **Clean**; people update mods all the time.
 
 It weighs the evidence the way a screenshare admin would: a **confirmed cheat jar**,
 an **injected JVM** or a **running cheat process** is proof (→ Likely/Confirmed);
@@ -213,9 +240,9 @@ The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassis
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
 | `ml/test_verdict.py` | **52/52** — cheats caught, 37 real libs Clean, anticheats Clean, impersonation closed |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
-| `ml/test_session.py` | **20/20** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
+| `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
-| `-SelfTest` (in-tool) | 23 known cases — mod-level, impersonation and whole-scan — all pass |
+| `-SelfTest` (in-tool) | 26 known cases — mod-level, impersonation and whole-scan — all pass |
 
 ---
 

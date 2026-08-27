@@ -32,11 +32,14 @@ FEATURE_NAMES = [
     "jvm_inject",        # min(jvmFindings,5)/5
     "bam_deleted",       # min(deleted executables,10)/10
     "cheat_procs",       # min(flagged cheat processes,5)/5
-    "stray_jars",        # min(stray cheat jars on disk,10)/10
-    "cheat_folders",     # min(cheat client folders found,5)/5
+    "stray_jars",        # min(stray cheat jars on disk,3)/3
+    "cheat_folders",     # min(cheat client folders found,2)/2
+    "deleted_jars",      # min(.jar files that ran and were deleted,3)/3
+    "mc_running",        # 0/1 Minecraft is running right now
+    "mem_client",        # 0/1 a named cheat CLIENT was identified in the live JVM
 ]
 
-VERSION = 1
+VERSION = 2
 
 # Expert prior. Deliberately conservative: nothing except real proof
 # (a hard-confirmed cheat, an injected JVM, a cheat process) can push a scan
@@ -52,10 +55,13 @@ WEIGHTS = {
     "hard_confirmed":   4.5,
     "sys_issues":       1.2,
     "jvm_inject":       3.0,
-    "bam_deleted":      1.5,
+    "bam_deleted":      1.0,   # lowered: deleted_jars now carries the specific signal
     "cheat_procs":      3.5,
     "stray_jars":       2.0,
     "cheat_folders":    3.0,
+    "deleted_jars":     2.5,
+    "mc_running":       0.0,   # running Minecraft is not evidence of anything by itself
+    "mem_client":       5.0,
 }
 
 
@@ -81,6 +87,9 @@ def raw_to_vector(raw):
         _c01(min(raw.get("cheat_procs", 0), 5) / 5.0),
         _c01(min(raw.get("stray_jars", 0), 3) / 3.0),
         _c01(min(raw.get("cheat_folders", 0), 2) / 2.0),
+        _c01(min(raw.get("deleted_jars", 0), 3) / 3.0),
+        1.0 if raw.get("mc_running") else 0.0,
+        1.0 if raw.get("mem_client", 0) else 0.0,
     ]
 
 
@@ -122,6 +131,14 @@ def verdict(raw, weights=None, intercept=None):
         score = max(score, 60)
     if raw.get("stray_jars", 0) > 0 or raw.get("cheat_folders", 0) > 0:
         score = max(score, 30)
+    # A named cheat client sitting in the live JVM heap is the strongest proof there is:
+    # the cheat is loaded and running right now, whatever the mods folder looks like.
+    if raw.get("mem_client", 0) > 0:
+        score = max(score, 85)
+    # Jars that ran on this PC and were deleted while the game is still open is the
+    # classic "he wiped it right before the screenshare" pattern.
+    if raw.get("deleted_jars", 0) > 0 and raw.get("mc_running"):
+        score = max(score, 60)
 
     return {"score": score, "band": band(score), "probability": round(p * 100)}
 
@@ -129,7 +146,8 @@ def verdict(raw, weights=None, intercept=None):
 def label_for(raw):
     """Auto-label a finished scan. Returns 1, 0 or None (ambiguous -> no learning).
     Only unambiguous scans teach the model — that is what keeps it from drifting."""
-    if raw.get("hard_confirmed") or raw.get("jvm_inject", 0) > 0 or raw.get("cheat_procs", 0) > 0:
+    if (raw.get("hard_confirmed") or raw.get("jvm_inject", 0) > 0
+            or raw.get("cheat_procs", 0) > 0 or raw.get("mem_client", 0) > 0):
         return 1
     if (
         raw.get("total_mods", 0) > 0
@@ -139,6 +157,7 @@ def label_for(raw):
         and raw.get("bam_deleted", 0) == 0
         and raw.get("stray_jars", 0) == 0
         and raw.get("cheat_folders", 0) == 0
+        and raw.get("deleted_jars", 0) == 0
         and raw.get("verified", 0) >= 0.6 * raw.get("total_mods", 0)
     ):
         return 0

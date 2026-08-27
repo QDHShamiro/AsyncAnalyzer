@@ -61,7 +61,7 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; DeletedJars = 0 }
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
@@ -731,8 +731,8 @@ function Update-ModelOnline($raw, $label) {
 # from every finished scan, locally and (with team mode) across everyone.
 # Source of truth for the weights: ml/session_model.py -> ml/session_model.json
 # ---------------------------------------------------------------------------
-$script:smModelVersion = 1
-$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders')
+$script:smModelVersion = 2
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client')
 $script:smIntercept = -4.0
 $script:smWeights = @{
     'flagged_ratio' = 4.0
@@ -743,10 +743,13 @@ $script:smWeights = @{
     'hard_confirmed' = 4.5
     'sys_issues' = 1.2
     'jvm_inject' = 3.0
-    'bam_deleted' = 1.5
+    'bam_deleted' = 1.0
     'cheat_procs' = 3.5
     'stray_jars' = 2.0
     'cheat_folders' = 3.0
+    'deleted_jars' = 2.5
+    'mc_running' = 0.0
+    'mem_client' = 5.0
 }
 $script:smBaseWeights = @{}
 foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
@@ -771,6 +774,9 @@ function Get-SessionRaw {
         cheat_procs    = [int]$ev.CheatProcs
         stray_jars     = [int]$ev.StrayJars
         cheat_folders  = [int]$ev.CheatFolders
+        deleted_jars   = [int]$ev.DeletedJars
+        mc_running     = $(if (@(Get-Process -Name javaw, java -ErrorAction SilentlyContinue).Count -gt 0) { 1 } else { 0 })
+        mem_client     = [int]$ev.MemCheatClient
     }
 }
 
@@ -791,6 +797,9 @@ function Get-SessionVector($raw) {
         cheat_procs      = Get-Clip01 ([Math]::Min([double]$raw.cheat_procs, 5.0) / 5.0)
         stray_jars       = Get-Clip01 ([Math]::Min([double]$raw.stray_jars, 3.0) / 3.0)
         cheat_folders    = Get-Clip01 ([Math]::Min([double]$raw.cheat_folders, 2.0) / 2.0)
+        deleted_jars     = Get-Clip01 ([Math]::Min([double]$raw.deleted_jars, 3.0) / 3.0)
+        mc_running       = $(if ($raw.mc_running) { 1.0 } else { 0.0 })
+        mem_client       = $(if ($raw.mem_client) { 1.0 } else { 0.0 })
     }
 }
 
@@ -812,6 +821,8 @@ function Get-SessionVerdict($raw) {
     if ($raw.cheat_procs -gt 0)  { $score = [Math]::Max($score, 60); [void]$reasons.Add("Known cheat process running ($($raw.cheat_procs))") }
     if ($raw.cheatsite_dl)       { $score = [Math]::Max($score, 60); [void]$reasons.Add("A mod was downloaded from a known cheat site") }
     if ($raw.stray_jars -gt 0 -or $raw.cheat_folders -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("Cheat files outside the mods folder: $($raw.stray_jars) jar(s), $($raw.cheat_folders) folder(s)") }
+    if ($raw.mem_client -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("A named cheat client was identified inside the RUNNING game's memory $([char]0x2014) it is loaded right now, whatever the mods folder looks like") }
+    if ($raw.deleted_jars -gt 0 -and $raw.mc_running) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.deleted_jars) .jar file(s) ran on this PC and were deleted while Minecraft is still running $([char]0x2014) the classic 'wiped it before the screenshare' pattern") }
     if ($raw.bam_deleted -gt 0)  { [void]$reasons.Add("$($raw.bam_deleted) executable(s) ran on this PC and were deleted afterwards") }
     if ($raw.flagged -gt 0)      { [void]$reasons.Add("$($raw.flagged) flagged mod(s)") }
     if ($raw.review -gt 0)       { [void]$reasons.Add("$($raw.review) mod(s) to review") }
@@ -832,9 +843,9 @@ function Get-SessionVerdictCached {
 
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
-    if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0) { return 1 }
+    if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
-        $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and
+        $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }
@@ -1470,8 +1481,11 @@ function Invoke-SelfTest {
         @{ Label = "Confirmed cheat jar found"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 12; flagged = 1; hard_confirmed = 1 } }
         @{ Label = "Clean mods but JVM injection"; Bands = @("Likely", "Confirmed"); Raw = @{ total_mods = 18; verified = 18; jvm_inject = 2 } }
         @{ Label = "Cheat jars stashed outside mods"; Bands = @("Review", "Likely"); Raw = @{ total_mods = 10; verified = 8; stray_jars = 3; cheat_folders = 1 } }
+        @{ Label = "Cheat client live in game memory"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; mem_client = 1; jvm_inject = 1; mc_running = 1 } }
+        @{ Label = "Jars deleted while MC still running"; Bands = @("Likely", "Confirmed"); Raw = @{ total_mods = 5; verified = 3; deleted_jars = 2; bam_deleted = 2; mc_running = 1 } }
+        @{ Label = "Clean scan with Minecraft running"; Bands = @("Clean"); Raw = @{ total_mods = 25; verified = 25; mc_running = 1 } }
     )
-    $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0 }
+    $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {
         $raw = @{}
         foreach ($k in $sBase.Keys) { $raw[$k] = $sBase[$k] }
@@ -3141,13 +3155,24 @@ function Run-JVMScan {
                 $addr      = [IntPtr]::Zero
                 $mbi       = New-Object Win32.MemAPI+MEMORY_BASIC_INFORMATION
                 $mbiSize   = [System.Runtime.InteropServices.Marshal]::SizeOf($mbi)
-                $memTerms  = @(
-                    "liquidbounce","meteorclient","wurst-client","killaura","silentaura",
-                    "autocrystal","crystalaura","baritone","rise-client","vape-client",
-                    "aimassist","triggerbot","scaffoldhack","bunnyhop","freecam",
-                    "webhookstealer","tokengrabber","reverseShell","connectBack",
-                    "WalksyOptimizer","dqrkis","LWFH Crystal","AutoCrystal","AutoAnchor"
+                # Two kinds of memory evidence, kept apart because they answer
+                # different questions:
+                #   client  -> WHICH hack it is (community-extendable via signatures.json)
+                #   module  -> WHAT it is doing (a cheat feature that is active)
+                $memClientTerms = @($script:distinctiveClientTokens)
+                $memModuleTerms = @(
+                    "killaura","silentaura","autocrystal","crystalaura","aimassist","triggerbot",
+                    "scaffoldhack","bunnyhop","freecam","autoanchor","autototem","holefill",
+                    "webhookstealer","tokengrabber","reverseshell","connectback",
+                    "walksyoptimizer","baritone","velocitybypass","packetfly","hitboxexpand"
                 )
+                $memClientSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                foreach ($ct in $memClientTerms) { [void]$memClientSet.Add([string]$ct) }
+                # One compiled alternation beats ~70 IndexOf passes per memory region.
+                $memAllTerms = @($memClientTerms) + @($memModuleTerms)
+                $memAlt = ($memAllTerms | Where-Object { $_ } | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
+                $memRegex = [regex]::new("($memAlt)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                $memHits = @{}
                 $scanLimit = 0
 
                 while ([Win32.MemAPI]::VirtualQueryEx($handle, $addr, [ref]$mbi, [uint32]$mbiSize) -and $scanLimit -lt 512) {
@@ -3157,16 +3182,37 @@ function Run-JVMScan {
                         $read = 0
                         if ([Win32.MemAPI]::ReadProcessMemory($handle, $mbi.BaseAddress, $buf, $buf.Length, [ref]$read) -and $read -gt 0) {
                             $str = [System.Text.Encoding]::ASCII.GetString($buf, 0, $read)
-                            foreach ($term in $memTerms) {
-                                if ($str.IndexOf($term, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                                    $jvmFlags.Add("Memory signature $([char]0x2014) '$term' found live in JVM heap $([char]0x2014) cheat is currently loaded and running")
+                            foreach ($mm in $memRegex.Matches($str)) {
+                                $term = $mm.Groups[1].Value
+                                $key  = $term.ToLower()
+                                if (-not $memHits.ContainsKey($key)) {
+                                    $memHits[$key] = @{
+                                        Label = $term
+                                        Kind  = $(if ($memClientSet.Contains($term)) { "client" } else { "module" })
+                                        Hits  = 0
+                                        Addr  = ("0x{0:X}" -f $mbi.BaseAddress.ToInt64())
+                                    }
                                 }
+                                $memHits[$key].Hits++
                             }
                         }
                     }
                     try { $addr = [IntPtr]($mbi.BaseAddress.ToInt64() + $mbi.RegionSize) } catch { break }
                 }
                 [Win32.MemAPI]::CloseHandle($handle) | Out-Null
+
+                # Report WHAT was found, WHERE, and whether it is a cheat.
+                foreach ($mk in @($memHits.Keys | Sort-Object)) {
+                    $mh = $memHits[$mk]
+                    $where = "$($proc.Name) (PID $($proc.ProcessId)) at $($mh.Addr), $($mh.Hits) hit(s)"
+                    if ($mh.Kind -eq "client") {
+                        $jvmFlags.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) identified live in $where. This IS a cheat and it is loaded in the running game right now $([char]0x2014) it does not need to be in the mods folder.")
+                        $script:Evidence.MemCheatClient++
+                    } else {
+                        $jvmFlags.Add("Cheat module active in memory: $($mh.Label) $([char]0x2014) found in $where. A cheat feature is live in the running game.")
+                        $script:Evidence.MemModule++
+                    }
+                }
             }
         } catch {} }
     }
@@ -4126,6 +4172,9 @@ function Run-BamScan {
 
     $deletedEntries = @($bamEntries | Where-Object { $_.Signature -eq "Deleted" })
     $script:BamDeleted = @($deletedEntries)
+    # .jar specifically: a mod that ran on this PC and is now gone is a much sharper
+    # signal than any deleted .exe, so the session AI scores it separately.
+    $script:Evidence.DeletedJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' }).Count
     New-HtmlReport
     Write-Host ""
 

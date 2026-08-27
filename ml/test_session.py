@@ -47,6 +47,17 @@ SCANS = [
      dict(total_mods=10, verified=8, stray_jars=3, cheat_folders=1), {"Review", "Likely"}),
     ("Downloaded from a cheat site",
      dict(total_mods=10, verified=5, cheatsite_dl=1, flagged=1), {"Likely", "Confirmed"}),
+    # v2: injected ghost clients + the "wiped it before the screenshare" pattern
+    ("Cheat client identified in live memory",
+     dict(total_mods=20, verified=20, mem_client=1, jvm_inject=1, mc_running=1), {"Confirmed"}),
+    ("Jars deleted while Minecraft still runs",
+     dict(total_mods=5, verified=3, deleted_jars=2, bam_deleted=2, mc_running=1), {"Likely", "Confirmed"}),
+    ("Same deletions but Minecraft is closed",
+     dict(total_mods=5, verified=3, deleted_jars=2, bam_deleted=2), {"Clean", "Review"}),
+    ("Clean scan while Minecraft is running",
+     dict(total_mods=25, verified=25, mc_running=1), {"Clean"}),
+    ("Busy modpack, game open, nothing wrong",
+     dict(total_mods=140, verified=90, random_named=4, mc_running=1), {"Clean"}),
 ]
 
 print("=== Session scoring (whole scan, not one jar) ===")
@@ -67,6 +78,10 @@ check("ambiguous (review only) -> no label",
       S.label_for(dict(total_mods=10, verified=8, review=1)) is None)
 check("ambiguous (deleted execs) -> no label",
       S.label_for(dict(total_mods=10, verified=10, bam_deleted=4)) is None)
+check("memory-identified client -> label 1",
+      S.label_for(dict(total_mods=10, verified=10, mem_client=1)) == 1)
+check("deleted jars alone -> no label",
+      S.label_for(dict(total_mods=10, verified=10, deleted_jars=2, mc_running=1)) is None)
 check("empty scan -> no label",
       S.label_for(dict(total_mods=0)) is None)
 
@@ -83,6 +98,7 @@ CLEAN_CONTROL = [
     dict(total_mods=20, verified=0),
     dict(total_mods=40, verified=22, random_named=3),
     dict(total_mods=15, verified=10, review=1),
+    dict(total_mods=140, verified=90, random_named=4, mc_running=1),
 ]
 
 w = copy.deepcopy(S.WEIGHTS)
