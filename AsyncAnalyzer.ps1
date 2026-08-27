@@ -45,6 +45,12 @@ $script:shareHashes  = [System.Collections.Generic.List[string]]::new()
 $script:sessionGood  = [System.Collections.Generic.List[string]]::new()
 $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
+# Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
+# session AI at the end so it can judge the scan as a whole, and learn from it.
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0 }
+$script:SessionRaw = $null
+$script:SessionVerdict = $null
+$script:SessionSample = $null
 $script:Telemetry    = $null
 $script:CurseForgeApiKey = if ($env:CURSEFORGE_API_KEY) { $env:CURSEFORGE_API_KEY } else { "" }
 $verifiedMods = [System.Collections.Generic.List[object]]::new()
@@ -631,6 +637,14 @@ function Load-LearnState {
             if ($null -ne $st.intercept) { $script:mlIntercept = [double]$st.intercept }
             if ($null -ne $st.samples)   { $script:mlSamples = [int]$st.samples }
         }
+        if ($st.sweights -and $st.sessionModelVersion -ge $script:smModelVersion) {
+            foreach ($k in $script:smFeatureOrder) {
+                $sv = $st.sweights.$k
+                if ($null -ne $sv) { $script:smWeights[$k] = [double]$sv }
+            }
+            if ($null -ne $st.sintercept) { $script:smIntercept = [double]$st.sintercept }
+            if ($null -ne $st.ssamples)   { $script:smSamples = [int]$st.ssamples }
+        }
     } catch {}
 }
 
@@ -638,6 +652,8 @@ function Save-LearnState {
     try {
         $wobj = @{}
         foreach ($k in $script:mlFeatureOrder) { $wobj[$k] = [Math]::Round([double]$script:mlWeights[$k], 6) }
+        $swobj = @{}
+        foreach ($k in $script:smFeatureOrder) { $swobj[$k] = [Math]::Round([double]$script:smWeights[$k], 6) }
         $obj = [ordered]@{
             v = 1
             modelVersion = $script:mlModelVersion
@@ -646,6 +662,10 @@ function Save-LearnState {
             knownGood = @($script:knownGoodHashes)
             knownCheat = @($script:knownCheatHashes)
             samples = $script:mlSamples
+            sessionModelVersion = $script:smModelVersion
+            sintercept = [Math]::Round([double]$script:smIntercept, 6)
+            sweights = $swobj
+            ssamples = $script:smSamples
             updated = (Get-Date).ToString("s")
         }
         ($obj | ConvertTo-Json -Depth 5) | Out-File -FilePath (Get-LearnPath) -Encoding UTF8
@@ -670,6 +690,166 @@ function Update-ModelOnline($raw, $label) {
     } catch {}
 }
 
+
+# ---------------------------------------------------------------------------
+# Session AI ("overall scan" model) - the SECOND model.
+# The mod model scores ONE jar. This one scores the WHOLE scan: the mods plus
+# every other stage (system checks, JVM injection, cheat processes, deleted
+# executables, stray jars, cheat folders). It answers "does this PC look like
+# someone is cheating?", not just "is this one file a cheat?" - and it learns
+# from every finished scan, locally and (with team mode) across everyone.
+# Source of truth for the weights: ml/session_model.py -> ml/session_model.json
+# ---------------------------------------------------------------------------
+$script:smModelVersion = 1
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders')
+$script:smIntercept = -4.0
+$script:smWeights = @{
+    'flagged_ratio' = 4.0
+    'review_ratio' = 1.2
+    'unverified_ratio' = 0.8
+    'random_ratio' = 1.5
+    'cheatsite_dl' = 3.0
+    'hard_confirmed' = 4.5
+    'sys_issues' = 1.2
+    'jvm_inject' = 3.0
+    'bam_deleted' = 1.5
+    'cheat_procs' = 3.5
+    'stray_jars' = 2.0
+    'cheat_folders' = 3.0
+}
+$script:smBaseWeights = @{}
+foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
+$script:smBaseIntercept = $script:smIntercept
+$script:smSamples = 0
+
+function Get-Clip01([double]$x) { if ($x -lt 0) { return 0.0 } elseif ($x -gt 1) { return 1.0 } else { return $x } }
+
+function Get-SessionRaw {
+    $ev = $script:Evidence
+    return @{
+        total_mods     = [int]$script:TotalMods
+        verified       = [int]$script:Verified
+        flagged        = [int]$script:Flagged
+        review         = [int]$script:Review
+        random_named   = [int]$ev.RandomNamed
+        cheatsite_dl   = [int]$ev.CheatSiteDl
+        hard_confirmed = [int]$ev.HardConfirmed
+        sys_issues     = [int]$script:SystemIssues
+        jvm_inject     = [int]$ev.JvmInject
+        bam_deleted    = [int](@($script:BamDeleted).Count)
+        cheat_procs    = [int]$ev.CheatProcs
+        stray_jars     = [int]$ev.StrayJars
+        cheat_folders  = [int]$ev.CheatFolders
+    }
+}
+
+function Get-SessionVector($raw) {
+    $total = [int]$raw.total_mods
+    $den = if ($total -gt 0) { [double]$total } else { 1.0 }
+    $unver = if ($total -gt 0) { Get-Clip01 (([double]$total - [double]$raw.verified) / $den) } else { 0.0 }
+    return @{
+        flagged_ratio    = Get-Clip01 ([double]$raw.flagged / $den)
+        review_ratio     = Get-Clip01 ([double]$raw.review / $den)
+        unverified_ratio = $unver
+        random_ratio     = Get-Clip01 ([double]$raw.random_named / $den)
+        cheatsite_dl     = $(if ($raw.cheatsite_dl) { 1.0 } else { 0.0 })
+        hard_confirmed   = $(if ($raw.hard_confirmed) { 1.0 } else { 0.0 })
+        sys_issues       = Get-Clip01 ([Math]::Min([double]$raw.sys_issues, 10.0) / 10.0)
+        jvm_inject       = Get-Clip01 ([Math]::Min([double]$raw.jvm_inject, 5.0) / 5.0)
+        bam_deleted      = Get-Clip01 ([Math]::Min([double]$raw.bam_deleted, 10.0) / 10.0)
+        cheat_procs      = Get-Clip01 ([Math]::Min([double]$raw.cheat_procs, 5.0) / 5.0)
+        stray_jars       = Get-Clip01 ([Math]::Min([double]$raw.stray_jars, 3.0) / 3.0)
+        cheat_folders    = Get-Clip01 ([Math]::Min([double]$raw.cheat_folders, 2.0) / 2.0)
+    }
+}
+
+function Invoke-SessionModel($vec) {
+    $z = [double]$script:smIntercept
+    foreach ($k in $script:smFeatureOrder) { $z += [double]$script:smWeights[$k] * [double]$vec[$k] }
+    if ($z -lt -60) { return 0.0 } elseif ($z -gt 60) { return 1.0 }
+    return 1.0 / (1.0 + [Math]::Exp(-$z))
+}
+
+function Get-SessionVerdict($raw) {
+    $vec = Get-SessionVector $raw
+    $p = Invoke-SessionModel $vec
+    $score = [int][Math]::Round($p * 100)
+    $reasons = [System.Collections.Generic.List[string]]::new()
+
+    if ($raw.hard_confirmed) { $score = [Math]::Max($score, 85); [void]$reasons.Add("A mod was confirmed as a cheat by a hard rule (hash / package path / cheat site)") }
+    if ($raw.jvm_inject -gt 0)   { $score = [Math]::Max($score, 60); [void]$reasons.Add("Live JVM shows injection traces ($($raw.jvm_inject))") }
+    if ($raw.cheat_procs -gt 0)  { $score = [Math]::Max($score, 60); [void]$reasons.Add("Known cheat process running ($($raw.cheat_procs))") }
+    if ($raw.cheatsite_dl)       { $score = [Math]::Max($score, 60); [void]$reasons.Add("A mod was downloaded from a known cheat site") }
+    if ($raw.stray_jars -gt 0 -or $raw.cheat_folders -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("Cheat files outside the mods folder: $($raw.stray_jars) jar(s), $($raw.cheat_folders) folder(s)") }
+    if ($raw.bam_deleted -gt 0)  { [void]$reasons.Add("$($raw.bam_deleted) executable(s) ran on this PC and were deleted afterwards") }
+    if ($raw.flagged -gt 0)      { [void]$reasons.Add("$($raw.flagged) flagged mod(s)") }
+    if ($raw.review -gt 0)       { [void]$reasons.Add("$($raw.review) mod(s) to review") }
+    if ($raw.sys_issues -gt 0)   { [void]$reasons.Add("$($raw.sys_issues) system issue(s)") }
+    if ($reasons.Count -eq 0)    { [void]$reasons.Add("Nothing cheat-like across mods, system, processes or history") }
+
+    $band = if ($score -ge 85) { "Confirmed" } elseif ($score -ge 60) { "Likely" } elseif ($score -ge 30) { "Review" } else { "Clean" }
+    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons; Vector = $vec }
+}
+
+function Get-SessionVerdictCached {
+    if ($null -eq $script:SessionVerdict) {
+        $script:SessionRaw = Get-SessionRaw
+        $script:SessionVerdict = Get-SessionVerdict $script:SessionRaw
+    }
+    return $script:SessionVerdict
+}
+
+function Get-SessionLabel($raw) {
+    # Only unambiguous scans teach the model - that is what stops it drifting.
+    if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0) { return 1 }
+    if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
+        $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and
+        [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
+    return -1
+}
+
+function Update-SessionModelOnline($vec, $label) {
+    if ($script:NoLearn) { return }
+    try {
+        $lr = 0.05; $l2 = 0.02; $clamp = 8.0
+        $p = Invoke-SessionModel $vec
+        $err = $p - $label
+        foreach ($k in $script:smFeatureOrder) {
+            $w = [double]$script:smWeights[$k] - $lr * ($err * [double]$vec[$k] + $l2 * ([double]$script:smWeights[$k] - [double]$script:smBaseWeights[$k]))
+            if ($w -gt $clamp) { $w = $clamp } elseif ($w -lt (-$clamp)) { $w = -$clamp }
+            $script:smWeights[$k] = $w
+        }
+        $si = [double]$script:smIntercept - $lr * ($err + $l2 * ([double]$script:smIntercept - [double]$script:smBaseIntercept))
+        if ($si -gt $clamp) { $si = $clamp } elseif ($si -lt (-$clamp)) { $si = -$clamp }
+        $script:smIntercept = $si
+        $script:smSamples++
+    } catch {}
+}
+
+function Write-SessionCard($v, $raw) {
+    $w = 72
+    $col = switch ($v.Band) { "Confirmed" { "Red" } "Likely" { "DarkYellow" } "Review" { "Yellow" } default { "Green" } }
+    $label = switch ($v.Band) {
+        "Confirmed" { "CHEATING CONFIRMED" }
+        "Likely"    { "LIKELY CHEATING" }
+        "Review"    { "NEEDS A MANUAL LOOK" }
+        default     { "CLEAN $([char]0x2014) NOTHING FOUND" }
+    }
+    Write-Host ""
+    W ("  $([char]0x2554)" + "$([char]0x2550)" * ($w + 1) + "$([char]0x2557)") $col
+    W ("  $([char]0x2551)" + "  OVERALL SCAN VERDICT (AI, whole scan)".PadRight($w + 1) + "$([char]0x2551)") Cyan
+    W ("  $([char]0x2551)" + "  $label".PadRight($w + 1) + "$([char]0x2551)") $col
+    W ("  $([char]0x2551)" + "  Score $($v.Score)/100    AI probability $($v.Probability)%".PadRight($w + 1) + "$([char]0x2551)") White
+    W ("  $([char]0x2560)" + "$([char]0x2550)" * ($w + 1) + "$([char]0x2563)") $col
+    foreach ($r in $v.Reasons) {
+        $line = "    $([char]0x2022) $r"
+        if ($line.Length -gt $w) { $line = $line.Substring(0, $w - 3) + "..." }
+        W ("  $([char]0x2551)" + $line.PadRight($w + 1) + "$([char]0x2551)") DarkGray
+    }
+    W ("  $([char]0x255A)" + "$([char]0x2550)" * ($w + 1) + "$([char]0x255D)") $col
+    Write-Host ""
+}
+
 function Invoke-CloudUpdate {
     if ($script:NoUpdate) { return }
     try {
@@ -683,6 +863,19 @@ function Invoke-CloudUpdate {
             $script:mlIntercept = [double]$m.intercept; $script:mlBaseIntercept = [double]$m.intercept
             $script:mlModelVersion = [int]$m.version
             W "  $([char]0x2713) AI model auto-updated to v$($script:mlModelVersion) from GitHub." DarkGray
+        }
+    } catch {}
+    try {
+        $sm = Invoke-RestMethod -Uri "$($script:RepoRaw)/session_model.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+        if ($sm.version -and ([int]$sm.version) -gt $script:smModelVersion -and $sm.weights -and $sm.feature_order) {
+            $script:smFeatureOrder = @($sm.feature_order)
+            foreach ($k in $script:smFeatureOrder) {
+                $sv = $sm.weights.$k
+                if ($null -ne $sv) { $script:smWeights[$k] = [double]$sv; $script:smBaseWeights[$k] = [double]$sv }
+            }
+            $script:smIntercept = [double]$sm.intercept; $script:smBaseIntercept = [double]$sm.intercept
+            $script:smModelVersion = [int]$sm.version
+            W "  $([char]0x2713) Overall-scan AI updated to v$($script:smModelVersion) from GitHub." DarkGray
         }
     } catch {}
     try {
@@ -718,6 +911,15 @@ function Invoke-CloudUpdate {
                 foreach ($k in $script:mlFeatureOrder) { $wv = $tm.weights.$k; if ($null -ne $wv) { $script:mlWeights[$k] = [double]$wv; $script:mlBaseWeights[$k] = [double]$wv } }
                 $script:mlIntercept = [double]$tm.intercept; $script:mlBaseIntercept = [double]$tm.intercept
                 W "  $([char]0x2713) Using team-trained AI model $([char]0x2014) learned from $($tm.trainedCount) samples across all team scans." DarkGray
+            }
+        } catch {}
+        try {
+            $tsm = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/smodel" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+            if ($tsm.weights -and $tsm.feature_order) {
+                $script:smFeatureOrder = @($tsm.feature_order)
+                foreach ($k in $script:smFeatureOrder) { $sv = $tsm.weights.$k; if ($null -ne $sv) { $script:smWeights[$k] = [double]$sv; $script:smBaseWeights[$k] = [double]$sv } }
+                $script:smIntercept = [double]$tsm.intercept; $script:smBaseIntercept = [double]$tsm.intercept
+                W "  $([char]0x2713) Overall-scan AI is team-trained $([char]0x2014) $($tsm.trainedCount) whole scans learned from." DarkGray
             }
         } catch {}
     }
@@ -758,6 +960,9 @@ function Send-ScanResult {
             newCheat     = @($script:sessionCheat | Select-Object -Unique)
             newGood      = @($script:sessionGood  | Select-Object -Unique)
             samples      = @(@($script:sessionSamples) | Select-Object -First 400)
+            session      = $(if ($script:SessionVerdict) { @{ score = $script:SessionVerdict.Score; band = $script:SessionVerdict.Band; probability = $script:SessionVerdict.Probability; reasons = @($script:SessionVerdict.Reasons) } } else { $null })
+            sessionSample = $script:SessionSample
+            sessionModelVersion = $script:smModelVersion
             toolVersion  = $script:Version
             modelVersion = $script:mlModelVersion
             clientTs     = (Get-Date).ToString("s")
@@ -1051,6 +1256,28 @@ function Invoke-SelfTest {
         W ("  [$tag] " + $c.Label.PadRight(40) + " score=$($v.Score)  band=$($v.Band)  (want $($c.Bands -join '/'))") $col
     }
     Write-Host ""
+    W "  Overall-scan AI (judges the WHOLE scan, not one file)" Cyan
+    Write-Host ""
+    $sCases = @(
+        @{ Label = "Perfectly clean scan"; Bands = @("Clean"); Raw = @{ total_mods = 25; verified = 25 } }
+        @{ Label = "Normal player, nothing verified"; Bands = @("Clean"); Raw = @{ total_mods = 20; verified = 0 } }
+        @{ Label = "Confirmed cheat jar found"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 12; flagged = 1; hard_confirmed = 1 } }
+        @{ Label = "Clean mods but JVM injection"; Bands = @("Likely", "Confirmed"); Raw = @{ total_mods = 18; verified = 18; jvm_inject = 2 } }
+        @{ Label = "Cheat jars stashed outside mods"; Bands = @("Review", "Likely"); Raw = @{ total_mods = 10; verified = 8; stray_jars = 3; cheat_folders = 1 } }
+    )
+    $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0 }
+    foreach ($sc in $sCases) {
+        $raw = @{}
+        foreach ($k in $sBase.Keys) { $raw[$k] = $sBase[$k] }
+        foreach ($k in $sc.Raw.Keys) { $raw[$k] = $sc.Raw[$k] }
+        $sv = Get-SessionVerdict $raw
+        $ok = $sc.Bands -contains $sv.Band
+        if ($ok) { $pass++ } else { $fail++ }
+        $col = if ($ok) { "Green" } else { "Red" }
+        $tag = if ($ok) { "PASS" } else { "FAIL" }
+        W ("  [$tag] " + $sc.Label.PadRight(40) + " score=$($sv.Score)  band=$($sv.Band)  (want $($sc.Bands -join '/'))") $col
+    }
+    Write-Host ""
     if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) model + verdict logic OK on this machine." Green }
     else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
     Write-Host ""
@@ -1132,6 +1359,24 @@ function New-HtmlReport {
     elseif ($script:Review -gt 0) { $vColor = "#e3b341"; $vText = "$($script:Review) mod$(if($script:Review -ne 1){'s'}) to review"; $vIcon = "&#9873;" }
     else { $vColor = "#2ecc71"; $vText = "Clean &mdash; no cheats detected"; $vIcon = "&#10003;" }
 
+    $sv = Get-SessionVerdictCached
+    $svColor = switch ($sv.Band) { "Confirmed" { "#f85149" } "Likely" { "#fb8500" } "Review" { "#e3b341" } default { "#2ecc71" } }
+    $svLabel = switch ($sv.Band) { "Confirmed" { "CHEATING CONFIRMED" } "Likely" { "LIKELY CHEATING" } "Review" { "NEEDS A MANUAL LOOK" } default { "CLEAN &mdash; NOTHING FOUND" } }
+    $svReasons = ""
+    foreach ($r in @($sv.Reasons)) { $svReasons += "<li>$(Enc $r)</li>" }
+    $overallSection = @"
+<div class="mod" style="--band:$svColor;">
+  <div class="mod-head">
+    <span class="badge" style="background:$svColor;">OVERALL SCAN VERDICT</span>
+    <span class="mod-name">$svLabel</span>
+    <span class="mod-score">$($sv.Score)<small>/100</small></span>
+  </div>
+  <div class="bar"><div class="bar-fill" style="width:$($sv.Score)%;background:$svColor;"></div></div>
+  <div class="mod-meta">The AI judged the WHOLE scan &mdash; mods, system checks, processes, JVM and history &mdash; not just single files. AI probability $($sv.Probability)%</div>
+  <ul class="reasons">$svReasons</ul>
+</div>
+"@
+
     $scanDate = Get-Date -Format "yyyy-MM-dd HH:mm"
     $html = @"
 <!DOCTYPE html>
@@ -1202,6 +1447,8 @@ footer a{color:var(--accent);text-decoration:none;}
     <div class="card"><div class="n blue">$($script:mlSamples)</div><div class="k">AI learned (v$($script:mlModelVersion))</div></div>
   </div>
 
+  $overallSection
+
   <h2>Flagged &amp; review</h2>
   $modCards
 
@@ -1234,9 +1481,8 @@ function flt(){var q=document.getElementById('q').value.toLowerCase();document.q
     try {
         $rp = Join-Path $env:TEMP "AsyncAnalyzer_Report.html"
         $html | Out-File -FilePath $rp -Encoding UTF8
-        Invoke-Item $rp
-        try { Start-Process explorer.exe -ArgumentList "/select,`"$rp`"" } catch {}
-        W "  $([char]0x2713) Report saved & opened: $rp" Green
+        W "  $([char]0x2713) Report saved: $rp" Green
+        W "    Open it yourself when you want it $([char]0x2014) the tool never opens windows on your PC." DarkGray
     } catch { W "  $([char]0x2717) Could not write report: $($_.Exception.Message)" Red }
     Write-Host ""
 }
@@ -3136,6 +3382,10 @@ if (-not $SkipModCheck) {
             }
             $verdict = Get-ModVerdict $ctx
 
+            if ($randomName) { $script:Evidence.RandomNamed++ }
+            if ($cheatSite)  { $script:Evidence.CheatSiteDl++ }
+            if ((-not $verified) -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite)) { $script:Evidence.HardConfirmed++ }
+
             $rec = [PSCustomObject]@{
                 FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash
                 Verified = $verified; VerifiedName = $verifiedName; ModName = $verifiedName; VerifiedVia = $verifiedVia; ModUrl = $modUrl
@@ -4502,6 +4752,9 @@ function Run-PCscan {
     Write-Host ""
     W "  Flagged processes   : " DarkGray -NoNewline; W "$($flaggedProcs.Count)" $(if($flaggedProcs.Count -gt 0){"Red"}else{"Green"})
     W "  Unknown processes   : " DarkGray -NoNewline; W "$($unknownProcs.Count)" $(if($unknownProcs.Count -gt 0){"Yellow"}else{"Green"})
+    $script:Evidence.CheatProcs   = $flaggedProcs.Count
+    $script:Evidence.CheatFolders = $foundFolders.Count
+    $script:Evidence.StrayJars    = $fsFlags.Count
     W "  Startup flags       : " DarkGray -NoNewline; W "$($startupFlags.Count)" $(if($startupFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Cheat folders found : " DarkGray -NoNewline; W "$($foundFolders.Count)" $(if($foundFolders.Count -gt 0){"Red"}else{"Green"})
     W "  Flagged JARs        : " DarkGray -NoNewline; W "$($fsFlags.Count)" $(if($fsFlags.Count -gt 0){"Red"}else{"Green"})
@@ -4525,6 +4778,7 @@ function Run-PCscan {
 
 if (-not $SkipMemoryCheck) {
     $jvmFlags = Run-JVMScan
+    $script:Evidence.JvmInject = $jvmFlags.Count
     if ($jvmFlags.Count -gt 0) {
         Write-SectionHeader "JVM / RUNTIME INJECTION" $jvmFlags.Count Yellow Yellow
         Write-Rule "$([char]0x2500)" 76 DarkGray
@@ -4561,8 +4815,6 @@ if ($script:Flagged -gt 0 -or $script:SystemIssues -gt 0) {
     W "  All checks passed. Installation appears clean." Green
 }
 
-Send-ScanResult
-
 Write-Host ""
 W "  Analysis complete!" Cyan
 Write-Host ""
@@ -4596,6 +4848,23 @@ if ($doDeep -or $script:_DevMode) {
 if (-not $script:_DevMode) {
     Run-BamScan
 }
+
+# Every stage has now run (mods, system, JVM, PC, BAM) - so the session AI can
+# finally judge the scan AS A WHOLE, learn from it, and upload it to the team.
+$script:SessionRaw = Get-SessionRaw
+$script:SessionVerdict = Get-SessionVerdict $script:SessionRaw
+Write-SessionCard $script:SessionVerdict $script:SessionRaw
+$slabel = Get-SessionLabel $script:SessionRaw
+if ($slabel -ge 0) {
+    Update-SessionModelOnline $script:SessionVerdict.Vector $slabel
+    $script:SessionSample = @{ vec = @($script:smFeatureOrder | ForEach-Object { [double]$script:SessionVerdict.Vector[$_] }); label = $slabel }
+    W "  $([char]0x2713) Overall-scan AI learned from this scan ($($script:smSamples) whole scans learned so far)." DarkGray
+} else {
+    W "  $([char]0x2139) Overall-scan AI did not learn from this scan $([char]0x2014) the result was not clear-cut enough." DarkGray
+}
+Write-Host ""
+
+Send-ScanResult
 
 Save-LearnState
 if ($script:Share -and $script:shareHashes.Count -gt 0) {

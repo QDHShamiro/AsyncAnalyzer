@@ -45,6 +45,30 @@ if (!model && BASE) {
   model = { version: BASE.version, feature_order: BASE.feature_order, intercept: BASE.intercept, weights: { ...BASE.weights }, trainedCount: 0 };
   save(MODEL_FILE, model);
 }
+// ---- shared (federated) SESSION model: learns from WHOLE scans, not single jars ----
+const SMODEL_FILE = path.join(DATA_DIR, 'smodel.json');
+const SBASE = load(path.join(__dirname, '..', 'ml', 'session_model.json'), null);
+let smodel = load(SMODEL_FILE, null);
+if (!smodel && SBASE) {
+  smodel = { version: SBASE.version, feature_order: SBASE.feature_order, intercept: SBASE.intercept, weights: { ...SBASE.weights }, trainedCount: 0 };
+  save(SMODEL_FILE, smodel);
+}
+function sSgdStep(vec, label) {
+  if (!smodel || !SBASE) return;
+  const O = smodel.feature_order, lr = 0.05, l2 = 0.02, clamp = 8;
+  let z = smodel.intercept;
+  for (let i = 0; i < O.length; i++) z += smodel.weights[O[i]] * (+vec[i] || 0);
+  const p = z < -60 ? 0 : z > 60 ? 1 : 1 / (1 + Math.exp(-z));
+  const err = p - label;
+  for (let i = 0; i < O.length; i++) {
+    const k = O[i];
+    let w = smodel.weights[k] - lr * (err * (+vec[i] || 0) + l2 * (smodel.weights[k] - SBASE.weights[k]));
+    smodel.weights[k] = Math.max(-clamp, Math.min(clamp, w));
+  }
+  smodel.intercept = Math.max(-clamp, Math.min(clamp, smodel.intercept - lr * (err + l2 * (smodel.intercept - SBASE.intercept))));
+  smodel.trainedCount = (smodel.trainedCount || 0) + 1;
+}
+
 function sgdStep(vec, label) {
   if (!model || !BASE) return;
   const O = model.feature_order, lr = 0.05, l2 = 0.02, clamp = 8;
@@ -141,6 +165,13 @@ const server = http.createServer(async (req, res) => {
       }
       if (n) save(MODEL_FILE, model);
     }
+
+    // federated OVERALL-SCAN training: one labelled sample per finished scan
+    const ss = body.sessionSample;
+    if (ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1) && smodel) {
+      sSgdStep(ss.vec, ss.label);
+      save(SMODEL_FILE, smodel);
+    }
     return send(res, 200, { ok: true, id: rec.id, modelTrained: model ? model.trainedCount : 0 });
   }
 
@@ -153,6 +184,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/model') {
     if (!model) return send(res, 404, { error: 'no model' });
     return send(res, 200, { version: model.version, trainedCount: model.trainedCount || 0, feature_order: model.feature_order, intercept: model.intercept, weights: model.weights });
+  }
+
+  // the shared, team-trained OVERALL-SCAN model (every client pulls this too)
+  if (req.method === 'GET' && url.pathname === '/api/smodel') {
+    if (!smodel) return send(res, 404, { error: 'no session model' });
+    return send(res, 200, { version: smodel.version, trainedCount: smodel.trainedCount || 0, feature_order: smodel.feature_order, intercept: smodel.intercept, weights: smodel.weights });
   }
 
   // history (view-gated if VIEW_KEY set)

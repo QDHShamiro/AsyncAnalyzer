@@ -13,6 +13,7 @@ const CORS = {
 const DASH = 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/server/dashboard.html';
 
 const BASE_MODEL_URL = 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/ml/model.json';
+const BASE_SMODEL_URL = 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/ml/session_model.json';
 
 function json(obj, code = 200) {
   return new Response(JSON.stringify(obj), { status: code, headers: { 'Content-Type': 'application/json', ...CORS } });
@@ -25,6 +26,14 @@ async function getModel(env) {
   const base = await (await fetch(BASE_MODEL_URL)).json();
   const m = { version: base.version, feature_order: base.feature_order, intercept: base.intercept, weights: { ...base.weights }, base: { intercept: base.intercept, weights: { ...base.weights } }, trainedCount: 0 };
   await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('model', ?)").bind(JSON.stringify(m)).run();
+  return m;
+}
+async function getSModel(env) {
+  const row = await env.DB.prepare("SELECT v FROM meta WHERE k='smodel'").first();
+  if (row) return JSON.parse(row.v);
+  const base = await (await fetch(BASE_SMODEL_URL)).json();
+  const m = { version: base.version, feature_order: base.feature_order, intercept: base.intercept, weights: { ...base.weights }, base: { intercept: base.intercept, weights: { ...base.weights } }, trainedCount: 0 };
+  await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('smodel', ?)").bind(JSON.stringify(m)).run();
   return m;
 }
 function sgdStep(m, vec, label) {
@@ -59,7 +68,7 @@ export default {
         scanner: clip(b.scanner || 'unknown', 80), targetUser: clip(b.targetUser, 80),
         pcName: clip(b.pcName, 80), modPath: clip(b.modPath, 300), verdict: clip(b.verdict || 'clean', 20),
         totals: b.totals || {}, flagged: (b.flagged || []).slice(0, 200), review: (b.review || []).slice(0, 200),
-        systemIssues: (b.systemIssues || []).slice(0, 200), toolVersion: clip(b.toolVersion, 20), modelVersion: b.modelVersion || 0,
+        systemIssues: (b.systemIssues || []).slice(0, 200), toolVersion: clip(b.toolVersion, 20), modelVersion: b.modelVersion || 0, session: b.session || null,
       };
       await env.DB.prepare('INSERT INTO scans (id, ts, scanner, target, pc, verdict, data) VALUES (?,?,?,?,?,?,?)')
         .bind(id, rec.serverTs, rec.scanner, rec.targetUser, rec.pcName, rec.verdict, JSON.stringify(rec)).run();
@@ -71,6 +80,12 @@ export default {
         for (const s of b.samples.slice(0, 500)) if (Array.isArray(s.vec) && (s.label === 0 || s.label === 1)) { sgdStep(m, s.vec, s.label); n++; }
         if (n) await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('model', ?)").bind(JSON.stringify(m)).run();
       }
+      const ss = b.sessionSample;
+      if (ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1)) {
+        const sm = await getSModel(env);
+        sgdStep(sm, ss.vec, ss.label);
+        await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('smodel', ?)").bind(JSON.stringify(sm)).run();
+      }
       return json({ ok: true, id });
     }
 
@@ -81,6 +96,11 @@ export default {
 
     if (req.method === 'GET' && url.pathname === '/api/model') {
       const m = await getModel(env);
+      return json({ version: m.version, trainedCount: m.trainedCount || 0, feature_order: m.feature_order, intercept: m.intercept, weights: m.weights });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/smodel') {
+      const m = await getSModel(env);
       return json({ version: m.version, trainedCount: m.trainedCount || 0, feature_order: m.feature_order, intercept: m.intercept, weights: m.weights });
     }
 

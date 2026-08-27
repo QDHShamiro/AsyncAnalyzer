@@ -38,7 +38,7 @@ mods), and scans it.
 
 | | |
 |---|---|
-| 🧠 **Real AI, offline** | A trained logistic-regression model (22 features) runs entirely in PowerShell. No cloud, no API key, nothing uploaded. |
+| 🧠 **Two real AIs, offline** | One model scores every **mod** (22 features), a second scores the **whole scan** (12 features: mods + system + processes + JVM + history). Both run entirely in PowerShell — no cloud, no API key, nothing uploaded. |
 | 📈 **Self-improving** | Every scan makes it smarter — it remembers verified & cheat hashes, nudges its own model, and auto-updates from GitHub. |
 | ✅ **No false flags** | Verified mods (Modrinth/CurseForge) are **hard-capped as safe**. Anticheats full of `killaura`/`reach` strings are recognised, not flagged. **0 false positives** on 37 real libraries. |
 | 🔎 **Explains itself** | Every flag shows the AI probability *and* the exact reasons — package path, obfuscation, signatures, network behaviour. |
@@ -81,13 +81,37 @@ flowchart LR
 
 ---
 
+## 🔭 The overall-scan verdict
+
+Single files aren't the whole story — a ghost client can be injected into the running
+game, run from a folder outside `mods`, or be deleted right before the screenshare. So
+after **every** stage has run (mods, system checks, processes, JVM, deleted-file
+history), a second AI scores the **scan as a whole** and prints one clear answer:
+
+```
+╔═════════════════════════════════════════════════════════════════════════╗
+║  OVERALL SCAN VERDICT (AI, whole scan)                                  ║
+║  CLEAN — NOTHING FOUND                                                  ║
+║  Score 2/100    AI probability 2%                                       ║
+╚═════════════════════════════════════════════════════════════════════════╝
+```
+
+It weighs the evidence the way a screenshare admin would: a **confirmed cheat jar**,
+an **injected JVM** or a **running cheat process** is proof (→ Likely/Confirmed);
+**cheat jars stashed outside the mods folder** are worth a look (→ Review); and
+"lots of unverified mods" is completely normal and stays **Clean**. Then it *learns
+from that scan* — see below.
+
+---
+
 ## 🧠 Self-improvement
 
 Detection gets better **every time you use it** — all on your machine, nothing uploaded:
 
 1. **Hash memory** — every verified mod is remembered as *good* (instant + offline next time); every hard-confirmed cheat is remembered as *cheat*.
 2. **Online learning** — each confirmed verdict does one bounded SGD step on the model weights (anchored to the base model, so it adapts but can never drift into false positives). Stored in `%APPDATA%\AsyncAnalyzer\learned.json`.
-3. **Cloud auto-update** — on start it pulls the newest model + community signature list from this repo, so improvements reach **everyone** (turn off with `-NoUpdate`).
+3. **Whole-scan learning** — every *finished scan* also teaches the overall-scan AI, so the tool gets better at reading a **situation**, not just a file. Only unambiguous scans teach it (a hard-confirmed cheat / injected JVM → *cheat*; an all-verified, issue-free scan → *clean*); anything in between teaches it nothing, which is what stops it drifting.
+4. **Cloud auto-update** — on start it pulls the newest models + community signature list from this repo, so improvements reach **everyone** (turn off with `-NoUpdate`).
 
 > Proven: after confirming a handful of a *new* cheat family, the model's score for it climbs from **20% → 66%** — while all 37 real clean libraries stay Clean. (`python3 ml/test_selflearn.py`)
 
@@ -101,13 +125,13 @@ Detection gets better **every time you use it** — all on your machine, nothing
 - **Never uploads your files.** Your mods, documents and personal data stay on your PC.
 - **Network = hash lookups only** (Modrinth / CurseForge / Megabase) + fetching the public model. Only a file *hash* is ever sent, never the file.
 - Default scan touches **only your mods folder**. Whole-PC scan and live-memory read are **opt-in**.
-- **Team mode is off by default.** If a team turns it on (see below), the tool uploads the *scan result* (mod list, hashes, verdict, usernames) to that team's own dashboard — and shows the scanned person a clear notice first. Still never the files themselves.
+- **Team mode is off by default.** If a team turns it on (see below), the tool uploads the *scan result* (mod list, hashes, verdict, overall verdict, usernames) to that team's own dashboard — and shows the scanned person a clear notice first. Still never the files themselves.
 
 ---
 
 ## 👥 Team mode — shared scan history
 
-Running a screenshare / anticheat team? Turn on **team mode** and every scan (yours, Luis's, any staff) lands in **one shared dashboard** — and **the AI itself learns from everyone's scans**, not just each PC. Confirmed detections from all team members train one shared model on the backend; every client pulls that team-trained model on the next run. The more your team scans, the smarter it gets for everyone.
+Running a screenshare / anticheat team? Turn on **team mode** and every scan (yours, Luis's, any staff) lands in **one shared dashboard** — and **the AI itself learns from everyone's scans**, not just each PC. Confirmed detections from all team members train **two** shared models on the backend — one for single mods, one for whole scans — and every client pulls both on the next run. The more your team scans, the smarter it gets for everyone.
 
 <div align="center">
 
@@ -162,6 +186,9 @@ ml/
 ├── online_learn.py    # the self-improvement SGD step (matches the .ps1)
 ├── verdict.py         # reference port of the verdict logic
 ├── signatures.json    # community cheat list (auto-downloaded by the tool)
+├── session_model.py   # the overall-scan model (source of truth for its weights)
+├── session_model.json # overall-scan weights the .ps1 embeds + auto-updates from
+├── test_session.py    # proves the overall-scan AI scores + learns correctly
 ├── model.json         # trained weights + version + metrics
 ├── test_verdict.py    # end-to-end tests (cheats, clean, anticheat, verified)
 └── test_selflearn.py  # proves self-learning helps without false positives
@@ -183,7 +210,9 @@ The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassis
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
 | `ml/test_verdict.py` | **42/42** — cheats caught, 37 real libs Clean, anticheats Clean |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
-| `-SelfTest` (in-tool) | 8 known cases (Doomsday, grabber, Sodium, anticheat, verified, random-named…) all pass |
+| `ml/test_session.py` | **20/20** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
+| federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
+| `-SelfTest` (in-tool) | 13 known cases — 8 mod-level + 5 whole-scan — all pass |
 
 ---
 

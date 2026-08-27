@@ -78,12 +78,15 @@ script. Set `"enabled": false` to turn team uploads off for everyone instantly.
 | GET | `/api/history?limit=` | `?key=VIEW_KEY` (if set) | scan summaries, newest first |
 | GET | `/api/scan/:id` | `?key=VIEW_KEY` (if set) | one full scan |
 | GET | `/api/signatures` | public | pooled cheat/good hashes |
-| GET | `/api/model` | public | the shared, team-trained AI model (clients pull this) |
+| GET | `/api/model` | public | the shared, team-trained **mod** model (clients pull this) |
+| GET | `/api/smodel` | public | the shared, team-trained **overall-scan** model (clients pull this too) |
 | GET | `/` | — | the dashboard |
 
-Every scan can include a `samples` array (labelled feature vectors). The backend runs
-one bounded, base-anchored SGD step per sample, so **one shared model learns from every
-team member's scans**. Clients fetch `/api/model` each run and use it. The base-anchoring
+Every scan can include a `samples` array (labelled feature vectors) **and** a
+`sessionSample` (one labelled vector for the scan as a whole). The backend runs one
+bounded, base-anchored SGD step per sample, so **two shared models learn from every
+team member's scans**: one that judges single mods, and one that judges a whole scan
+(mods + system + processes + JVM + history). Clients fetch `/api/model` each run and use it. The base-anchoring
 means the shared model adapts to new cheats but can't drift into false positives.
 
 > The write key lives in the (public) tool config, so treat it as append-only: worst

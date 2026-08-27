@@ -75,6 +75,22 @@ cd ml && python3 build_dataset.py && python3 train_model.py
 - `doomsdayclient.com` is **blocked by this cloud env's egress proxy**, so no jar/hash could be pulled here. Mirrors seen in search: 9minecraft.net, exloader.net, cyde.xyz — NOT added as cheat download-domains on purpose (they also host legit mods → would cause false Zone.Identifier flags). Only dedicated cheat-vendor domains belong in `downloadDomains`.
 - Added `HoleFill` / `AutoHoleFill` to `suspiciousPatterns` (distinctive crystal-PvP term, no legit-mod collision).
 
+## Overall-scan AI (the second model) — newest work
+The mod model scores ONE jar. A **session model** now scores the WHOLE scan and learns from it.
+- `ml/session_model.py` is the **source of truth** for its 12 weights → exports `ml/session_model.json` → embedded in the `.ps1` as `$script:smWeights` (parity is machine-checked) and auto-updated from GitHub like the mod model.
+- Features: flagged/review/unverified/random-name ratios, cheat-site download, hard-confirmed cheat, system issues, JVM injection, BAM-deleted executables, cheat processes, stray jars, cheat folders.
+- PS functions: `Get-SessionRaw`, `Get-SessionVector`, `Invoke-SessionModel`, `Get-SessionVerdict`, `Get-SessionVerdictCached`, `Get-SessionLabel`, `Update-SessionModelOnline`, `Write-SessionCard`.
+- **Evidence collection** was wired into three places: the mod loop (random names, cheat-site downloads, hard-confirmed), the JVM scan (`$script:Evidence.JvmInject`), and `Run-PCscan` (cheat processes, cheat folders, stray jars). BAM comes from `$script:BamDeleted`.
+- **Ordering fix:** `Send-ScanResult` used to run BEFORE the deep/PC/BAM scans, so the team dashboard never saw that evidence. It now runs at the very end, after every stage — together with the overall verdict card and the session learning step.
+- **Auto-labelling:** only unambiguous scans teach it (hard-confirmed / JVM injection / cheat process → 1; all-verified, issue-free scan → 0; everything else → no learning). That is what keeps it from drifting.
+- **Federated:** the scan payload carries `sessionSample` + `session`; `server.js` and `worker.js` both train a shared session model and serve it at **`/api/smodel`**, which clients pull each run.
+- Persisted in `learned.json` as `sweights` / `sintercept` / `ssamples` / `sessionModelVersion`.
+
+Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan pattern **13% → 39%** across 30 scans from 3 simulated team members while clean scans stayed Clean (3%) and hard-confirmed stayed Confirmed (86%). `-SelfTest` is now **13 cases** (8 mod + 5 whole-scan) and all 5 new ones were verified against the PS-embedded weights.
+
+## Also changed
+- **The tool no longer opens anything on your PC.** `New-HtmlReport` used to call `Invoke-Item` (opening the report in your default app) and `Start-Process explorer.exe /select` (popping a file-explorer window). Both removed — it just prints the path now. Better for trust and it stops the window spam at the end of a scan.
+
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test** of the whole flow (auto-detect, scan, report, team upload).
