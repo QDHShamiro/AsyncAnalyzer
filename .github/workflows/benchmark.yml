@@ -90,6 +90,11 @@ jobs:
       - name: Benchmark
         run: python3 ml/benchmark.py
 
+      # The landing page and the rule documentation quote the numbers the
+      # benchmark just measured, so they are rebuilt in the same step.
+      - name: Build the site
+        run: python3 ml/site.py
+
       - name: Publish the numbers to the run summary
         if: always()
         run: cat BENCHMARKS.md >> "$GITHUB_STEP_SUMMARY"
@@ -104,13 +109,13 @@ jobs:
       - name: Commit refreshed results
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
-          if git diff --quiet -- BENCHMARKS.md ml/benchmark_history.csv docs/index.html; then
+          if git diff --quiet -- BENCHMARKS.md ml/benchmark_history.csv docs/; then
             echo "unchanged"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add BENCHMARKS.md ml/benchmark_history.csv docs/index.html
+          git add BENCHMARKS.md ml/benchmark_history.csv docs/
           git commit -m "Refresh benchmark results [skip ci]"
           # main can move while the benchmark runs (it takes ~2 min), which rejected
           # the first run's push. Rebase onto whatever landed meanwhile and retry.

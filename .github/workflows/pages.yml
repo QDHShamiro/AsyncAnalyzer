@@ -1,0 +1,56 @@
+# Publishes the public site. Deploying from a workflow rather than from a branch
+# folder means `enablement: true` below can switch Pages on through the API, so
+# the site goes live without anyone opening the repository settings.
+name: Site
+
+on:
+  push:
+    branches: [main]
+  # The benchmark commits refreshed numbers with [skip ci], which would skip this
+  # workflow too and leave the site showing stale figures. Redeploy when it finishes.
+  workflow_run:
+    workflows: ["Benchmark"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a queued run replaces an older one rather than racing it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      # The pages are generated, never hand-written: the landing page quotes the
+      # measured numbers and the rule documentation is read out of the shipped
+      # source, so neither can drift from what the tool actually does.
+      - name: Build the site
+        run: python3 ml/site.py
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

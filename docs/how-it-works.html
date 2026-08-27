@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AsyncAnalyzer</title>
-<meta name="description" content="A local, open-source Minecraft mod scanner that produces evidence a screenshare moderator can act on.">
+<title>How AsyncAnalyzer decides</title>
+<meta name="description" content="Every rule the scanner applies, read out of the shipped source when this page is built.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
@@ -241,80 +241,102 @@ footer.site{
 }
 </style></head>
 <body><div class="wrap">
-<nav class="site"><a href="index.html" aria-current="page">Overview</a><a href="benchmarks.html">Benchmarks</a><a href="how-it-works.html">How it works</a><span class="grow"></span><a href="https://github.com/QDHShamiro/AsyncAnalyzer">GitHub &#8599;</a></nav>
+<nav class="site"><a href="index.html">Overview</a><a href="benchmarks.html">Benchmarks</a><a href="how-it-works.html" aria-current="page">How it works</a><span class="grow"></span><a href="https://github.com/QDHShamiro/AsyncAnalyzer">GitHub &#8599;</a></nav>
 
 <header>
-  <h1>Know what is in your mods folder &mdash; and be able to prove it.</h1>
-  <p class="lede">AsyncAnalyzer reads every mod on a Windows PC, works out what its code
-  actually does, and writes a report a screenshare moderator can act on. It runs entirely
-  on the machine: nothing is uploaded, nothing is installed, nothing is changed.</p>
+  <h1>How the verdict is reached</h1>
+  <p class="lede">Everything on this page is read out of the shipped scanner when the page is
+  built, so it describes the rules that are actually running. The scanner itself is one
+  readable file &mdash; this is the short version of it.</p>
 </header>
 
-<div class="cmd">
-  <div class="cmd-head"><span>Run it &mdash; PowerShell</span><span class="grow"></span>
-    <button class="btn" id="cp" onclick="copyCmd()">Copy</button></div>
-  <pre id="oneliner">powershell -ExecutionPolicy Bypass -Command &quot;iex (irm &#x27;https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1&#x27;)&quot;</pre>
-</div>
-<p class="note" style="margin-top:12px">No flags, no questions. It finds the Minecraft
-installations by itself, decides how deep to look, and tells you at the end what it could
-<em>not</em> check.</p>
+<section>
+  <div class="label">Step one &mdash; is this a mod anyone else has?</div>
+  <p class="note">Every jar is hashed and looked up on Modrinth and CurseForge. A hash that
+  matches a real published release is <b>capped as safe</b> and no rule below can flag it.
+  That single decision is why an anticheat mod full of the word <span class="mono">killaura</span>
+  is not accused of being one.</p>
+  <p class="note" style="margin-top:10px">The catch, and it is deliberate: a matching
+  <em>modid</em> is not the same as a matching hash. A cheat that writes
+  <span class="mono">"id":"sodium"</span> into its metadata gets no protection at all &mdash;
+  only the real file does.</p>
+</section>
 
 <section>
-  <div class="label">Measured, not claimed</div>
-  <div class="cards">
-    <div class="card"><span class="k">0</span><b>false flags</b>
-      <span>on 174 real Java libraries from Maven Central &mdash; through the full verdict
-      chain, not one rule. The build fails if that ever stops being true.</span></div>
-    <div class="card"><span class="k">14</span><b>behaviours read from bytecode</b>
-      <span>What a mod <em>does</em>, taken from the compiled code. Renaming a class or
-      encrypting its strings does not change it.</span></div>
-    <div class="card"><span class="k">22</span><b>features per mod</b>
-      <span>Scored by a model that runs in PowerShell itself &mdash; no cloud, no API key,
-      no dependency to install.</span></div>
+  <div class="label">Step two &mdash; what does the code do?</div>
+  <p class="note">The jar's classes are parsed and their constant pools read: the table of
+  every type, method and field the class refers to. That is what the code <em>does</em>, and
+  it survives renaming, obfuscation and string encryption, because a method call has to name
+  its target for the JVM to run it.</p>
+  <div class="chips"><span class="chip">attack</span><span class="chip">classload</span><span class="chip">crypto</span><span class="chip">entityscan</span><span class="chip">exec</span><span class="chip">input</span><span class="chip">instrument</span><span class="chip">movepacket</span><span class="chip">net</span><span class="chip">pktlisten</span><span class="chip">reflect</span><span class="chip">render</span><span class="chip">rotation</span><span class="chip">unsafe</span></div>
+  <p class="note" style="margin-top:18px">14 behaviours are counted, as a share of the classes
+  in the jar rather than a raw count, so a large mod is not suspicious for being large:</p>
+  <div class="rules-grid"><div class="rule"><b>attack</b><span>attacking an entity through the game&#x27;s combat path</span></div><div class="rule"><b>classload</b><span>defining a class at runtime from bytes it holds</span></div><div class="rule"><b>crypto</b><span>decrypting data before using it</span></div><div class="rule"><b>entityscan</b><span>walking the list of entities in the world</span></div><div class="rule"><b>exec</b><span>starting another program</span></div><div class="rule"><b>input</b><span>reading the game&#x27;s own keyboard and mouse bindings</span></div><div class="rule"><b>instrument</b><span>attaching to and rewriting a running program</span></div><div class="rule"><b>movepacket</b><span>building a movement packet by hand instead of moving the player</span></div><div class="rule"><b>net</b><span>opening a network connection of its own</span></div><div class="rule"><b>pktlisten</b><span>intercepting packets before the game sees them</span></div><div class="rule"><b>reflect</b><span>reaching into code it was not given access to</span></div><div class="rule"><b>render</b><span>drawing to the screen</span></div><div class="rule"><b>rotation</b><span>writing the player&#x27;s look direction directly</span></div><div class="rule"><b>unsafe</b><span>using sun.misc.Unsafe to bypass the JVM&#x27;s own rules</span></div></div>
+</section>
+
+<section>
+  <div class="label">Where the line is drawn</div>
+  <p class="note">The interesting cases are the ones where a legitimate mod and a cheat do
+  something similar, and the difference is precise:</p>
+  <ul class="pts">
+    <li><b>Automation vs. cheating.</b> An auto-walk mod holds the movement key through the
+    game's own input system, so the game produces the movement. A movement cheat builds and
+    sends its own position packet. Same outcome on screen, opposite thing in the bytecode.</li>
+    <li><b>Seeing vs. showing.</b> A minimap reading entity positions and an ESP reading
+    entity positions are the same operation. That one is <b>not</b> decidable from bytecode,
+    so it is surfaced for a person instead of accused &mdash; on purpose, at a cost in
+    detection.</li>
+    <li><b>Instrumentation vs. injection.</b> Plenty of real libraries attach to a running
+    JVM &mdash; that is their job. A jar sitting in a mods folder doing it is not.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="label">The score, and what each band means</div>
+  <p class="note">Every mod ends on a 0&ndash;100 score. The model contributes most of it;
+  hard rules can raise it and verification can cap it.</p>
+  <div class="bands"><div class="band" style="--bc:#1c7f47"><span class="nm">Clean</span><span class="rg">0-29</span><span class="ds">Nothing cheat-like. Verified mods are capped here and cannot be flagged by any rule.</span></div><div class="band" style="--bc:#96610a"><span class="nm">Review</span><span class="rg">30-59</span><span class="ds">Something does not fit, but it is not proof. A person decides.</span></div><div class="band" style="--bc:#c2410c"><span class="nm">Likely</span><span class="rg">60-84</span><span class="ds">Strong signs. Every point needs an answer before it is closed.</span></div><div class="band" style="--bc:#b91c1c"><span class="nm">Confirmed</span><span class="rg">85-100</span><span class="ds">A hard rule matched: a known hash, a cheat-client package path, a cheat download source, or a client live in memory.</span></div></div>
+</section>
+
+<section>
+  <div class="label">Rules that override the model</div>
+  <p class="note">A model is a good judge of ordinary cases and the wrong tool for certainties.
+  These are not learned and cannot be argued down:</p>
+  <div class="rule"><b>the file was downloaded from a known cheat site</b><span>score is raised to at least <span class="mono">75</span>, whatever the model says</span></div><div class="rule"><b>the jar claims an identity that is not its own</b><span>score is raised to at least <span class="mono">70</span>, whatever the model says</span></div>
+</section>
+
+<section>
+  <div class="label">The whole scan, not just the files</div>
+  <p class="note">A second model scores the scan as a whole across 15 signals &mdash; the mods,
+  the system checks, running processes, what is live in the game's memory, and which programs
+  ran on the PC and were then deleted. It exists because the strongest evidence often is not in
+  the mods folder at all: a ghost client is injected into the running game, and deleting the
+  jar afterwards does not remove it from memory.</p>
+</section>
+
+<section>
+  <div class="label">What it does not do</div>
+  <ul class="pts">
+    <li><b>It cannot prove innocence.</b> It reports what it checked and what it could not.
+    A clean verdict on a scan that ran without admin rights, with the game closed, covers
+    much less than one that ran with both &mdash; and the report says so.</li>
+    <li><b>ESP is not detected.</b> See above. A mob-radar minimap and an ESP are the same
+    code.</li>
+    <li><b>It is not an anticheat.</b> It looks at one PC at one moment. It does not watch
+    gameplay and cannot see what a player did on a server.</li>
+    <li><b>Behaviour, not intent.</b> It can tell you a mod forges movement packets. Whether
+    your server forbids that is your rule to make.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="label">Version this page describes</div>
+  <div class="chips">
+    <span class="chip">tool 4.0.0</span><span class="chip">mod model v2</span>
+    <span class="chip">scan model v2</span><span class="chip">signatures v6</span>
+    <span class="chip">20 package paths</span><span class="chip">31 client tokens</span>
   </div>
-  <p class="note" style="margin-top:16px"><a href="benchmarks.html">See the full benchmark</a>
-  &mdash; rerun automatically on every change, with the history.</p>
 </section>
-
-<section>
-  <div class="label">Why you can run this on your own PC</div>
-  <ul class="pts">
-    <li><b>It only reads.</b> No file is modified, moved or deleted. No program is installed
-    and nothing is left running afterwards.</li>
-    <li><b>Nothing leaves the machine.</b> The analysis is local. Team upload exists but is
-    off unless a team turns it on, and it sends results &mdash; never your files.</li>
-    <li><b>You can read it before you run it.</b> The whole scanner is one PowerShell file.
-    Open the link in a browser and read it top to bottom.</li>
-    <li><b>It says what it could not check.</b> A clean result only ever covers what was
-    actually looked at, and the report lists the gaps next to the verdict instead of
-    implying more.</li>
-    <li><b>It does not open anything.</b> No windows pop up, no file explorer, no browser.
-    It prints where the report is and stops.</li>
-  </ul>
-</section>
-
-<section>
-  <div class="label">What the report gives a moderator</div>
-  <ul class="pts">
-    <li><b>One verdict</b>, judged across mods, system, processes, the live game and the
-    execution history together &mdash; not one number per file to add up by hand.</li>
-    <li><b>Every finding with its reasoning</b> and the exact paths, hashes, process IDs and
-    memory addresses behind it.</li>
-    <li><b>A coverage box</b> naming what could not be checked, so nobody reads more into a
-    clean result than it says.</li>
-    <li><b>Prints to PDF</b>, so it can be attached to a ban appeal.</li>
-  </ul>
-</section>
-
-<script>
-function copyCmd(){
-  var t=document.getElementById('oneliner').textContent, b=document.getElementById('cp');
-  var ok=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1400);};
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,function(){});return;}
-  var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();
-  try{document.execCommand('copy');ok();}catch(e){}document.body.removeChild(a);
-}
-</script>
 
 <footer class="site">
   AsyncAnalyzer is built by Async Studio and is open source &mdash; the whole scanner is
