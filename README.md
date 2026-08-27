@@ -11,7 +11,7 @@
 [![No False Flags](https://img.shields.io/badge/false%20positives-0%20on%20test%20set-brightgreen)](#-proof-it-works)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 [![Benchmark](https://github.com/QDHShamiro/AsyncAnalyzer/actions/workflows/benchmark.yml/badge.svg)](https://github.com/QDHShamiro/AsyncAnalyzer/actions/workflows/benchmark.yml)
-[![Real libraries](https://img.shields.io/badge/false%20flags-0%20of%20122%20real%20libraries-brightgreen)](BENCHMARKS.md)
+[![Real libraries](https://img.shields.io/badge/false%20flags-0%20of%20177%20real%20libraries-brightgreen)](BENCHMARKS.md)
 
 **Scans your mods for cheat clients (Doomsday, LiquidBounce, Meteor, Vape…), malware and obfuscation — and gives every mod a cheat score with a reason. Verified mods are never flagged. Nothing is ever uploaded.**
 
@@ -303,9 +303,11 @@ in this repo are never hand-typed.
 
 | | |
 |---|---|
-| **False flags on real software** | **0** of **122** real Maven Central libraries flagged by a cheat rule |
-| Aim / killaura fingerprint | detected, independent of where it hides (class 0 → 4995 of 5000) |
+| **False flags on real software** | **0** of **177** real Maven Central libraries — through the *full* verdict chain, not just one rule |
+| Aim / killaura / pathing / timer | detected, independent of where it hides (class 0 → 4995 of 5000) |
 | Dropper (decrypt → defineClass) | detected |
+| Legit auto-walk vs. pathing cheat | told apart — the cheat forges its own movement packet, the mod uses the game's input |
+| Team learning | a new cheat pattern climbs 13% → 35% while clean scans stay at 9% |
 | Cost | ~0.35 ms per class; verified mods are skipped entirely |
 
 The build **fails** if a real library is ever flagged by a cheat rule. That gate exists

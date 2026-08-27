@@ -69,8 +69,8 @@ def build_corpus(tmp):
         print("javac failed:", r.stderr[-400:], file=sys.stderr)
         return None
     made = {}
-    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader"]),
-                        ("clean", ["Minimap", "ConfigBinder", "Keybinds"])):
+    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "Pathing", "Timer"]),
+                        ("clean", ["Minimap", "ConfigBinder", "Keybinds", "AutoWalk"])):
         for nm in names:
             cls = sorted(glob.glob(os.path.join(out, kind, nm + "*.class")))
             if not cls:
@@ -107,12 +107,18 @@ def main():
         # ---------------------------------------------------------- detection ---
         out("## Detection by behaviour")
         out()
+        out("\"Detected\" means the behaviour is recognised. Only the unambiguous ones become an")
+        out("accusation - the entity-sweep row is deliberately Review in the tool, because a")
+        out("mob-radar minimap does exactly the same thing.")
+        out()
         out("| cheat behaviour | detected | rule that catches it |")
         out("|---|:--:|---|")
         FAM = [("KillAura", "aim", "rotation written **and** its own movement packet forged"),
                ("Flight", "aim", "same fingerprint — forged movement"),
+               ("Pathing", "aim", "movement automation (Baritone-shaped) — forges its own movement"),
+               ("Timer", "aim", "several movement packets per tick"),
                ("Loader", "dropper", "decrypt **then** define a class"),
-               ("Esp", "esp", "render **and** a full entity sweep")]
+               ("Esp", "esp", "render **and** a full entity sweep — surfaced for **review**, never accused")]
         det = {}
         for nm, rule, why in FAM:
             jp = corpus.get(("cheat", nm))
@@ -130,6 +136,26 @@ def main():
         import io, zipfile
         cb = open(sorted(glob.glob(os.path.join(tmp, "out", "cheat", "KillAura*.class")))[0], "rb").read()
         fb = open(sorted(glob.glob(os.path.join(tmp, "out", "clean", "Keybinds*.class")))[0], "rb").read()
+        out("### The line between automation and cheating")
+        out()
+        out("A legitimate auto-walk mod and a pathing cheat both move the player without")
+        out("input. The difference is visible in the bytecode: the legit one drives the")
+        out("game's own input system, the cheat writes the movement packet itself.")
+        out()
+        out("| jar | forges its own movement packet | verdict |")
+        out("|---|:--:|---|")
+        for kind, nm in (("cheat", "Pathing"), ("clean", "AutoWalk")):
+            jp = corpus.get((kind, nm))
+            if not jp:
+                continue
+            r = bytecode.extract_jar(jp)
+            hit = rules(r)["aim"]
+            if hit != (kind == "cheat"):
+                failures.append("%s misclassified" % nm)
+            out("| %s (%s) | %s | %s |" % (nm, kind, "yes" if hit else "no",
+                                           "flagged" if hit else "clean"))
+        out()
+
         out("## Hiding depth")
         out()
         out("A cheat's modules need not sit at the front of the archive; real jars run to a")
@@ -222,6 +248,101 @@ def main():
         out("  It is evidence, not a guarantee.")
         out()
 
+        # ------------------------------------------------- end-to-end verdict ---
+        # The rules above are one input. What a user actually sees is the whole
+        # chain: features -> model -> hard rules -> band. Measure that, or the
+        # headline number describes a component nobody interacts with.
+        import verdict as _v
+        import features as _f
+        out("## End-to-end verdict — the whole chain, as a user sees it")
+        out()
+        out("Not just the behaviour rules: hash verification, the trained model, the hard")
+        out("rules and the banding together.")
+        out()
+        E2E = [
+            ("a cheat jar, unverified", dict(pkgpath=1, java_agent=1, strong_count=5,
+                                             high_entropy_pct=0.4, singlechar_cls_pct=0.3,
+                                             avg_entropy=7.0, reflection_count=4),
+             {"Confirmed", "Likely"}),
+            ("the same jar claiming to be 'sodium'", dict(pkgpath=1, java_agent=1, strong_count=5,
+                                                          high_entropy_pct=0.4, legit_modid=1),
+             {"Confirmed"}),
+            ("a real mod, hash-verified", dict(verified=1, legit_modid=1, reflection_count=3,
+                                               avg_entropy=6.3), {"Clean"}),
+            ("a real mod from a mirror, unverified", dict(legit_modid=1, reflection_count=3,
+                                                          avg_entropy=6.3), {"Clean"}),
+            ("an anticheat full of detection names", dict(legit_modid=1, strong_count=5,
+                                                          reflection_count=3), {"Clean"}),
+            ("a random-named jar, nothing else", dict(random_name=1, avg_entropy=5.6),
+             {"Review"}),
+            ("a random-named jar, verified", dict(random_name=1, verified=1), {"Clean"}),
+            ("a mod with an injected agent", dict(java_agent=1, legit_modid=1,
+                                                  reflection_count=3), {"Confirmed"}),
+        ]
+        out("| case | verdict | expected |")
+        out("|---|:--:|:--:|")
+        e2e_bad = 0
+        for label, raw, want in E2E:
+            r = _v.verdict(dict(raw))
+            ok = r["band"] in want
+            e2e_bad += not ok
+            out("| %s | %s%s | %s |" % (label, r["band"], "" if ok else " **wrong**",
+                                        "/".join(sorted(want))))
+        out()
+        if e2e_bad:
+            failures.append("%d end-to-end verdict cases wrong" % e2e_bad)
+
+        # every real library must come out Clean through the FULL chain too
+        e2e_fp = []
+        for jp in libs:
+            raw = _f.extract_from_jar(jp)
+            if _v.verdict(raw)["band"] != "Clean":
+                e2e_fp.append(os.path.basename(jp))
+        out("Through the same full chain, **%d of %d** real libraries come out as anything"
+            % (len(e2e_fp), len(libs)))
+        out("other than Clean%s." % ("" if not e2e_fp else ": " + ", ".join("`%s`" % f for f in e2e_fp[:8])))
+        out()
+        if e2e_fp:
+            failures.append("%d real libraries not Clean end-to-end" % len(e2e_fp))
+
+        # ------------------------------------------------- federated learning ---
+        # The team-mode claim is that shared learning makes detection better over
+        # time. That is testable, so it is tested rather than asserted.
+        import session_model as _s
+        import copy as _copy
+        out("## Team learning — does sharing scans actually help?")
+        out()
+        NOVEL = dict(total_mods=12, verified=0, random_named=9, review=2)
+        CLEAN = [dict(total_mods=25, verified=25), dict(total_mods=20, verified=0),
+                 dict(total_mods=40, verified=22, random_named=3),
+                 dict(total_mods=140, verified=90, random_named=4, mc_running=1)]
+        w, b = _copy.deepcopy(_s.WEIGHTS), _s.INTERCEPT
+        before = _s.verdict(NOVEL, w, b)["score"]
+        for _ in range(15):
+            w, b = _s.sgd_step(w, b, _s.raw_to_vector(NOVEL), 1)
+            for c in CLEAN:
+                w, b = _s.sgd_step(w, b, _s.raw_to_vector(c), 0)
+        after = _s.verdict(NOVEL, w, b)["score"]
+        worst_clean = max(_s.verdict(c, w, b)["score"] for c in CLEAN)
+        hard = _s.verdict(dict(total_mods=20, verified=12, flagged=1, hard_confirmed=1), w, b)
+        out("Simulating 15 rounds of a pattern the base model underrates, mixed with clean")
+        out("scans so drift would show up:")
+        out()
+        out("| | before | after |")
+        out("|---|---:|---:|")
+        out("| score for the new cheat pattern | %d%% | **%d%%** |" % (before, after))
+        out("| worst score among clean scans | — | %d%% (stays Clean) |" % worst_clean)
+        out("| a hard-confirmed cheat | — | %s |" % hard["band"])
+        out()
+        learned = after > before + 10
+        if not learned:
+            failures.append("federated learning did not improve the novel pattern")
+        if worst_clean >= 30:
+            failures.append("federated learning drifted: a clean scan left the Clean band")
+        out("Learning is base-anchored, so it adapts without being able to drift into")
+        out("flagging clean scans - which is the failure that would matter.")
+        out()
+
         # ------------------------------------------------------------ history ---
         import csv as _csv
         hist_path = os.path.join(HERE, "benchmark_history.csv")
@@ -265,6 +386,9 @@ def main():
         out()
         out("| gate | result |")
         out("|---|:--:|")
+        out("| every real library Clean through the full chain | %s |" % ("pass" if not e2e_fp else "**fail**"))
+        out("| end-to-end verdict cases correct | %s |" % ("pass" if not e2e_bad else "**fail**"))
+        out("| team learning improves without drifting | %s |" % ("pass" if learned and worst_clean < 30 else "**fail**"))
         out("| no real library flagged by a cheat rule | %s |" % ("pass" if not cheat_fp else "**fail**"))
         out("| aim fingerprint always detected | %s |" % ("pass" if det.get("KillAura") and det.get("Flight") else "**fail**"))
         out("| dropper always detected | %s |" % ("pass" if det.get("Loader") else "**fail**"))
