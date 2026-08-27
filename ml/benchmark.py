@@ -45,16 +45,38 @@ GATE_MIN_DROPPER_DETECT = 1.0
 
 
 def rules(r):
+    """The behaviour rules the tool actually ships, in the same shape as
+    Get-ModVerdict. Kept here so the benchmark measures the shipped rules rather
+    than a convenient subset of them."""
+    g = lambda k: r.get(k, 0.0)
     return {
-        "aim": r["bc_movepacket_ratio"] > 0 and r["bc_rotation_ratio"] > 0,
-        "esp": r["bc_render_ratio"] > 0 and r["bc_entityscan_ratio"] > 0,
-        "dropper": (r["bc_crypto_ratio"] >= 0.5
-                    and (r["bc_classload_ratio"] > 0 or r["bc_reflect_ratio"] >= 0.5)),
-        "agent": r["bc_instrument_ratio"] > 0,
+        # confirmed: forging movement paired with something no legit mod combines it with
+        "aim": g("bc_movepacket_ratio") > 0 and g("bc_rotation_ratio") > 0,
+        "scaffold": g("bc_blockplace_ratio") > 0 and g("bc_movepacket_ratio") > 0,
+        "speed": g("bc_movepacket_ratio") > 0 and g("bc_motion_ratio") > 0,
+        "invmove": g("bc_container_ratio") > 0 and g("bc_movepacket_ratio") > 0,
+        "dropper": (g("bc_crypto_ratio") >= 0.5
+                    and (g("bc_classload_ratio") > 0 or g("bc_reflect_ratio") >= 0.5)),
+        # likely
+        "nodinput": g("bc_movepacket_ratio") > 0 and g("bc_input_ratio") == 0,
+        "targeting": g("bc_entityscan_ratio") > 0 and g("bc_attack_ratio") > 0,
+        "autoclick": g("bc_attack_ratio") > 0 and g("bc_input_ratio") == 0,
+        "velocity": g("bc_pktlisten_ratio") > 0 and g("bc_motion_ratio") > 0,
+        "nuker": g("bc_blockbreak_ratio") > 0 and g("bc_input_ratio") == 0,
+        "freecam": (g("bc_rotation_ratio") > 0 and g("bc_render_ratio") > 0
+                    and g("bc_movepacket_ratio") == 0),
+        # server-rule: recognised for certain, legality is not a technical question
+        "esp": g("bc_render_ratio") > 0 and g("bc_entityscan_ratio") > 0,
+        "printer": (g("bc_blockplace_ratio") > 0 and g("bc_input_ratio") > 0
+                    and g("bc_movepacket_ratio") == 0),
+        "agent": g("bc_instrument_ratio") > 0,
     }
 
 
-CHEAT_RULES = ("aim", "esp", "dropper")
+# Every rule that can produce an accusation. A real library tripping any of these
+# fails the build - that is the gate the whole corpus exists to protect.
+CHEAT_RULES = ("aim", "scaffold", "speed", "invmove", "dropper",
+               "nodinput", "targeting", "autoclick", "velocity", "nuker", "freecam", "esp")
 
 
 def build_corpus(tmp):
@@ -129,7 +151,7 @@ def main():
                ("Pathing", "aim", "movement automation (Baritone-shaped) — forges its own movement"),
                ("Timer", "aim", "several movement packets per tick"),
                ("Loader", "dropper", "decrypt **then** define a class"),
-               ("Esp", "esp", "render **and** a full entity sweep — surfaced for **review**, never accused")]
+               ("Esp", "esp", "render **and** a full entity sweep — a **server-rule** finding, never an accusation")]
         det = {}
         for nm, rule, why in FAM:
             jp = corpus.get(("cheat", nm))
@@ -215,7 +237,9 @@ def main():
         out("| | count |")
         out("|---|---:|")
         out("| real libraries tested | %d |" % len(libs))
-        out("| **flagged by a cheat rule (aim / esp / dropper)** | **%d** |" % len(cheat_fp))
+        out("| **flagged by any of the %d cheat rules** | **%d** |"
+            % (len(CHEAT_RULES), len(cheat_fp)))
+        out("| rules checked | %s |" % ", ".join(CHEAT_RULES))
         out("| matched the Java-agent rule | %d |" % len(agent_fp))
         out()
         if cheat_fp:

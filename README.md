@@ -346,7 +346,7 @@ describe a rule the tool no longer runs.
 
 | | |
 |---|---|
-| **False flags on real software** | **0** of **177** real Maven Central libraries — through the *full* verdict chain, not just one rule |
+| **False flags on real software** | **0** of **179** real libraries — through the *full* verdict chain, against **all 12** cheat rules, not just one |
 | Aim / killaura / pathing / timer | detected, independent of where it hides (class 0 → 4995 of 5000) |
 | Combat, movement, world, ghost utilities | **198 of 222** reconstructed cheat variants caught &mdash; scaffold, no-fall, blink, speed, nuker, inventory-move, velocity, triggerbot, autoclicker, freecam, Baritone-style pathing |
 | Dropper (decrypt → defineClass) | detected |
@@ -374,12 +374,21 @@ Reproduce it yourself from a clean checkout:
 python3 ml/fetch_jars.py && python3 ml/benchmark.py
 ```
 
+`fetch_jars.py` pulls **179** real libraries — from Maven Central, and now also
+from Mojang's, Sponge's and Fabric's own repositories, so Mixin, Fabric's tooling
+and Minecraft's own libraries are in there. Those are the closest publicly
+downloadable thing to a real mod, and Mixin in particular rewrites bytecode for a
+living. Every download is verified to be a real jar containing classes: an error
+page saved as a `.jar` and two empty aggregator jars had been silently counted as
+libraries, and it now reports every declared library it could **not** fetch instead
+of letting the corpus quietly shrink.
+
 ## ✅ Proof it works
 
 | Test | Result |
 |---|---|
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
-| `ml/test_verdict.py` | **192/192** — cheats caught, real libs Clean, anticheats Clean, impersonation closed |
+| `ml/test_verdict.py` | **194/194** — cheats caught, real libs Clean, anticheats Clean, impersonation closed |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
 | `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |

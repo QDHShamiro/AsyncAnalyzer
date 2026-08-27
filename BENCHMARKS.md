@@ -16,7 +16,7 @@ mob-radar minimap does exactly the same thing.
 | Pathing | yes | movement automation (Baritone-shaped) — forges its own movement |
 | Timer | yes | several movement packets per tick |
 | Loader | yes | decrypt **then** define a class |
-| Esp | yes | render **and** a full entity sweep — surfaced for **review**, never accused |
+| Esp | yes | render **and** a full entity sweep — a **server-rule** finding, never an accusation |
 
 ### The line between automation and cheating
 
@@ -48,14 +48,15 @@ median of ~220 classes. Detection must not depend on where it hides.
 
 ## False flags on real software — the number that matters
 
-Negative class: **174 real libraries** from Maven Central (ASM, ByteBuddy,
+Negative class: **179 real libraries** from Maven Central (ASM, ByteBuddy,
 Netty, Guava, Kotlin, Spring, BouncyCastle, LWJGL — the library Minecraft
 itself uses for input and OpenGL — mockito, log4j, …).
 
 | | count |
 |---|---:|
-| real libraries tested | 174 |
-| **flagged by a cheat rule (aim / esp / dropper)** | **0** |
+| real libraries tested | 179 |
+| **flagged by any of the 12 cheat rules** | **0** |
+| rules checked | aim, scaffold, speed, invmove, dropper, nodinput, targeting, autoclick, velocity, nuker, freecam, esp |
 | matched the Java-agent rule | 13 |
 
 The agent matches are **correct, not false positives** — every one of these
@@ -67,9 +68,9 @@ abnormal; in an ordinary application classpath it is not.
 
 | | |
 |---|---|
-| classes parsed | 119006 |
-| time | ~45 s |
-| per class | ~0.4 ms |
+| classes parsed | 121301 |
+| time | ~60 s |
+| per class | ~0.5 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -83,7 +84,7 @@ so a normal run only pays for the unverified remainder.
 - **ESP is not decidable from bytecode.** ESP and a mob-radar minimap perform the
   same operations. The tool surfaces that behaviour for review rather than
   accusing, and deciding it needs identity (hash verification), not a bigger model.
-- A false-flag count of 0 means none of *these* 174 libraries were flagged.
+- A false-flag count of 0 means none of *these* 179 libraries were flagged.
   It is evidence, not a guarantee.
 
 ## End-to-end verdict — the whole chain, as a user sees it
@@ -102,7 +103,7 @@ rules and the banding together.
 | a random-named jar, verified | Clean | Clean |
 | a mod with an injected agent | Confirmed | Confirmed |
 
-Through the same full chain, **0 of 174** real libraries come out as anything
+Through the same full chain, **0 of 179** real libraries come out as anything
 other than Clean.
 
 ## Team learning — does sharing scans actually help?
@@ -130,12 +131,11 @@ of 0 means more as that number grows.
 | `2b72478` | 119 ████ | 0 | ok | ok | ok |
 | `2b56a3b` | 174 ██████ | 0 | ok | ok | ok |
 | `222e20f` | 174 ██████ | 0 | ok | ok | ok |
-| `local` | 177 ███████ | 0 | ok | ok | ok |
 | `b3efb99` | 174 ██████ | 0 | ok | ok | ok |
 | `bca1c5c` | 174 ██████ | 0 | ok | ok | ok |
 | `af6c847` | 174 ██████ | 0 | ok | ok | ok |
 | `e817099` | 174 ██████ | 0 | ok | ok | ok |
-| `75de5c0` | 174 ██████ | 0 | ok | ok | ok |
+| `local` | 179 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 

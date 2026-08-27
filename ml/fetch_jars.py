@@ -5,9 +5,21 @@ scanner false-flags: bytecode manipulators, reflection frameworks, networking,
 crypto, class loaders. If the detector stays quiet on these it will stay quiet
 on real mods.
 """
-import os, sys, urllib.request
+import os, sys, urllib.request, zipfile
 
 BASE = "https://repo1.maven.org/maven2"
+
+# Mojang, Sponge and Fabric publish to their own repositories, not to Maven
+# Central. An entry may name one with a 4th element; everything else defaults to
+# Central. These are the closest thing to a real Minecraft mod that is publicly
+# downloadable - Mixin in particular is the framework nearly every mod is built on
+# AND it rewrites bytecode for a living, so if instrumentation detection is ever
+# going to false-flag something, it flags that first.
+REPOS = {
+    "mojang": "https://libraries.minecraft.net",
+    "sponge": "https://repo.spongepowered.org/maven",
+    "fabric": "https://maven.fabricmc.net",
+}
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jars_legit")
 
 LIBS = [
@@ -34,9 +46,18 @@ LIBS = [
  ("org/apache/logging/log4j","log4j-core","2.23.1"),("org/apache/logging/log4j","log4j-api","2.23.1"),
  ("org/slf4j","slf4j-api","2.0.13"),("ch/qos/logback","logback-classic","1.5.6"),
  ("ch/qos/logback","logback-core","1.5.6"),
- # minecraft ecosystem
- ("com/mojang","brigadier","1.0.18"),("com/mojang","datafixerupper","8.0.16"),
- ("com/mojang","authlib","6.0.54"),("com/mojang","logging","1.2.7"),
+ # minecraft ecosystem. Only brigadier is on Maven Central; the rest come from
+ # Mojang's, Sponge's and Fabric's own repositories.
+ ("com/mojang","brigadier","1.0.18"),
+ ("com/mojang","datafixerupper","8.0.16","mojang"),
+ ("com/mojang","authlib","6.0.54","mojang"),("com/mojang","logging","1.2.7","mojang"),
+ ("com/mojang","blocklist","1.0.10","mojang"),("com/mojang","patchy","2.2.10","mojang"),
+ ("com/mojang","text2speech","1.17.9","mojang"),
+ ("org/spongepowered","mixin","0.8.5","sponge"),
+ ("net/fabricmc","tiny-mappings-parser","0.3.0+build.17","fabric"),
+ ("net/fabricmc","tiny-remapper","0.8.6","fabric"),
+ ("net/fabricmc","access-widener","2.1.0"),
+ ("net/fabricmc","mapping-io","0.5.1"),
  # kotlin / language runtimes
  ("org/jetbrains/kotlin","kotlin-stdlib","1.9.23"),("org/jetbrains/kotlin","kotlin-reflect","1.9.23"),
  ("org/jetbrains","annotations","24.1.0"),("org/scala-lang","scala-library","2.13.13"),
@@ -47,7 +68,7 @@ LIBS = [
  ("org/apache/commons","commons-math3","3.6.1"),("commons-cli","commons-cli","1.6.0"),
  # db / pooling / crypto-adjacent
  ("com/zaxxer","HikariCP","5.1.0"),("org/xerial","sqlite-jdbc","3.45.3.0"),
- ("mysql","mysql-connector-java","8.0.33"),("org/bouncycastle","bcprov-jdk18on","1.78"),
+ ("com/mysql","mysql-connector-j","9.1.0"),("org/bouncycastle","bcprov-jdk18on","1.78"),
  ("org/bouncycastle","bcpkix-jdk18on","1.78"),
  # di / bytecode-heavy frameworks
  ("com/google/inject","guice","7.0.0"),("org/apache/maven","maven-model","3.9.6"),
@@ -110,7 +131,7 @@ LIBS = [
  ("org/apache/commons","commons-configuration2","2.10.1"),("commons-beanutils","commons-beanutils","1.9.4"),
  ("org/apache/commons","commons-csv","1.11.0"),("org/apache/commons","commons-exec","1.4.0"),
  ("com/google/code/findbugs","jsr305","3.0.2"),("org/jetbrains/kotlinx","kotlinx-coroutines-core-jvm","1.8.0"),
- ("org/jetbrains/kotlin","kotlin-stdlib-jdk8","1.9.23"),("io/github/classgraph","classgraph","4.8.172"),
+ ("io/github/classgraph","classgraph","4.8.172"),
  ("org/apache/xbean","xbean-reflect","4.24"),("cglib","cglib-nodep","3.3.0"),
  ("org/springframework","spring-expression","6.1.6"),("org/springframework","spring-web","6.1.6"),
  ("org/springframework","spring-jdbc","6.1.6"),("org/hibernate/orm","hibernate-core","6.4.4.Final"),
@@ -128,7 +149,7 @@ LIBS = [
  ("org/imgscalr","imgscalr-lib","4.2"),("com/twelvemonkeys/imageio","imageio-core","3.10.1"),
  ("org/openjdk/jmh","jmh-core","1.37"),("org/openjdk/jol","jol-core","0.17"),
  ("org/assertj","assertj-core","3.25.3"),("org/hamcrest","hamcrest","2.2"),
- ("net/jqwik","jqwik","1.8.4"),("org/testcontainers","testcontainers","1.19.7"),
+ ("net/jqwik","jqwik-engine","1.10.1"),("org/testcontainers","testcontainers","1.19.7"),
  ("io/rest-assured","rest-assured","5.4.0"),("org/wiremock","wiremock","3.5.2"),
  ("org/xerial/snappy","snappy-java","1.1.10.5"),("org/brotli","dec","0.1.2"),
  ("com/auth0","java-jwt","4.4.0"),("org/keycloak","keycloak-core","24.0.3"),
@@ -138,17 +159,38 @@ LIBS = [
  ("org/apache/ant","ant","1.10.14"),("org/codehaus/plexus","plexus-utils","4.0.1"),
 ]
 
-def fetch(g, a, v):
+def usable(path):
+    """A real library, not an error page or a POM-only aggregator.
+
+    Both were sitting in the corpus and being counted: brigadier had saved a
+    554-byte error response as a .jar, and netty-all is metadata with no classes
+    in it. The benchmark headline is "0 false flags on N real libraries", so N has
+    to mean N libraries.
+    """
+    try:
+        if os.path.getsize(path) < 1000:
+            return False
+        with zipfile.ZipFile(path) as z:
+            return any(n.endswith(".class") for n in z.namelist())
+    except Exception:
+        return False
+
+
+def fetch(g, a, v, repo=None):
     p = os.path.join(OUT, "%s-%s.jar" % (a, v))
-    if os.path.exists(p) and os.path.getsize(p) > 1000:
-        return "cached"
-    url = "%s/%s/%s/%s/%s-%s.jar" % (BASE, g, a, v, a, v)
+    if os.path.exists(p):
+        if usable(p):
+            return "cached"
+        os.remove(p)          # error page or empty jar - do not leave it to be counted
+    base = REPOS.get(repo, BASE)
+    url = "%s/%s/%s/%s/%s-%s.jar" % (base, g, a, v, a, v)
     try:
         with urllib.request.urlopen(url, timeout=45) as r:
             data = r.read()
-        if len(data) < 1000:
-            return "tiny"
         open(p, "wb").write(data)
+        if not usable(p):
+            os.remove(p)
+            return "not-a-library"
         return "ok"
     except Exception as e:
         return "fail(%s)" % str(e)[:30]
@@ -156,12 +198,25 @@ def fetch(g, a, v):
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     ok = cached = fail = 0
-    for g, a, v in LIBS:
-        s = fetch(g, a, v)
+    missing = []
+    for entry in LIBS:
+        g, a, v = entry[0], entry[1], entry[2]
+        repo = entry[3] if len(entry) > 3 else None
+        s = fetch(g, a, v, repo)
         if s == "ok": ok += 1
         elif s == "cached": cached += 1
         else:
             fail += 1
+            missing.append("%s:%s (%s)" % (a, v, repo or "central"))
             print("  ", a, v, s)
-    print("downloaded=%d cached=%d failed=%d  total jars=%d" % (
-        ok, cached, fail, len([f for f in os.listdir(OUT) if f.endswith('.jar')])))
+    have = len([f for f in os.listdir(OUT) if f.endswith(".jar")])
+    print("downloaded=%d cached=%d failed=%d  total jars=%d" % (ok, cached, fail, have))
+    # Failures used to be printed and forgotten, so the declared list drifted away
+    # from what is actually on disk - twelve libraries had silently stopped
+    # downloading, and the corpus shrank without anything saying so.
+    if missing:
+        print("\nNOT IN THE CORPUS (%d of %d declared):" % (len(missing), len(LIBS)))
+        for m in missing:
+            print("   ", m)
+        print("The benchmark counts what is on disk, so its numbers stay honest -")
+        print("but these families are not being tested. Fix the coordinates or drop them.")
