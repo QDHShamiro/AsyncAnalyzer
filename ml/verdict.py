@@ -48,6 +48,13 @@ def verdict(raw):
         score = 100
     if raw.get("pkgpath"):
         score = max(score, 80)
+    # mechanism-based hard rules (mirror of AsyncAnalyzer.ps1 Get-ModVerdict)
+    if raw.get("java_agent"):
+        score = max(score, 90 if raw.get("agent_retransform") else 80)
+    if raw.get("hidden_payload", 0) > 0:
+        score = max(score, 75)
+    if len(raw.get("loader_ids", []) or []) >= 3:
+        score = max(score, 70)
     if raw.get("cheatsite"):
         score = max(score, 75)
     if raw.get("fake_identity"):

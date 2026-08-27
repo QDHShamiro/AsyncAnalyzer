@@ -3557,10 +3557,11 @@ if (-not $SkipModCheck) {
                 FilenameClient = $filenameClient; FilenameToken = $filenameToken; RandomName = $randomName
             }
             $verdict = Get-ModVerdict $ctx
+            $mechCheat = $feat.JavaAgent -or ($feat.HiddenPayload -gt 0)
 
             if ($randomName) { $script:Evidence.RandomNamed++ }
             if ($cheatSite)  { $script:Evidence.CheatSiteDl++ }
-            if ((-not $verified) -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite)) { $script:Evidence.HardConfirmed++ }
+            if ((-not $verified) -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite -or $mechCheat)) { $script:Evidence.HardConfirmed++ }
 
             $rec = [PSCustomObject]@{
                 FileName = $jar.Name; FilePath = $jar.FullName; Hash = $hash
@@ -3586,7 +3587,6 @@ if (-not $SkipModCheck) {
             # the same folder must not re-weight the model toward whatever it already believes.
             if ($hash) {
                 $rawv = Get-ModFeatureVector $ctx
-                $mechCheat = $feat.JavaAgent -or ($feat.HiddenPayload -gt 0)
                 if ($verified) {
                     $isNew = $script:knownGoodHashes.Add($hash)
                     [void]$script:sessionGood.Add($hash)
