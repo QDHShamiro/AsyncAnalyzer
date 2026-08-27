@@ -20,6 +20,13 @@ on:
 permissions:
   contents: write
 
+# Two overlapping runs both regenerate the same committed files and collide on the
+# push. Serialise them; a queued run supersedes an older one because only the
+# newest result is worth publishing.
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -117,11 +124,29 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add BENCHMARKS.md ml/benchmark_history.csv docs/
           git commit -m "Refresh benchmark results [skip ci]"
-          # main can move while the benchmark runs (it takes ~2 min), which rejected
-          # the first run's push. Rebase onto whatever landed meanwhile and retry.
+          # main can move while the benchmark runs (it takes ~2 min). Rebasing was
+          # the first attempt at that and it is wrong: when two runs overlap, both
+          # rewrite the same generated files and the rebase stops on a conflict that
+          # nothing in CI can resolve, so the run fails having produced correct
+          # results it then throws away.
+          #
+          # These files are a pure function of the sources, so there is nothing to
+          # merge. Take whatever is on main now and regenerate on top of it - which
+          # also means the published numbers describe the newest code rather than
+          # the commit this run happened to start from.
           for i in 1 2 3; do
             if git push; then exit 0; fi
-            git pull --rebase origin main || exit 1
+            git rebase --abort 2>/dev/null || true
+            git fetch origin main
+            git reset --hard origin/main
+            python3 ml/benchmark.py || exit 1
+            python3 ml/site.py || exit 1
+            git add BENCHMARKS.md ml/benchmark_history.csv docs/
+            if git diff --cached --quiet; then
+              echo "already current on main"
+              exit 0
+            fi
+            git commit -m "Refresh benchmark results [skip ci]"
             sleep $((i * 3))
           done
           echo "could not push benchmark results" >&2
