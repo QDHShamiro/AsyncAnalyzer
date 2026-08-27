@@ -131,6 +131,58 @@ def coverage_test():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+
+def parity_test():
+    """The behaviour table lives in two places - ml/bytecode.py and the shipped
+    PowerShell. They have to name the same categories and the same patterns, or the
+    tool detects something different from what the corpus measured and nothing here
+    would notice."""
+    import re
+    root = os.path.dirname(HERE)
+    ps = open(os.path.join(root, "src", "30-runtime.ps1"), encoding="utf-8").read()
+    block = re.search(r"\$script:bcBehaviour = \[ordered\]@\{(.*?)\n\}", ps, re.S).group(1)
+    ps_cats = {}
+    for m in re.finditer(r"^\s*'(\w+)'\s*=\s*'(.*)'\s*$", block, re.M):
+        ps_cats[m.group(1)] = m.group(2)
+    py_cats = {k[3:]: "|".join(v) for k, v in bytecode.BEHAVIOUR.items()}
+
+    passed = failed = 0
+    print("\n=== PowerShell / Python behaviour parity ===")
+    missing = sorted(set(py_cats) - set(ps_cats))
+    extra = sorted(set(ps_cats) - set(py_cats))
+    for label, bad in (("only in Python", missing), ("only in PowerShell", extra)):
+        if bad:
+            print("  FAIL  %s: %s" % (label, ", ".join(bad)))
+            failed += 1
+        else:
+            passed += 1
+    for k in sorted(set(ps_cats) & set(py_cats)):
+        # compare the alternation sets, not the raw string - order is free
+        a = set(x for x in py_cats[k].split("|") if x)
+        b = set(x for x in ps_cats[k].split("|") if x)
+        if a == b:
+            passed += 1
+        else:
+            failed += 1
+            print("  FAIL  %s differs: py-only=%s ps-only=%s"
+                  % (k, sorted(a - b), sorted(b - a)))
+    print("  %d categories compared, %d mismatch(es)" % (len(py_cats), failed))
+
+    # A bare "\.swing" matched javax/swing and rhino's swingGui field. Pin the fix:
+    # a Swing application dropped into a mods folder must not read as combat code.
+    for sym, want in (("javax/swing/JButton.setText", False),
+                      ("org/x/MoreWindows.swingGui", False),
+                      ("net/minecraft/client/player/LocalPlayer.swing", True),
+                      ("net/minecraft/class_746.method_6104", True)):
+        got = bool(bytecode._COMPILED["bc_attack"].search(sym))
+        ok = got == want
+        passed += ok
+        failed += (not ok)
+        print("  %s  attack pattern on %-46s -> %s"
+              % ("PASS" if ok else "FAIL", sym, got))
+    return passed, failed
+
+
 def main():
     if not shutil.which("javac"):
         print("javac not available - skipping bytecode corpus test")
@@ -172,6 +224,10 @@ def main():
         cp, cf = coverage_test()
         passed += cp
         failed += cf
+
+        pp, pf = parity_test()
+        passed += pp
+        failed += pf
 
         print("\n=== RESULT: %d passed, %d failed ===" % (passed, failed))
         return 0 if failed == 0 else 1

@@ -99,7 +99,12 @@ BEHAVIOUR = {
     "bc_rotation":   [r"\.setYRot", r"\.setXRot", r"\.setYaw", r"\.setPitch",
                       r"\.method_36456", r"\.method_36457"],
     "bc_attack":     [r"MultiPlayerGameMode\.attack", r"ServerboundInteractPacket",
-                      r"PlayerInteractEntityC2SPacket", r"\.swing", r"class_2824"],
+                      r"PlayerInteractEntityC2SPacket", r"class_2824",
+                      # A bare "\.swing" matched javax/swing and any field called
+                      # swingGui - rhino's debugger UI tripped it. Qualify it to the
+                      # actual Minecraft method so a Swing app cannot look like combat.
+                      r"(?:LocalPlayer|Player|LivingEntity)\.swing\b", r"\.swingHand\b",
+                      r"\.method_6104\b"],
     # Both Wurst and Meteor hook the network layer itself, not just the listener.
     # Qualified on purpose - a bare "Connection" is an everyday identifier.
     "bc_pktlisten":  [r"ClientPacketListener", r"ClientPlayNetworkHandler", r"class_634",
@@ -121,6 +126,17 @@ BEHAVIOUR = {
                       r"java/net/http", r"URL\.openStream"],
     "bc_unsafe":     [r"sun/misc/Unsafe", r"jdk/internal/misc/Unsafe"],
     "bc_instrument": [r"java/lang/instrument", r"Instrumentation\."],
+    # Minecraft-specific API names on purpose. A behaviour category only earns its
+    # place if a real Maven library cannot match it by accident - these name packets
+    # and interaction-manager methods that exist nowhere outside the game.
+    "bc_blockplace": [r"ServerboundUseItemOnPacket", r"PlayerInteractBlockC2SPacket",
+                      r"class_2885", r"\.useItemOn", r"\.interactBlock", r"\.method_2896"],
+    "bc_blockbreak": [r"ServerboundPlayerActionPacket", r"PlayerActionC2SPacket",
+                      r"class_2846", r"\.startDestroyBlock", r"\.destroyBlock", r"\.method_2910"],
+    "bc_container":  [r"ServerboundContainerClickPacket", r"ClickSlotC2SPacket",
+                      r"class_2813", r"AbstractContainerMenu", r"ScreenHandler", r"class_1703"],
+    "bc_motion":     [r"\.setDeltaMovement", r"\.getDeltaMovement", r"\.setVelocity",
+                      r"\.method_18800", r"\.method_18798"],
 }
 _COMPILED = {k: re.compile("|".join(v)) for k, v in BEHAVIOUR.items()}
 
@@ -163,6 +179,14 @@ _PREFILTER = re.compile(b"|".join(
         b"HttpURLConnection", b"openConnection", b"java/net/http", b"openStream",
         b"sun/misc/Unsafe", b"jdk/internal/misc/Unsafe", b"java/lang/instrument",
         b"Instrumentation", b"premain", b"agentmain", b"retransformClasses",
+        b"ServerboundUseItemOnPacket", b"PlayerInteractBlockC2SPacket", b"class_2885",
+        b"useItemOn", b"interactBlock", b"method_2896",
+        b"ServerboundPlayerActionPacket", b"PlayerActionC2SPacket", b"class_2846",
+        b"startDestroyBlock", b"destroyBlock", b"method_2910",
+        b"ServerboundContainerClickPacket", b"ClickSlotC2SPacket", b"class_2813",
+        b"AbstractContainerMenu", b"ScreenHandler", b"class_1703",
+        b"setDeltaMovement", b"getDeltaMovement", b"setVelocity",
+        b"method_18800", b"method_18798",
     ]))
 
 

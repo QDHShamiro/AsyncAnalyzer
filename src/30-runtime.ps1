@@ -568,7 +568,10 @@ function Invoke-MlModel($raw) {
 $script:bcBehaviour = [ordered]@{
     'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
     'rotation'   = '\.setYRot|\.setXRot|\.setYaw|\.setPitch|\.method_36456|\.method_36457'
-    'attack'     = 'MultiPlayerGameMode\.attack|ServerboundInteractPacket|PlayerInteractEntityC2SPacket|\.swing|class_2824'
+    # A bare '\.swing' matched javax/swing and any field called swingGui - rhino's
+    # debugger UI tripped it. Qualified to the actual Minecraft method, so a Swing
+    # application in a mods folder cannot look like combat code.
+    'attack'     = 'MultiPlayerGameMode\.attack|ServerboundInteractPacket|PlayerInteractEntityC2SPacket|(?:LocalPlayer|Player|LivingEntity)\.swing\b|\.swingHand\b|\.method_6104\b|class_2824'
     # Both Wurst and Meteor hook the network layer itself, not just the listener.
     # Qualified on purpose - a bare 'Connection' is an everyday identifier.
     'pktlisten'  = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|net/minecraft/network/Connection|class_2535'
@@ -582,6 +585,13 @@ $script:bcBehaviour = [ordered]@{
     'net'        = 'java/net/Socket|HttpURLConnection|\.openConnection|java/net/http|URL\.openStream'
     'unsafe'     = 'sun/misc/Unsafe|jdk/internal/misc/Unsafe'
     'instrument' = 'java/lang/instrument|Instrumentation\.'
+    # Minecraft-specific API names on purpose. A behaviour category only earns its
+    # place if a real Maven library cannot match it by accident - these name packets
+    # and interaction-manager methods that exist nowhere outside the game.
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\.useItemOn|\.interactBlock|\.method_2896'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\.startDestroyBlock|\.destroyBlock|\.method_2910'
+    'container'  = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703'
+    'motion'     = '\.setDeltaMovement|\.getDeltaMovement|\.setVelocity|\.method_18800|\.method_18798'
 }
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are

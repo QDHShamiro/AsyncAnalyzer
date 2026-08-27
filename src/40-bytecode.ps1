@@ -10,7 +10,8 @@ $script:bcPreFilter = [regex]::new(
      'defineAnonymousClass|defineHiddenClass|javax/crypto|Cipher|SecretKeySpec|IvParameterSpec|' +
      'getRuntime|ProcessBuilder|java/net/Socket|HttpURLConnection|openConnection|java/net/http|' +
      'openStream|sun/misc/Unsafe|jdk/internal/misc/Unsafe|java/lang/instrument|Instrumentation|' +
-     'premain|agentmain|retransformClasses'),
+     'premain|agentmain|retransformClasses|' +
+     'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798'),
     [System.Text.RegularExpressions.RegexOptions]::Compiled)
 
 function Read-ClassConstantPool([byte[]]$b) {

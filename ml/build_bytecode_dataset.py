@@ -13,7 +13,7 @@ Variants deliberately vary behaviour mix, symbol obfuscation, string encryption
 and jar size, so the model cannot separate the classes on jar size or on any
 single behaviour alone.
 """
-import csv, glob, os, random, shutil, subprocess, sys, tempfile
+import csv, glob, os, random, re, shutil, subprocess, sys, tempfile
 import bytecode
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +25,8 @@ FEATURES = ([k + "_ratio" for k in sorted(bytecode.BEHAVIOUR)] +
 MC_STUB = '''package mc;
 public class MC {
   public static class Entity { public double x,y,z; public boolean onGround;
-    public void setYRot(float y){} public void setXRot(float x){} public float getYRot(){return 0;} }
+    public void setYRot(float y){} public void setXRot(float x){} public float getYRot(){return 0;}
+    public void setDeltaMovement(double a,double b,double c){} public double getDeltaMovement(){return 0;} }
   public static class LivingEntity extends Entity { public float health; }
   public static class LocalPlayer extends LivingEntity { public void swing(int h){} }
   public static class Level { public java.util.List<Entity> entitiesForRendering(){return null;}
@@ -33,11 +34,17 @@ public class MC {
   public static class ServerboundMovePlayerPacket { public ServerboundMovePlayerPacket(double x,double y,double z,float a,float b,boolean g){} }
   public static class ServerboundInteractPacket { public ServerboundInteractPacket(Entity e){} }
   public static class ClientPacketListener { public void send(Object p){} }
-  public static class MultiPlayerGameMode { public void attack(LocalPlayer p, Entity t){} }
+  public static class MultiPlayerGameMode { public void attack(LocalPlayer p, Entity t){}
+    public void useItemOn(int x,int y,int z){} public void startDestroyBlock(int x,int y,int z){} }
   public static class VertexConsumer { public VertexConsumer vertex(double x,double y,double z){return this;} }
   public static class PoseStack { public void pushPose(){} public void popPose(){} }
   public static class RenderSystem { public static void setShader(){} }
   public static class KeyMapping { public boolean isPressed(){return false;} }
+  public static class ServerboundUseItemOnPacket { public ServerboundUseItemOnPacket(int x,int y,int z){} }
+  public static class ServerboundPlayerActionPacket { public ServerboundPlayerActionPacket(int x,int y,int z){} }
+  public static class ServerboundContainerClickPacket { public ServerboundContainerClickPacket(int slot,int btn){} }
+  public static class ServerboundChatPacket { public ServerboundChatPacket(String m){} }
+  public static class AbstractContainerMenu { public int slots; public void clicked(int s,int b){} }
 }
 '''
 
@@ -77,7 +84,134 @@ def body(kind, obf):
       z.getDeclaredMethod("run").invoke(z.getDeclaredConstructor().newInstance());
       ((java.net.HttpURLConnection) new java.net.URL("http://h/p").openConnection()).getInputStream().close();
     } catch (Exception e) {}'''
+    # ---- combat -----------------------------------------------------------
+    if kind == "reach":
+        # attacks a target picked out of a full entity sweep at a distance the game
+        # would refuse. The legit counterpart (reachdisp) measures the same distance
+        # and never attacks - that is the whole difference.
+        return '''    for (MC.Entity t : level.entitiesForRendering()) {
+      double d = Math.sqrt((t.x-me.x)*(t.x-me.x) + (t.z-me.z)*(t.z-me.z));
+      if (d < 6.0) { gm.attack(me, t); me.swing(0); }
+    }'''
+    if kind == "trigger":
+        # triggerbot: attacks whatever is under the crosshair without the key ever
+        # being read. A legit combat mod reacts to input; this one reacts to the world.
+        return '''    for (MC.Entity t : level.entitiesForRendering()) {
+      net.send(new MC.ServerboundInteractPacket(t)); gm.attack(me, t);
+    }'''
+    if kind == "crystal":
+        return '''    for (MC.Entity t : level.entitiesForRendering()) {
+      gm.useItemOn((int)t.x, (int)t.y, (int)t.z);
+      net.send(new MC.ServerboundUseItemOnPacket((int)t.x, (int)t.y, (int)t.z));
+      gm.attack(me, t); me.swing(0);
+    }'''
+    if kind == "velocity":
+        # anti-knockback: intercepts the incoming packet and zeroes the motion the
+        # server just gave you. replay (clean) also listens - and never writes motion.
+        return '''    if (net == null) return;
+    me.setDeltaMovement(0.0, me.getDeltaMovement(), 0.0);'''
+    # ---- movement ---------------------------------------------------------
+    if kind == "scaffold":
+        return '''    me.setYRot(180f); me.setXRot(90f);
+    gm.useItemOn((int)me.x, (int)me.y - 1, (int)me.z);
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, 180f, 90f, true));'''
+    if kind == "nofall":
+        # tells the server it is standing while it falls. No rotation, no input -
+        # just a movement packet the game did not produce.
+        return '''    me.setDeltaMovement(0.0, -0.08, 0.0);
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, 0f, 0f, true));'''
+    if kind == "blink":
+        return '''    if (net == null) return;
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, 0f, 0f, me.onGround));
+    me.setDeltaMovement(0.0, 0.0, 0.0);'''
+    if kind == "speed":
+        return '''    me.setDeltaMovement(me.getDeltaMovement() * 1.8, 0.0, me.getDeltaMovement() * 1.8);
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, me.getYRot(), 0f, me.onGround));'''
+    if kind == "path":
+        # Baritone-shaped pathing: computes a heading, writes the rotation and sends
+        # its own movement packet. clean/AutoWalk drives the input system instead.
+        return '''    float yaw = (float)Math.atan2(1.0, 1.0);
+    me.setYRot(yaw); me.setXRot(0f);
+    if (level.getBlockState((int)me.x, (int)me.y, (int)me.z) != null) me.onGround = true;
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, yaw, 0f, me.onGround));'''
+    # ---- world ------------------------------------------------------------
+    if kind == "nuker":
+        # breaks every block in a radius with no key held. veinmine (clean) breaks
+        # connected blocks and only while the player is actually mining.
+        return '''    for (int x=-4;x<4;x++) for (int y=-4;y<4;y++) for (int z=-4;z<4;z++) {
+      if (level.getBlockState((int)me.x+x,(int)me.y+y,(int)me.z+z) == null) continue;
+      gm.startDestroyBlock((int)me.x+x,(int)me.y+y,(int)me.z+z);
+      net.send(new MC.ServerboundPlayerActionPacket((int)me.x+x,(int)me.y+y,(int)me.z+z));
+    }'''
+    if kind == "fastplace":
+        return '''    gm.useItemOn((int)me.x, (int)me.y, (int)me.z);
+    net.send(new MC.ServerboundUseItemOnPacket((int)me.x, (int)me.y, (int)me.z));
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, 0f, 0f, true));'''
+    # ---- utility / ghost --------------------------------------------------
+    if kind == "invmove":
+        # walking while an inventory screen is open: the game blocks that, so it
+        # forges the movement packet. invsort (clean) only clicks slots.
+        return '''    menu.clicked(0, 0);
+    net.send(new MC.ServerboundContainerClickPacket(0, 0));
+    net.send(new MC.ServerboundMovePlayerPacket(me.x, me.y, me.z, 0f, 0f, me.onGround));'''
+    if kind == "httpcfg":
+        # pulls its module list off a server and applies it reflectively - how a
+        # ghost client stays updated without shipping the modules in the jar.
+        return '''    try {
+      java.io.InputStream in = ((java.net.HttpURLConnection) new java.net.URL("http://c/f").openConnection()).getInputStream();
+      for (java.lang.reflect.Field f : getClass().getDeclaredFields()) { f.setAccessible(true); f.set(this, null); }
+      in.close();
+    } catch (Exception e) {}'''
+    if kind == "selfdel":
+        return '''    try {
+      Runtime.getRuntime().exec("cmd /c del self.jar");
+    } catch (Exception e) {}'''
+    if kind == "freecam":
+        # the camera detaches: it keeps its OWN position, updated from input, while
+        # the player entity stays put. shoulder (clean) derives the camera from the
+        # player every frame and cannot leave the body behind.
+        return '''    if (bind.isPressed()) { camX += 0.5; camY += 0.1; camZ += 0.5; }
+    me.setYRot(me.getYRot() + 1.0f); me.setXRot(0.5f);
+    MC.RenderSystem.setShader(); stack.pushPose(); buf.vertex(camX, camY, camZ); stack.popPose();'''
+    if kind == "autoclick":
+        # swings on its own schedule. A legit combat HUD reads the key; this never
+        # does - the attack is not caused by the player.
+        return '''    hit++;
+    if (hit % 3 == 0) { gm.attack(me, me); me.swing(0); }'''
     # clean behaviours
+    if kind == "printer":
+        # Litematica-style schematic printer: places blocks through the game's own
+        # interaction manager while a key is held. No forged movement, no forged
+        # rotation - which is exactly what separates it from scaffold.
+        return '''    if (!bind.isPressed()) return;
+    for (int x=0;x<4;x++) if (level.getBlockState(x,64,0) != null) gm.useItemOn(x,64,0);
+    MC.RenderSystem.setShader(); stack.pushPose(); buf.vertex(0,64,0); stack.popPose();'''
+    if kind == "veinmine":
+        return '''    if (!bind.isPressed()) return;
+    for (int x=0;x<3;x++) if (level.getBlockState(x,64,0) != null) gm.startDestroyBlock(x,64,0);'''
+    if kind == "invsort":
+        return '''    if (!bind.isPressed()) return;
+    for (int i=0;i<menu.slots;i++) menu.clicked(i, 0);'''
+    if kind == "reachdisp":
+        # reach / CPS display: measures exactly what a reach cheat measures and
+        # never attacks with it.
+        return '''    for (MC.Entity t : level.entitiesForRendering()) {
+      double d = Math.sqrt((t.x-me.x)*(t.x-me.x) + (t.z-me.z)*(t.z-me.z));
+      if (d > 0) hit++;
+    }
+    MC.RenderSystem.setShader(); stack.pushPose(); stack.popPose();'''
+    if kind == "replay":
+        return '''    if (net == null) return;
+    try { ((java.net.HttpURLConnection) new java.net.URL("https://r/u").openConnection()).getInputStream().close(); } catch (Exception e) {}
+    hit++;'''
+    if kind == "shoulder":
+        # third-person camera: position is a function of the player's position, so
+        # it can never leave the body behind the way freecam does.
+        return '''    MC.RenderSystem.setShader(); stack.pushPose();
+    buf.vertex(me.x - 2.0, me.y + 1.0, me.z - 2.0);
+    stack.popPose();'''
+    if kind == "sprint":
+        return '''    if (bind.isPressed()) hit++; else hit = 0;'''
     if kind == "map":
         return '''    MC.RenderSystem.setShader(); stack.pushPose();
     for (int x=0;x<16;x++) for (int z=0;z<16;z++) if (level.getBlockState(x,64,z)!=null) buf.vertex(x,64,z);
@@ -101,9 +235,11 @@ def body(kind, obf):
     me.setYRot(me.getYRot() + 1.0f); me.setXRot(0.5f);
     MC.RenderSystem.setShader(); stack.pushPose(); buf.vertex(me.x, me.y, me.z); stack.popPose();'''
     if kind == "macro":
-        # auto-reconnect / chat macro: sends packets on a keybind - but forges no rotation
+        # A chat macro sends CHAT on a keybind. It used to be modelled with an entity
+        # interact packet, which is not what a chat macro does at all - and that one
+        # wrong line was enough to make an unrelated rule look like it false-flagged.
         return '''    if (!bind.isPressed()) return;
-    net.send(new MC.ServerboundInteractPacket(me));
+    net.send(new MC.ServerboundChatPacket("hello"));
     hit++;'''
     if kind == "zoom":
         return '''    if (bind.isPressed()) { MC.RenderSystem.setShader(); stack.pushPose(); stack.popPose(); }'''
@@ -111,20 +247,46 @@ def body(kind, obf):
         return '''    try { ((java.net.HttpURLConnection) new java.net.URL("https://api/x").openConnection()).getInputStream().close(); } catch (Exception e) {}'''
     return "    hit++;"
 
+# Declaring every field on every class was silently ruining the corpus. A field's
+# TYPE lands in the constant pool, and four categories match a bare class name -
+# KeyMapping, ClientPacketListener, VertexConsumer, AbstractContainerMenu - so
+# every generated jar looked like it read input, hooked packets, rendered and
+# touched containers. 450 of 452 jars were identical on those four features, which
+# makes any rule involving them untestable rather than merely noisy.
+#
+# So: emit only the fields the chosen behaviours actually reference. Detected from
+# the generated statements rather than from a hand-kept table, because a hand-kept
+# table is exactly the thing that drifts back out of sync.
+FIELDS = [
+    ("net",   "  private MC.ClientPacketListener net;"),
+    ("gm",    "  private MC.MultiPlayerGameMode gm;"),
+    ("me",    "  private MC.LocalPlayer me;"),
+    ("level", "  private MC.Level level;"),
+    ("bind",  "  private MC.KeyMapping bind;"),
+    ("buf",   "  private MC.VertexConsumer buf;"),
+    ("stack", "  private MC.PoseStack stack;"),
+    ("menu",  "  private MC.AbstractContainerMenu menu;"),
+    ("blob",  "  private byte[] blob = new byte[16];"),
+    ("k",     "  private byte[] k = new byte[16];"),
+    ("hit",   "  private int hit;"),
+    ("camX",  "  private double camX, camY, camZ;"),
+]
+
+
 def gen_class(pkg, name, kinds, obf, nstr):
     strs = "".join('  static final String S%d = "%s";\n' % (i, enc_str(random.randint(20, 60)))
                    for i in range(nstr)) if obf else \
            "".join('  static final String S%d = "module %s option %d enabled";\n' % (i, name, i)
                    for i in range(nstr))
     stmts = "\n".join(body(k, obf) for k in kinds)
+    decls = "\n".join(d for var, d in FIELDS
+                      if re.search(r"\b%s\b" % re.escape(var), stmts))
+    if decls:
+        decls += "\n"
     return f'''package {pkg};
 import mc.MC;
 public class {name} {{
-  private MC.ClientPacketListener net; private MC.MultiPlayerGameMode gm;
-  private MC.LocalPlayer me; private MC.Level level; private MC.KeyMapping bind;
-  private MC.VertexConsumer buf; private MC.PoseStack stack;
-  private byte[] blob = new byte[16]; private byte[] k = new byte[16]; private int hit;
-{strs}  public void go() {{
+{decls}{strs}  public void go() {{
 {stmts}
   }}
 }}
@@ -133,18 +295,49 @@ public class {name} {{
 # (label, behaviour kinds, obfuscated?, n classes)
 def variants():
     v = []
-    cheat_mixes = [["aim"], ["aim", "esp"], ["fly"], ["esp"], ["aim", "fly"],
-                   ["load"], ["load", "aim"], ["aim", "esp", "fly"]]
+    cheat_mixes = [
+        # the families the corpus already proved
+        ["aim"], ["aim", "esp"], ["fly"], ["esp"], ["aim", "fly"],
+        ["load"], ["load", "aim"], ["aim", "esp", "fly"],
+        # combat
+        ["reach"], ["trigger"], ["crystal"], ["velocity"], ["autoclick"],
+        ["reach", "trigger"], ["crystal", "aim"], ["velocity", "fly"],
+        # movement
+        ["scaffold"], ["nofall"], ["blink"], ["speed"], ["path"],
+        ["scaffold", "nofall"], ["speed", "nofall"], ["path", "aim"],
+        # world
+        ["nuker"], ["fastplace"], ["nuker", "fastplace"],
+        # utility / ghost
+        ["invmove"], ["httpcfg"], ["selfdel"], ["freecam"],
+        ["httpcfg", "selfdel"], ["invmove", "aim"], ["freecam", "esp"],
+        # a ghost client is a bundle, not one module
+        ["aim", "scaffold", "velocity"], ["reach", "nofall", "freecam"],
+        ["httpcfg", "load", "invmove"],
+    ]
     for mix in cheat_mixes:
         for obf in (False, True):
             for n in (3, 8, 16):
                 v.append((1, mix, obf, n))
-    clean_mixes = [["map"], ["cfg"], ["key"], ["net"], ["map", "key"],
-                   ["cfg", "net"], ["map", "cfg"], ["key", "net"], ["map", "cfg", "key"],
-                   # hard negatives: legit mods that LOOK like cheats behaviourally
-                   ["radar"], ["radar", "key"], ["freecam"], ["freecam", "key"],
-                   ["macro"], ["macro", "net"], ["zoom"], ["radar", "freecam"],
-                   ["macro", "zoom"], ["radar", "macro"]]
+    clean_mixes = [
+        ["map"], ["cfg"], ["key"], ["net"], ["map", "key"],
+        ["cfg", "net"], ["map", "cfg"], ["key", "net"], ["map", "cfg", "key"],
+        # hard negatives: legit mods that LOOK like cheats behaviourally. These are
+        # what the detector is actually judged on - anything can separate a cheat
+        # from a config parser, the question is whether it separates a schematic
+        # printer from scaffold.
+        ["radar"], ["radar", "key"],
+        ["macro"], ["macro", "net"], ["zoom"], ["macro", "zoom"], ["radar", "macro"],
+        ["printer"], ["printer", "key"], ["printer", "zoom"],
+        ["veinmine"], ["veinmine", "key"],
+        ["invsort"], ["invsort", "key"], ["invsort", "map"],
+        ["reachdisp"], ["reachdisp", "key"], ["reachdisp", "map"],
+        ["replay"], ["replay", "cfg"],
+        ["shoulder"], ["shoulder", "zoom"], ["shoulder", "map"],
+        ["sprint"], ["sprint", "key"],
+        # realistic packs: several legit utilities in one jar
+        ["printer", "invsort", "key"], ["radar", "reachdisp", "zoom"],
+        ["shoulder", "sprint", "map"], ["veinmine", "invsort", "cfg"],
+    ]
     for mix in clean_mixes:
         for obf in (False, True):
             for n in (3, 8, 16):
