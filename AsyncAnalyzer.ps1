@@ -68,7 +68,7 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; DeletedJars = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0 }
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
@@ -601,6 +601,11 @@ $script:cheatDownloadSources = @("DoomsdayClient","PrestigeClient","198Macros","
 # Each entry: @{ match = 'domain-or-substring'; name = 'DisplayName' }.
 $script:cheatDomainMap = @()
 $script:pendingProcessNames = @()
+# Every Java package that exists in a jar on disk. If a cheat's classes are live in
+# the game's memory but NO jar on disk contains them, it was injected rather than
+# loaded from the mods folder - which is the whole point of a ghost client, and the
+# strongest thing a screenshare check can show.
+$script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:goodMeta         = @{}
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -1201,6 +1206,36 @@ function Read-ClassConstantPool([byte[]]$b) {
         }
     }
     return @{ Symbols = $sb.ToString(); Strings = $strings }
+}
+
+function Add-DiskPackages([string]$JarPath) {
+    # Entry names only - no decompression, no parsing. Cheap enough to run on every
+    # jar including verified ones, which is required: a verified minimap's packages
+    # being on disk is exactly what makes an absent package meaningful.
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
+    } catch { return }
+    try {
+        foreach ($e in $zip.Entries) {
+            $fn = $e.FullName
+            if (-not $fn.EndsWith('.class')) { continue }
+            $parts = $fn.Split('/')
+            if ($parts.Count -ge 2) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1])) }
+            if ($parts.Count -ge 3) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
+            if ($parts.Count -ge 1) { [void]$script:DiskPackages.Add($parts[0]) }
+        }
+    } finally { $zip.Dispose() }
+}
+
+function Test-LoadedFromDisk([string]$Token) {
+    # Could anything on disk have supplied classes for this name?
+    if ($script:DiskPackages.Count -eq 0) { return $true }   # nothing scanned -> cannot claim
+    $t = ($Token -replace '[^A-Za-z0-9]', '').ToLower()
+    if ($t.Length -lt 4) { return $true }
+    foreach ($p in $script:DiskPackages) {
+        if ((($p -replace '[^A-Za-z0-9]', '').ToLower()) -like "*$t*") { return $true }
+    }
+    return $false
 }
 
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
@@ -3483,7 +3518,18 @@ function Run-JVMScan {
                     $mh = $memHits[$mk]
                     $where = "$($proc.Name) (PID $($proc.ProcessId)) at $($mh.Addr), $($mh.Hits) hit(s)"
                     if ($mh.Kind -eq "client") {
-                        $jvmFlags.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) identified live in $where. This IS a cheat and it is loaded in the running game right now $([char]0x2014) it does not need to be in the mods folder.")
+                        # The strong claim - "injected, nothing on disk could have loaded
+                        # it" - needs stronger evidence than a plain memory hit, because a
+                        # short word can appear in RAM by coincidence (a chat message, a
+                        # server MOTD). Require a distinctive token AND repeated hits, which
+                        # is what loaded code looks like versus one stray string.
+                        if ($mh.Label.Length -ge 6 -and $mh.Hits -ge 3 -and -not (Test-LoadedFromDisk $mh.Label)) {
+                            # Nothing on disk could have supplied these classes.
+                            $jvmFlags.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) live in $where, and NO jar on disk contains it. It was injected straight into the running game, so deleting files cannot hide it and a file scan alone would never have found it.")
+                            $script:Evidence.MemInjectedOnly++
+                        } else {
+                            $jvmFlags.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) identified live in $where. This IS a cheat and it is loaded in the running game right now.")
+                        }
                         $script:Evidence.MemCheatClient++
                     } else {
                         $jvmFlags.Add("Cheat module active in memory: $($mh.Label) $([char]0x2014) found in $where. A cheat feature is live in the running game.")
@@ -3910,6 +3956,7 @@ if (-not $SkipModCheck) {
                 if ($verified -and $verifiedName) { $script:goodMeta[$hash] = "$verifiedName|$modUrl" }
             }
 
+            Add-DiskPackages $jar.FullName
             $feat = Get-JarFeatures $jar.FullName
             $bcFeat = $null
             if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }

@@ -156,6 +156,11 @@ three things, not just "something found":
   text; dozens means loaded code).
 - **Whether it's a cheat** — a named client in the live heap sets the overall verdict to
   **Confirmed**, because the cheat is running *right now*.
+- **Whether it was injected** — the tool also knows every Java package that exists in a jar
+  on your disk. If a cheat is live in memory and **no file on disk contains it**, it was
+  injected straight into the running game. That's the whole point of a ghost client, and it
+  means *deleting files before the check cannot hide it*. That stronger claim is gated: it
+  needs a distinctive name **and** repeated hits, so a stray chat message never triggers it.
 
 **Deleted it right before the screenshare?** If `.jar` files ran on this PC and are now
 gone **while Minecraft is still open**, the overall verdict goes to at least **Likely** —
