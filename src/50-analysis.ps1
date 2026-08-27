@@ -297,15 +297,14 @@ function Get-ModVerdict($ctx) {
             $score = [Math]::Max($score, 60)
             [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them")
         }
-        # A jar that works out where its own file is and then deletes it. Measured
-        # per CLASS, not per jar: plenty of legitimate libraries locate their own jar
-        # somewhere and delete a temp file somewhere else, and treating that as one
-        # signal matched sixteen of them. One class doing both, without the
-        # native-unpacking markers that explain the innocent version, matched none.
-        if ($bc.selfwipeRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
-            [void]$reasons.Add("Behaviour: locates its own jar file and deletes it $([char]0x2014) the mod removes itself. No legitimate mod does this; it is what a client does so that nothing is left in the folder afterwards")
-        }
+        # NOT a rule. A jar that locates its own file and deletes it is exactly the
+        # wipe pattern, and it is still measured ($bc.selfwipeRatio) - but it does
+        # not score, because it could not be made safe. Per jar it matched sixteen
+        # legitimate bytecode libraries; per class, excluding native unpacking, it
+        # was clean across 479 jars here and still flagged a real library in CI,
+        # twice, on a corpus this sandbox cannot reach. Two narrowings did not fix
+        # it, so it is reported rather than tuned until it goes quiet: a rule that
+        # flags real code is worse than a gap, because this tool accuses people.
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
@@ -545,7 +544,7 @@ function Invoke-SelfTest {
         @{ Label = "Baritone-style pathing"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
         @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Jar that deletes itself"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        @{ Label = "Self-deleting jar is measured, not accused"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
         @{ Label = "Library unpacking a native lib"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; filedeleteRatio = 1.0; nativetempRatio = 1.0 }) } }
         @{ Label = "Mod that reads its own jar location"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Jetpack mod (writes velocity)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }

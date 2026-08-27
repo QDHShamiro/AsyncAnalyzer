@@ -84,10 +84,6 @@ def verdict(raw):
             score = max(score, 85)          # speed / no-fall / blink
         if bc.get("bc_container_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
             score = max(score, 85)          # inventory-move
-        # A jar that locates its own file and deletes it. Measured per class - see
-        # the PowerShell comment; the jar-level version matched 16 real libraries.
-        if bc.get("bc_selfwipe_ratio", 0) > 0:
-            score = max(score, 85)          # the mod removes itself
         if bc.get("bc_instrument_ratio", 0) > 0:
             score = max(score, 80)
         # Strong, but not the same order of certainty -> flag, do not confirm.

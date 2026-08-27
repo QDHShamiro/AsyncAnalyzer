@@ -55,8 +55,8 @@ itself uses for input and OpenGL — mockito, log4j, …).
 | | count |
 |---|---:|
 | real libraries tested | 179 |
-| **flagged by any of the 13 cheat rules** | **0** |
-| rules checked | aim, scaffold, speed, invmove, dropper, selfwipe, nodinput, targeting, autoclick, velocity, nuker, freecam, esp |
+| **flagged by any of the 12 cheat rules** | **0** |
+| rules checked | aim, scaffold, speed, invmove, dropper, nodinput, targeting, autoclick, velocity, nuker, freecam, esp |
 | matched the Java-agent rule | 13 |
 
 The agent matches are **correct, not false positives** — every one of these

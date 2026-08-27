@@ -77,7 +77,10 @@ def rules(r):
 
 # Every rule that can produce an accusation. A real library tripping any of these
 # fails the build - that is the gate the whole corpus exists to protect.
-CHEAT_RULES = ("aim", "scaffold", "speed", "invmove", "dropper", "selfwipe",
+# selfwipe is deliberately NOT here. It is measured above and reported below, but
+# it does not accuse: it flagged a real library in CI twice after measuring clean
+# on 479 jars locally, and two narrowings did not fix it.
+CHEAT_RULES = ("aim", "scaffold", "speed", "invmove", "dropper",
                "nodinput", "targeting", "autoclick", "velocity", "nuker", "freecam", "esp")
 
 

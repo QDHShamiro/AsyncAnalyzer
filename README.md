@@ -367,8 +367,15 @@ Two results are reported honestly rather than tuned away:
 - **ESP is not decidable from bytecode.** ESP and a mob-radar minimap do the same thing, so
   it is surfaced for review instead of accused. That costs recall on purpose.
 - **A HTTP config pull with reflection is not detectable.** That rule would have matched 87
-  of the 177 real libraries, so it does not ship. A ghost client that keeps its modules on a
+  of the real libraries, so it does not ship. A ghost client that keeps its modules on a
   server and pulls them at runtime is caught by what it then *does*, not by the download.
+- **A jar that deletes itself is measured but not accused.** It is the wipe pattern and
+  it would be valuable, but it could not be made safe. Per jar it matched sixteen
+  legitimate bytecode libraries (ByteBuddy, Javassist, Groovy, log4j-core…). Measured per
+  *class* and excluding native-library unpacking it was clean across 479 jars locally —
+  and still flagged a real library in CI, twice, on the wider corpus this sandbox cannot
+  reach. Two narrowings did not fix it, so the signal is reported and left out of the
+  score. A rule that flags real code is worse than a gap.
 
 Reproduce it yourself from a clean checkout:
 ```bash
