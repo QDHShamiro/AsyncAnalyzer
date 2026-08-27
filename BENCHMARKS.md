@@ -127,6 +127,7 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
+| `2b72478` | 119 ████ | 0 | ok | ok | ok |
 | `local` | 177 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
