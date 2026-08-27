@@ -104,6 +104,13 @@ That last row is the honest part. **ESP and a mob radar genuinely do the same th
 information that separates them isn't in the bytecode, and no amount of AI recovers it. So
 an unverified mod doing it gets surfaced for a human look; a *verified* minimap stays Clean.
 
+**Speed.** Fully parsing every class is not affordable — a 200-mod pack is ~44 000 classes.
+But *sampling* is worse than slow, it's wrong: a cheat whose aura module sits at class #150
+is invisible to a 40-class sample, and real jars run to a **median of 218 classes**. So every
+class gets a cheap native scan and only matches get parsed properly. Detection is
+**depth-independent** (pinned by a regression test), and verified mods are skipped entirely
+since they're capped safe anyway — so a normal scan only pays for the unverified remainder.
+
 > Measured on 239 samples of real compiled bytecode (77 real Maven libraries as the clean
 > side): **precision 1.000, 0 false flags**, recall 0.875 — where every miss is that
 > ambiguous ESP/radar class. Full numbers and limits in [`ml/BAKEOFF.md`](ml/BAKEOFF.md).

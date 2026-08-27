@@ -130,6 +130,36 @@ _REFLECTIVE_NAMES = {
 
 _WORDY = re.compile(rb"^[\x20-\x7e]{4,}$")
 
+# Cheap pre-filter run over the RAW decompressed bytes of every class.
+#
+# Fully parsing every constant pool is not affordable on the PowerShell side: a
+# 200-mod pack is ~44k classes, which measured out at minutes. But sampling is
+# worse than slow, it is wrong - a cheat whose aura module sits at class #150 is
+# invisible to a 40-class sample, and real jars run to a median of 218 classes.
+#
+# So: search all classes cheaply, parse precisely only where something matched.
+# This is sound because these are API names. The JVM resolves classes and methods
+# BY NAME, so they must appear literally in the pool - a cheat cannot encrypt the
+# Minecraft API it calls, only its own symbols.
+_PREFILTER = re.compile(b"|".join(
+    re.escape(t) for t in [
+        b"ServerboundMovePlayerPacket", b"PlayerMoveC2SPacket", b"class_2828",
+        b"setYRot", b"setXRot", b"setYaw", b"setPitch", b"method_36456", b"method_36457",
+        b"MultiPlayerGameMode", b"ServerboundInteractPacket", b"PlayerInteractEntityC2SPacket",
+        b"class_2824", b"ClientPacketListener", b"ClientPlayNetworkHandler", b"class_634",
+        b"entitiesForRendering", b"getEntities", b"method_18112", b"getEntityList",
+        b"VertexConsumer", b"RenderSystem", b"BufferBuilder", b"MatrixStack", b"PoseStack",
+        b"Tessellator", b"class_4587", b"KeyMapping", b"KeyBinding", b"glfwGetKey",
+        b"isPressed", b"client/input", b"class_304", b"java/lang/reflect",
+        b"getDeclaredMethod", b"setAccessible", b"forName", b"MethodHandles",
+        b"getDeclaredField", b"defineClass", b"URLClassLoader", b"defineAnonymousClass",
+        b"defineHiddenClass", b"javax/crypto", b"Cipher", b"SecretKeySpec",
+        b"IvParameterSpec", b"getRuntime", b"ProcessBuilder", b"java/net/Socket",
+        b"HttpURLConnection", b"openConnection", b"java/net/http", b"openStream",
+        b"sun/misc/Unsafe", b"jdk/internal/misc/Unsafe", b"java/lang/instrument",
+        b"Instrumentation", b"premain", b"agentmain", b"retransformClasses",
+    ]))
+
 
 def _shannon(b):
     if not b:
@@ -144,7 +174,9 @@ def _shannon(b):
 def extract_jar(path, max_classes=0):
     """Parse the classes in a jar and return raw behavioural counts.
 
-    max_classes=0 -> every class (deep mode); >0 -> stop after that many (fast mode).
+    Behaviour is detected across EVERY class via the cheap pre-filter; max_classes
+    only bounds how many classes get their string statistics measured, which is an
+    average and does not need full coverage.
     """
     out = {k: 0 for k in BEHAVIOUR}
     out.update({k + "_ratio": 0.0 for k in BEHAVIOUR})
@@ -160,11 +192,35 @@ def extract_jar(path, max_classes=0):
         return out
     with z:
         names = [n for n in z.namelist() if n.endswith(".class")]
-        if max_classes:
-            names = names[:max_classes]
-        for n in names:
+        # Stratified, not first-N: spreading the sample across the jar matters because
+        # nothing says a cheat's modules sit at the front of the archive.
+        if max_classes and len(names) > max_classes:
+            step = len(names) / float(max_classes)
+            stat_idx = {int(i * step) for i in range(max_classes)}
+        else:
+            stat_idx = set(range(len(names)))
+        for ni, n in enumerate(names):
             try:
-                data = z.read(n)
+                # The pool sits at the head of a class file, so the pre-filter only needs
+                # a bounded prefix - decompressing whole classes is the dominant cost and
+                # most of a large class is method bytecode we never look at.
+                with z.open(n) as fh:
+                    head = fh.read(65536)
+            except Exception:
+                out["classes_failed"] += 1
+                continue
+            # every class gets the cheap scan; only matches (or the stat sample) are parsed
+            hot = _PREFILTER.search(head) is not None
+            data = head
+            if not hot and ni not in stat_idx:
+                out["classes_parsed"] += 1
+                total_names += 1
+                if len(n.rsplit("/", 1)[-1][:-6]) <= 2:
+                    short_names += 1
+                continue
+            try:
+                if len(head) == 65536:      # may have been truncated mid-pool
+                    data = z.read(n)
                 strings, classes, refs = parse_constant_pool(data)
             except Exception:
                 out["classes_failed"] += 1
