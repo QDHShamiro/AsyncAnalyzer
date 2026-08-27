@@ -162,6 +162,10 @@ three things, not just "something found":
   means *deleting files before the check cannot hide it*. That stronger claim is gated: it
   needs a distinctive name **and** repeated hits, so a stray chat message never triggers it.
 
+The sweep walks the game's whole address space rather than a token sample, bounded by a
+**time budget** (120 s, or 600 s with `-Deep`) so the cost stays predictable whether the
+game took 2 GB or 12 GB.
+
 **Deleted it right before the screenshare?** If `.jar` files ran on this PC and are now
 gone **while Minecraft is still open**, the overall verdict goes to at least **Likely** —
 the classic wipe-before-the-check pattern. If the game isn't running, the same deletions
