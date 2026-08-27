@@ -698,6 +698,10 @@ function Write-SystemFlag([string]$Level, [string]$Msg, [string[]]$Items = @()) 
         if ($items.Count -gt 8) { W "  $([char]0x2502)         ... and $($items.Count - 8) more (all of them are in the report)" DarkGray }
     }
     Add-Finding $Level $script:SysArea $Msg $items | Out-Null
+    # INFO from a check means it could not run - no admin, key unreadable, directory
+    # missing. That is a gap in coverage, not a result, and the whole point of the
+    # coverage box is that nothing like this goes unlisted.
+    if ($Level -eq "INFO") { Add-ScanGap $Msg }
 }
 
 function Write-Detail([string]$what, [string]$why, [string]$how, [string]$fix) {

@@ -120,6 +120,25 @@ check("scan targets are encoded", "Enc $t" in REPORT)
 # --- 8. the report never reports more coverage than it had -------------------
 check("an area is only listed as checked if it produced a finding",
       "foreach ($f in @($script:Findings)) { if ($areas -notcontains $f.Area) { $areas += $f.Area } }" in REPORT)
+
+# A check that could not run is a gap, not a result. If INFO ever stopped routing
+# to ScanGaps, "Defender exclusions - run as Administrator" would vanish from the
+# coverage box and a clean verdict would look better than it is.
+DISCOVERY = (ROOT / "src" / "80-discovery.ps1").read_text(encoding="utf-8")
+check("an INFO check is recorded as a coverage gap",
+      'if ($Level -eq "INFO") { Add-ScanGap $Msg }' in DISCOVERY)
+check("only FAIL and WARN become findings",
+      '$real  = @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })' in REPORT)
+check("the plain summary uses the same finding filter",
+      '$realF = @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })' in REPORT)
+check("an INFO check is not counted as a finding for its area",
+      '$_.Area -eq $a -and ($_.Level -eq "FAIL" -or $_.Level -eq "WARN")' in REPORT)
+# every INFO call site must carry a message that reads as a gap, not a result
+info_msgs = re.findall(r'Write-SystemFlag "INFO" "([^"]+)"', DISCOVERY + (ROOT / "src" / "91-system.ps1").read_text(encoding="utf-8"))
+check("there is at least one INFO call site to protect", len(info_msgs) > 0, str(len(info_msgs)))
+bad = [m for m in info_msgs if not any(w in m.lower() for w in
+       ("administrator", "could not", "not accessible", "no ", "not read"))]
+check("every INFO message explains what could not be done", not bad, f"vague: {bad}")
 check("the no-gap box does not claim more than 'nothing was skipped'",
       "Nothing was skipped." in REPORT)
 

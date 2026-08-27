@@ -20,6 +20,8 @@ function Get-LevelStyle([string]$level) {
     switch ($level) {
         "FAIL" { return @{ c = "#ff5f56"; label = "FINDING";  rank = 0 } }
         "WARN" { return @{ c = "#ffcf4d"; label = "WARNING";  rank = 1 } }
+        # INFO never reaches a card - it is routed to the coverage gaps instead - but
+        # it keeps a style so nothing renders blank if that ever changes.
         "INFO" { return @{ c = "#9aa8ba"; label = "NOT RUN";  rank = 2 } }
         default { return @{ c = "#3ddc84"; label = "CLEAR";   rank = 3 } }
     }
@@ -76,7 +78,7 @@ function New-HtmlReport([string]$OutPath = "") {
     foreach ($f in @($script:Findings)) { if ($areas -notcontains $f.Area) { $areas += $f.Area } }
     $coverChecked = "<li><b>Mods folder</b> &mdash; $($script:TotalMods) file(s), each one read, hashed and analysed as bytecode</li>"
     foreach ($a in $areas) {
-        $cnt = @($script:Findings | Where-Object { $_.Area -eq $a -and $_.Level -ne "OK" }).Count
+        $cnt = @($script:Findings | Where-Object { $_.Area -eq $a -and ($_.Level -eq "FAIL" -or $_.Level -eq "WARN") }).Count
         $tail = if ($cnt -gt 0) { "$cnt finding(s)" } else { "nothing found" }
         $coverChecked += "<li><b>$(Enc $a)</b> &mdash; $tail</li>"
     }
@@ -126,7 +128,10 @@ function New-HtmlReport([string]$OutPath = "") {
     } else { "" }
 
     # ---- everything else that was found, grouped by area --------------------
-    $real  = @($script:Findings | Where-Object { $_.Level -ne "OK" })
+    # INFO is not a result - it is a check that could not run, and it is already in
+    # the coverage box as a gap. Repeating it here as a "finding" would pad the list
+    # a staff member has to work through with things that were never findings.
+    $real  = @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })
     $clear = @($script:Findings | Where-Object { $_.Level -eq "OK" })
     $findCards = ""
     foreach ($f in ($real | Sort-Object @{ e = { (Get-LevelStyle $_.Level).rank } }, Area)) {
@@ -466,7 +471,7 @@ function New-PlainSummary($sv, $svStyle, $stamp, $reportId, $isAdmin) {
     [void]$o.Add("Mods: $($script:TotalMods) scanned / $($script:Verified) verified / $($script:Review) review / $($script:Flagged) flagged")
     foreach ($m in @($flaggedMods | Where-Object { $_ })) { [void]$o.Add("  FLAGGED  $($m.FileName)  [$($m.Score)/100]  $(@($m.Reasons) -join '; ')") }
     foreach ($m in @($reviewMods  | Where-Object { $_ })) { [void]$o.Add("  REVIEW   $($m.FileName)  [$($m.Score)/100]") }
-    $realF = @($script:Findings | Where-Object { $_.Level -ne "OK" })
+    $realF = @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })
     if ($realF.Count -gt 0) {
         [void]$o.Add("")
         [void]$o.Add("Other findings:")

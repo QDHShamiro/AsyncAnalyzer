@@ -359,7 +359,7 @@ python3 ml/fetch_jars.py && python3 ml/benchmark.py
 | `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
 | federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
 | `-SelfTest` (in-tool) | 42 known cases — mod-level, impersonation, whole-scan **and the report itself** (it renders end to end and is checked, so the document staff read is never the untested part) |
-| `ml/test_report.py` | **35/35** — the score scale draws the engine's real band edges, a clean verdict never claims proof, an incomplete scan says so, no template variable is silently undefined |
+| `ml/test_report.py` | **41/41** — the score scale draws the engine's real band edges, a clean verdict never claims proof, an incomplete scan says so, no template variable is silently undefined |
 
 ---
 
