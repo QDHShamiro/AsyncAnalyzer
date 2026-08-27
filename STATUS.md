@@ -27,6 +27,9 @@ powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'http
 ```
 Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, `-SelfTest`, `-NoUpdate`, `-NoLearn`, `-Reset`, `-Share`.
 
+## Editing the script
+`AsyncAnalyzer.ps1` is **assembled** from `src/*.ps1` by `python3 build.py`. Edit the section files, not the shipped one - a build overwrites it, and CI fails on `build.py --check` if the two drift. The build is a plain ordered concatenation (PowerShell runs top to bottom and the file is full of order-dependent top-level code), which is what let the split be proven: the first build was byte-for-byte identical to the file that had been shipping. See `src/README.md` for the section map.
+
 ## File map
 - `AsyncAnalyzer.ps1` (~4590 lines) — the whole tool. Key sections:
   - Data lists (cheat strings / weak strings / package paths / legit modids / client tokens) ~line 30–470.

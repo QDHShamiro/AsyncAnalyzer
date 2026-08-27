@@ -58,6 +58,11 @@ jobs:
       # the closest thing to a compile check: it catches calls to functions that do
       # not exist, duplicate definitions (the later one silently wins) and
       # $script: variables that are read but never assigned.
+      # The shipped script is assembled from src/. If someone edits AsyncAnalyzer.ps1
+      # directly, the next build silently reverts it - so catch that here instead.
+      - name: Shipped script matches its sources
+        run: python3 build.py --check
+
       - name: PowerShell static checks
         run: python3 ml/ps_lint.py
 
