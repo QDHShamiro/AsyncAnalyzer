@@ -65,6 +65,45 @@ LIBS = [
  # compression / io
  ("org/lz4","lz4-java","1.8.0"),("com/github/luben","zstd-jni","1.5.6-3"),
  ("org/tukaani","xz","1.9"),
+ # --- second wave: more of the families that look alarming but are ordinary ---
+ # agents + instrumentation (these genuinely ship Premain-Class)
+ ("org/aspectj","aspectjweaver","1.9.22"),("org/aspectj","aspectjrt","1.9.22"),
+ ("io/opentelemetry/javaagent","opentelemetry-javaagent","2.4.0"),
+ ("org/springframework","spring-instrument","6.1.6"),
+ # class generation / proxies
+ ("org/springframework","spring-core","6.1.6"),("org/springframework","spring-beans","6.1.6"),
+ ("org/springframework","spring-context","6.1.6"),("org/springframework","spring-aop","6.1.6"),
+ ("org/apache/groovy","groovy","4.0.21"),("org/codehaus/janino","janino","3.1.12"),
+ ("org/codehaus/janino","commons-compiler","3.1.12"),
+ # crypto-heavy
+ ("org/bouncycastle","bcutil-jdk18on","1.78"),("com/nimbusds","nimbus-jose-jwt","9.37.3"),
+ ("io/jsonwebtoken","jjwt-impl","0.12.5"),("org/apache/santuario","xmlsec","4.0.2"),
+ # networking / protocol
+ ("io/netty","netty-codec-http","4.1.108.Final"),("io/netty","netty-resolver","4.1.108.Final"),
+ ("io/grpc","grpc-core","1.63.0"),("org/eclipse/jetty","jetty-server","11.0.20"),
+ ("org/eclipse/jetty","jetty-util","11.0.20"),("com/squareup/okio","okio-jvm","3.9.0"),
+ ("org/java-websocket","Java-WebSocket","1.5.6"),
+ # serialization / scripting (dynamic class loading is normal here)
+ ("org/mozilla","rhino","1.7.14"),("org/luaj","luaj-jse","3.0.1"),
+ ("com/fasterxml/jackson/dataformat","jackson-dataformat-yaml","2.17.0"),
+ ("org/msgpack","msgpack-core","0.9.8"),
+ # data / db
+ ("org/postgresql","postgresql","42.7.3"),("com/h2database","h2","2.2.224"),
+ ("org/mongodb","mongodb-driver-core","5.0.1"),("redis/clients","jedis","5.1.2"),
+ ("org/mariadb/jdbc","mariadb-java-client","3.3.3"),
+ # utility / collections
+ ("it/unimi/dsi","fastutil","8.5.13"),("org/apache/commons","commons-collections4","4.4"),
+ ("com/google/protobuf","protobuf-java","4.26.1"),("org/checkerframework","checker-qual","3.42.0"),
+ ("com/google/errorprone","error_prone_annotations","2.27.0"),
+ ("org/apache/commons","commons-pool2","2.12.0"),("joda-time","joda-time","2.12.7"),
+ # graphics / native binding (LWJGL is what Minecraft itself uses for input + GL)
+ ("org/lwjgl","lwjgl","3.3.3"),("org/lwjgl","lwjgl-glfw","3.3.3"),
+ ("org/lwjgl","lwjgl-opengl","3.3.3"),("org/lwjgl","lwjgl-stb","3.3.3"),
+ ("net/java/dev/jna","jna","5.14.0"),("net/java/dev/jna","jna-platform","5.14.0"),
+ # build / analysis tooling
+ ("org/apache/maven","maven-core","3.9.6"),("org/ow2/asm","asm-tree","9.7"),
+ ("com/puppycrawl/tools","checkstyle","10.15.0"),("com/github/spotbugs","spotbugs","4.8.4"),
+ ("org/pitest","pitest","1.16.1"),
 ]
 
 def fetch(g, a, v):

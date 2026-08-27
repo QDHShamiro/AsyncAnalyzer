@@ -1,0 +1,103 @@
+# Public, continuous proof that detection still works.
+#
+# The failure mode that matters here is silent: a detector that starts flagging
+# legitimate mods looks fine until someone gets accused. So this runs on every
+# push, publishes the numbers where anyone can read them, and FAILS the build if
+# a real library ever gets flagged by a cheat rule.
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'BENCHMARKS.md']
+  pull_request:
+  schedule:
+    # Weekly: the corpus is fetched live from Maven Central, so this also catches
+    # the case where a dependency changes underneath us.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 122 jars from Maven Central; cached so a normal run does not re-download.
+      - name: Cache library corpus
+        uses: actions/cache@v4
+        with:
+          path: ml/jars_legit
+          key: jars-${{ hashFiles('ml/fetch_jars.py') }}
+
+      - name: Fetch the real-library corpus
+        run: python3 ml/fetch_jars.py
+
+      - name: Test suites
+        working-directory: ml
+        run: |
+          set -e
+          for t in test_verdict test_selflearn test_session test_bytecode test_memory test_autoscan; do
+            echo "--- $t ---"
+            python3 "$t.py"
+          done
+
+      - name: PowerShell / Python model parity
+        run: |
+          python3 - <<'EOF'
+          import re, json, sys
+          ps = open('AsyncAnalyzer.ps1', encoding='utf-8').read()
+          bad = []
+          for name, path, var in (("mod", "ml/model.json", "ml"),
+                                  ("session", "ml/session_model.json", "sm")):
+              j = json.load(open(path))
+              block = re.search(r"\$script:%sWeights = @\{\n(.*?)\n\}" % var, ps, re.S).group(1)
+              w = {m.group(1): float(m.group(2))
+                   for m in re.finditer(r"'([a-z_]+)' = (-?[\d.]+)", block)}
+              for k in j['feature_order']:
+                  if abs(w.get(k, 1e9) - j['weights'][k]) > 1e-9:
+                      bad.append("%s model: %s" % (name, k))
+          # the embedded weights must equal the trained ones, or the tool is not
+          # running the model the repo documents
+          print("parity OK" if not bad else "MISMATCH: %s" % bad)
+          sys.exit(1 if bad else 0)
+          EOF
+
+      - name: Benchmark
+        run: python3 ml/benchmark.py
+
+      - name: Publish the numbers to the run summary
+        if: always()
+        run: cat BENCHMARKS.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmarks
+          path: BENCHMARKS.md
+
+      # Keep the committed results current so the repo never shows stale numbers.
+      - name: Commit refreshed results
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          if git diff --quiet -- BENCHMARKS.md; then
+            echo "unchanged"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add BENCHMARKS.md
+          git commit -m "Refresh benchmark results [skip ci]"
+          git push
