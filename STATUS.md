@@ -32,7 +32,8 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Data lists (cheat strings / weak strings / package paths / legit modids / client tokens) ~line 30–470.
   - Embedded AI model (`$script:mlWeights`, `$script:mlIntercept`, v2) + `Invoke-MlModel`, `Get-JarFeatures`, `Get-ModFeatureVector`, `Get-ModVerdict`, `Write-VerdictCard` ~line 480–850.
   - Self-improvement: `Load/Save-LearnState`, `Update-ModelOnline` (SGD), `Invoke-CloudUpdate`, `Get-MinecraftName`, `Send-ScanResult` ~line 850–1000.
-  - `Find-MinecraftModFolders` + `Get-BestModFolder` (auto-detect) ~line 1310–1510.
+  - `Find-MinecraftModFolders` + **`Get-ScanTargets`** (autonomous target choice: every OPEN instance + configured paths). `Get-BestModFolder`/`Ask-YesNo` are now unreachable leftovers.
+  - Autonomy: `Invoke-SelfElevate`, `Set-AutoDepth`, `Request-DeepEscalation`, `Add-ScanGap`/`Write-ScanGaps`, `Save-ScanSummary`.
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (dark-mode report), `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
@@ -97,6 +98,14 @@ Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan
 - **Session model -> v2 (15 features)**: added `deleted_jars`, `mc_running`, `mem_client`; `bam_deleted` lowered 1.5 -> 1.0 to avoid double counting. New hard rules: a named client in live memory -> **>=85 Confirmed**; `.jar`s deleted **while Minecraft still runs** -> **>=60 Likely** (the wipe-before-the-screenshare pattern). Same deletions with the game closed stay Clean - people update mods.
 - `mc_running` deliberately has weight **0.0**: the game being open is not evidence of anything, it only gates the deletion rule.
 - Auto-labelling: `mem_client` counts as a cheat label; deleted jars alone still teach nothing.
+
+## v5 — the tool decides everything itself
+- **No prompts left.** The deep-scan question and "Press Enter to exit" are gone, so the result is written to the HTML report AND `%APPDATA%\AsyncAnalyzer\last-scan.txt` - without that a double-click run would show nothing.
+- **Targets = every OPEN instance**, plus `scanPaths` (signatures.json, team-wide) and `%APPDATA%\AsyncAnalyzer\paths.txt` (local). Jars from all targets go into the same `$jarFiles`, so the per-jar loop needed no change.
+- **Depth is automatic**: game running -> full check; otherwise quick, and `Request-DeepEscalation` switches to deep the moment the mod pass finds anything. Escalation widens the SEARCH only - it never moves a scoring threshold, or false flags would follow.
+- **Self-elevation** via UAC (`-NoElevate` opts out; the elevated run always gets `-NoElevate` so it cannot loop). The one-liner has no local file, so the elevated process re-fetches the script - that is stated in the notice, not done quietly.
+- **`$script:ScanGaps`** records everything that could not be checked (no admin, game closed, idle installs skipped, memory budget hit, unreadable folder) and prints it with the verdict.
+- Mirrored + pinned in `ml/test_autoscan.py` (16 cases), including that escalation changes only search breadth.
 
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.

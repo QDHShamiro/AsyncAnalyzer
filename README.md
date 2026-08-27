@@ -23,12 +23,25 @@
 powershell -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1')"
 ```
 
-**That's it — it finds your Minecraft by itself.** No path to type, no Enter to press. It
-auto-detects every install (all launchers + a deep scan of your drives for portable /
-renamed installs), picks the right one (the running instance, else the one with the most
-mods), and scans it.
+**That's it — one command, no questions, no flags.** The tool decides everything itself:
+
+- **What to scan** — every Minecraft instance that is *actually open*, not just one. A
+  second running install can't hide behind the first. Extra folders can be added in
+  `%APPDATA%\AsyncAnalyzer\paths.txt` (one per line) or team-wide via `scanPaths`.
+- **How deep to go** — Minecraft running means someone is being checked right now, so it
+  runs the full check. Nothing running means a quick self-check. And if *anything* turns
+  up, it goes deeper on its own and says why.
+- **Admin** — it asks Windows for elevation once, because deleted-program history (BAM),
+  Defender exclusions and scheduled tasks need it. Decline the UAC prompt and the scan
+  simply continues without them. `-NoElevate` skips asking.
+- **What it could NOT check** — listed with the verdict. A clean result only ever covers
+  what was actually checked, and the tool says so instead of implying more.
+
+Nothing waits for a keypress, so the result is written to the HTML report **and** to
+`%APPDATA%\AsyncAnalyzer\last-scan.txt`.
 
 - Want to pick manually or paste a path? Add `-Ask`.
+
 - Know the exact folder? Add `-Path "C:\...\mods"`.
 - Want to read the whole script first? Open the raw URL in your browser — it's all there.
 
@@ -234,6 +247,7 @@ The dashboard shows who scanned whom, when, the verdict, and every flagged mod w
 | `-Path "C:\…\mods"` | Scan an exact folder. |
 | `-SelfTest` | Verify the AI + verdict logic on your machine, then exit. |
 | `-Deep` | Analyse **every** class in every jar instead of a sample. Slower, for when you're really investigating someone. |
+| `-NoElevate` | Don't ask Windows for Administrator (some checks are then skipped). |
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
 | `-DeepMemory` | Force the live-memory check on. It already turns on by itself whenever Minecraft is running. |
 | `-Share` | Export confirmed cheat hashes locally to contribute them. |

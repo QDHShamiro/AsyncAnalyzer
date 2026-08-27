@@ -12,6 +12,7 @@ param(
     [switch]$Share,
     [switch]$Ask,
     [switch]$Deep,
+    [switch]$NoElevate,
     [string]$Path = ""
 )
 
@@ -58,6 +59,7 @@ if (-not $script:DeepMemory) {
 $script:DeepScan     = [bool]$DeepScan
 $script:AssumeYes    = [bool]$Yes
 $script:NoUpdate     = [bool]$NoUpdate
+$script:SelfTestMode = [bool]$SelfTest
 $script:NoLearn      = [bool]$NoLearn
 $script:Reset        = [bool]$Reset
 $script:Share        = [bool]$Share
@@ -606,6 +608,14 @@ $script:pendingProcessNames = @()
 # loaded from the mods folder - which is the whole point of a ghost client, and the
 # strongest thing a screenshare check can show.
 $script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+# Everything this run could NOT check. An autonomous tool must never report "clean"
+# for a check it silently skipped, so every limitation is collected and shown with
+# the verdict instead of being swallowed.
+$script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
+$script:ScanTargets = @()
+$script:NoElevate   = [bool]$NoElevate
+$script:Escalated   = $false
+$script:PathsFromConfig = @()
 $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:goodMeta         = @{}
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -655,6 +665,88 @@ $script:magicExt = @{
 }
 # Text resources should read as text (entropy well under 6). Ciphertext hidden in one spikes to ~8.
 $script:textExt = @('json', 'txt', 'properties', 'cfg', 'toml', 'lang', 'mcmeta', 'md', 'yml', 'yaml', 'csv')
+
+function Add-ScanGap([string]$What) {
+    if (-not $script:ScanGaps.Contains($What)) { [void]$script:ScanGaps.Add($What) }
+}
+
+function Test-IsAdmin {
+    try {
+        return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { return $false }
+}
+
+function Invoke-SelfElevate {
+    # Without admin the BAM history (which executables ran and were then deleted),
+    # the Defender exclusion list and scheduled tasks cannot be read - and those are
+    # exactly what a screenshare check needs. So ask Windows for elevation once.
+    if ($script:NoElevate -or $script:_DevMode -or $script:SelfTestMode) { return $false }
+    if (Test-IsAdmin) { return $false }
+
+    W "  $([char]0x2139) Some checks need Administrator: which programs ran and were deleted" DarkGray
+    W "    (BAM), Defender exclusions and scheduled tasks. Asking Windows for it now." DarkGray
+    W "    Windows will show a UAC prompt. Decline and the scan simply continues" DarkGray
+    W "    without those checks $([char]0x2014) it is not required. Use -NoElevate to skip asking." DarkGray
+    Write-Host ""
+    try {
+        # The one-liner has no file on disk, so the elevated process re-fetches the
+        # script. Say so plainly rather than doing it quietly.
+        $flags = @()
+        if ($script:DeepScan)   { $flags += '-DeepScan' }
+        if ($script:Deep)       { $flags += '-Deep' }
+        if ($script:DeepMemory) { $flags += '-DeepMemory' }
+        if ($script:NoUpdate)   { $flags += '-NoUpdate' }
+        if ($script:NoLearn)    { $flags += '-NoLearn' }
+        if ($script:Share)      { $flags += '-Share' }
+        $flags += '-NoElevate'          # the elevated run must never try to elevate again
+        $url = "https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1"
+        $inner = "& ([scriptblock]::Create((irm '$url'))) " + ($flags -join ' ')
+        Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $inner) -ErrorAction Stop
+        W "  $([char]0x2713) Continuing in the elevated window." Green
+        return $true
+    } catch {
+        Add-ScanGap "Ran without Administrator $([char]0x2014) deleted-program history (BAM), Defender exclusions and scheduled tasks were NOT checked"
+        W "  $([char]0x2139) Continuing without Administrator." DarkGray
+        Write-Host ""
+        return $false
+    }
+}
+
+function Request-DeepEscalation([string]$Reason) {
+    # Something turned up, so look harder for the rest of the run. This widens the
+    # SEARCH only - it never lowers a scoring threshold, because that is how a
+    # detector starts inventing false flags.
+    if ($script:Deep -and $script:DeepScan) { return }
+    $script:Deep         = $true
+    $script:DeepScan     = $true
+    $script:BcMaxClasses = 400
+    if (-not $script:Escalated) {
+        $script:Escalated = $true
+        Write-Host ""
+        W "  $([char]0x25B2) Going deeper by itself $([char]0x2014) $Reason" Yellow
+        W "    (searching harder from here on; the scoring rules are unchanged)" DarkGray
+        Write-Host ""
+    }
+}
+
+function Set-AutoDepth {
+    # Minecraft running means someone is being checked right now, so be thorough.
+    # Nothing running means this is a self-check, so stay quick.
+    $running = @(Get-Process -Name javaw, java -ErrorAction SilentlyContinue).Count -gt 0
+    if ($running) {
+        $script:Deep         = $true
+        $script:DeepScan     = $true
+        $script:BcMaxClasses = 400
+        W "  $([char]0x25CF) Minecraft is running $([char]0x2014) running the full check by itself." Cyan
+    } else {
+        Add-ScanGap "Minecraft was not running $([char]0x2014) an injected client leaves nothing to find once the game is closed"
+        W "  $([char]0x25CF) Minecraft is not running $([char]0x2014) quick check. It goes deeper on its own if anything turns up." DarkGray
+    }
+    Write-Host ""
+    return $running
+}
 
 function Get-LearnPath {
     $dir = Join-Path $env:APPDATA "AsyncAnalyzer"
@@ -883,6 +975,51 @@ function Update-SessionModelOnline($vec, $label) {
     } catch {}
 }
 
+function Write-ScanGaps {
+    if ($script:ScanGaps.Count -eq 0) { return }
+    Write-Host ""
+    W "  $([char]0x26A0) What this scan could NOT check:" Yellow
+    foreach ($g in $script:ScanGaps) { W "    $([char]0x2022) $g" DarkYellow }
+    W "    A clean result only covers what was actually checked." DarkGray
+    Write-Host ""
+}
+
+function Save-ScanSummary($v) {
+    # Nothing waits for a keypress any more, so if the window closes the result has
+    # to survive somewhere. Plain text on purpose: readable without a browser.
+    try {
+        $dir = Join-Path $env:APPDATA "AsyncAnalyzer"
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+        $out = [System.Collections.Generic.List[string]]::new()
+        [void]$out.Add("AsyncAnalyzer $($script:Version)  -  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+        [void]$out.Add("PC: $env:COMPUTERNAME   User: $env:USERNAME")
+        foreach ($t in @($script:ScanTargets)) { [void]$out.Add("Scanned: $t") }
+        [void]$out.Add("")
+        if ($v) { [void]$out.Add("OVERALL: $($v.Band)  ($($v.Score)/100)") ; foreach ($r in $v.Reasons) { [void]$out.Add("  - $r") } }
+        [void]$out.Add("")
+        [void]$out.Add("Mods: $($script:TotalMods) total / $($script:Verified) verified / $($script:Review) review / $($script:Flagged) flagged")
+        [void]$out.Add("System issues: $($script:SystemIssues)")
+        if (@($flaggedMods).Count -gt 0) {
+            [void]$out.Add(""); [void]$out.Add("FLAGGED:")
+            foreach ($m in @($flaggedMods)) {
+                [void]$out.Add("  $($m.FileName)  [$($m.Band) $($m.Score)/100]")
+                foreach ($r in @($m.Reasons)) { [void]$out.Add("      - $r") }
+            }
+        }
+        if (@($reviewMods).Count -gt 0) {
+            [void]$out.Add(""); [void]$out.Add("REVIEW:")
+            foreach ($m in @($reviewMods)) { [void]$out.Add("  $($m.FileName)  [$($m.Score)/100]") }
+        }
+        if ($script:ScanGaps.Count -gt 0) {
+            [void]$out.Add(""); [void]$out.Add("NOT CHECKED:")
+            foreach ($g in $script:ScanGaps) { [void]$out.Add("  - $g") }
+        }
+        $file = Join-Path $dir "last-scan.txt"
+        $out -join "`r`n" | Out-File -FilePath $file -Encoding UTF8
+        W "  $([char]0x2713) Result saved: $file" DarkGray
+    } catch {}
+}
+
 function Write-SessionCard($v, $raw) {
     $w = 72
     $col = switch ($v.Band) { "Confirmed" { "Red" } "Likely" { "DarkYellow" } "Review" { "Yellow" } default { "Green" } }
@@ -950,6 +1087,7 @@ function Invoke-CloudUpdate {
             }
         }
         if ($s.processNames)     { $script:pendingProcessNames = @($s.processNames) }
+        if ($s.scanPaths)        { $script:PathsFromConfig = @($s.scanPaths) }
         if ($s.moduleNames) {
             # Cheat MODULE names confirmed in two independent open-source clients. The
             # list is curated for collisions on purpose - names like Timer/Step/Reach are
@@ -2308,6 +2446,68 @@ function Get-BestModFolder {
     if ($found.Count -gt 1) { W "    $($found.Count) installs found $([char]0x2014) picked the most likely one (use -Ask to choose)." DarkGray }
     Write-Host ""
     return $best.Path
+}
+
+function Get-ConfiguredPaths {
+    # Extra folders to always look at, from two optional sources - neither needs to
+    # exist. Same shape as the other community lists so a team can push a path once
+    # and everyone picks it up.
+    $out = [System.Collections.Generic.List[string]]::new()
+    foreach ($p in @($script:PathsFromConfig)) { if ($p) { [void]$out.Add([string]$p) } }
+    try {
+        $local = Join-Path $env:APPDATA "AsyncAnalyzer\paths.txt"
+        if (Test-Path $local) {
+            foreach ($line in (Get-Content $local -ErrorAction Stop)) {
+                $t = ([string]$line).Trim().Trim('"').Trim("'")
+                if ($t -and -not $t.StartsWith('#')) { [void]$out.Add($t) }
+            }
+        }
+    } catch {}
+    return @($out | Select-Object -Unique)
+}
+
+function Get-ScanTargets {
+    # During a screenshare the instance that is OPEN is the one that matters: it is
+    # the one being played, and it cannot be swapped out while you are watching.
+    W "  $([char]0x25CF) Finding what to scan..." DarkGray
+    $targets = [System.Collections.Generic.List[string]]::new()
+    $found   = @(Find-MinecraftModFolders)
+    $running = @($found | Where-Object { $_.IsRunning })
+
+    if ($running.Count -gt 0) {
+        foreach ($r in $running) {
+            if (-not $targets.Contains($r.Path)) { [void]$targets.Add($r.Path) }
+            W "  $([char]0x2713) Open now: " Green -NoNewline
+            W "$($r.Launcher)" Cyan -NoNewline
+            if ($r.Instance) { W " / $($r.Instance)" White -NoNewline }
+            W "  ($($r.JarCount) mods)" DarkGray
+        }
+        $idle = @($found | Where-Object { -not $_.IsRunning })
+        if ($idle.Count -gt 0) {
+            Add-ScanGap "$($idle.Count) other Minecraft install(s) exist but were not open, so they were not scanned"
+        }
+    } elseif ($found.Count -gt 0) {
+        [void]$targets.Add($found[0].Path)
+        W "  $([char]0x2713) Nothing open $([char]0x2014) checking the most likely install: $($found[0].Launcher)" Yellow
+        if ($found.Count -gt 1) {
+            Add-ScanGap "$($found.Count) installs found and none was open $([char]0x2014) only the most likely one was scanned"
+        }
+    }
+
+    foreach ($p in (Get-ConfiguredPaths)) {
+        if ((Test-Path $p -PathType Container) -and -not $targets.Contains($p)) {
+            [void]$targets.Add($p)
+            W "  $([char]0x2713) From your path list: $p" DarkGray
+        }
+    }
+
+    if ($targets.Count -eq 0) {
+        $def = "$env:APPDATA\.minecraft\mods"
+        W "  $([char]0x26A0)  No Minecraft found $([char]0x2014) trying the default folder." Yellow
+        [void]$targets.Add($def)
+    }
+    Write-Host ""
+    return @($targets)
 }
 
 function Ask-ModPath {
@@ -3830,6 +4030,12 @@ Show-Banner
 
 if ($SelfTest) { Invoke-SelfTest; return }
 
+if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
+[void](Set-AutoDepth)
+if (-not (Test-IsAdmin)) {
+    Add-ScanGap "Ran without Administrator $([char]0x2014) deleted-program history (BAM), Defender exclusions and scheduled tasks were NOT checked"
+}
+
 W "  What this tool does $([char]0x2014) and does not do:" Cyan
 W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green
 W "    $([char]0x2713) Runs fully on your PC. It never uploads your files or your data." Green
@@ -3893,10 +4099,11 @@ if ($Dev) {
     $script:_DevMode  = $true
     $script:_DevLimit = 10
 } else {
-    if (-not [string]::IsNullOrWhiteSpace($Path)) { $ModPath = $Path }
-    elseif ($script:Ask) { $ModPath = Ask-ModPath }
-    else { $ModPath = Get-BestModFolder }
-    $ModPath = ([string]$ModPath).Trim('"').Trim("'").Trim()
+    if (-not [string]::IsNullOrWhiteSpace($Path)) { $script:ScanTargets = @($Path) }
+    elseif ($script:Ask) { $script:ScanTargets = @(Ask-ModPath) }
+    else { $script:ScanTargets = @(Get-ScanTargets) }
+    $script:ScanTargets = @($script:ScanTargets | ForEach-Object { ([string]$_).Trim('"').Trim("'").Trim() } | Where-Object { $_ })
+    $ModPath = if ($script:ScanTargets.Count -gt 0) { $script:ScanTargets[0] } else { "" }
 
     if (-not (Test-Path $ModPath -PathType Container)) {
         W "" White
@@ -3907,7 +4114,12 @@ if ($Dev) {
     }
 
     Write-Host ""
-    W "  Target : " DarkGray -NoNewline; W $ModPath White
+    if ($script:ScanTargets.Count -eq 1) {
+        W "  Target : " DarkGray -NoNewline; W $ModPath White
+    } else {
+        W "  Targets: " DarkGray -NoNewline; W "$($script:ScanTargets.Count) folders" White
+        foreach ($t in $script:ScanTargets) { W "           $t" DarkGray }
+    }
     Write-Host ""
 
     $mcProcess = Get-Process javaw -ErrorAction SilentlyContinue
@@ -3935,7 +4147,18 @@ if (-not $SkipSystemCheck)  { Run-SystemChecks }
 if (-not $SkipServiceCheck) { Run-ServiceCheck }
 
 if (-not $SkipModCheck) {
-    $jarFiles = @(Get-ChildItem -Path $ModPath -Filter "*.jar" -ErrorAction SilentlyContinue) + @(Get-ChildItem -Path $ModPath -Filter "*.litemod" -ErrorAction SilentlyContinue)
+    # Every target, not just the first: the whole point is that a second open
+    # instance cannot hide. Everything downstream works per jar and records
+    # FilePath, so nothing else in the loop has to change.
+    $jarFiles = @()
+    foreach ($t in $script:ScanTargets) {
+        if (-not (Test-Path $t -PathType Container)) {
+            Add-ScanGap "Folder could not be read: $t"
+            continue
+        }
+        $jarFiles += @(Get-ChildItem -Path $t -Filter "*.jar" -ErrorAction SilentlyContinue)
+        $jarFiles += @(Get-ChildItem -Path $t -Filter "*.litemod" -ErrorAction SilentlyContinue)
+    }
     $jarFiles = @($jarFiles)
     if ($script:_DevLimit) { $jarFiles = @($jarFiles | Select-Object -First $script:_DevLimit) }
     $script:TotalMods = @($jarFiles).Count
@@ -4066,6 +4289,12 @@ if (-not $SkipModCheck) {
             }
         }
         SpinClear
+
+        if ($script:Flagged -gt 0) {
+            Request-DeepEscalation "a mod was flagged, so the rest of the system is worth a closer look"
+        } elseif ($reviewMods.Count -gt 0 -or $script:Evidence.HardConfirmed -gt 0 -or $script:Evidence.RandomNamed -gt 0) {
+            Request-DeepEscalation "something here could not be accounted for"
+        }
 
         $script:Verified = $verifiedMods.Count
         $script:Unknown  = $unknownMods.Count
@@ -4448,6 +4677,7 @@ function Run-BamScan {
 
     if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
         W "  $([char]0x26A0)  Administrator privileges required for BAM scan. Skipping." Yellow
+        Add-ScanGap "BAM history not read $([char]0x2014) programs that ran and were then deleted could not be checked"
         Write-Host ""
 
         $script:BamDeleted = @()
@@ -5483,16 +5713,11 @@ W $runCmd DarkGray
 Write-Host ""
 Write-Host ""
 Write-Host ""
+# No question here any more - the tool decided this itself in Set-AutoDepth, and
+# escalated on its own if the mod pass turned anything up.
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {
-    Write-Host ""
-    W "  Optional deep system scan (reaches outside your mods folder)" Cyan
-    W "  Also checks: recently deleted / added files, running processes, and scans your" DarkGray
-    W "  drives for stray cheat JARs. Read-only, uploads nothing, but slower and broader." DarkGray
-    W "  Skip it for a fast, mods-only check." DarkGray
-    Write-Host ""
-    $doDeep = Ask-YesNo "Run the optional deep system scan?"
-    Write-Host ""
+    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running"
 }
 if ($doDeep -or $script:_DevMode) {
     Run-RecentActivity
@@ -5507,6 +5732,8 @@ if (-not $script:_DevMode) {
 $script:SessionRaw = Get-SessionRaw
 $script:SessionVerdict = Get-SessionVerdict $script:SessionRaw
 Write-SessionCard $script:SessionVerdict $script:SessionRaw
+Write-ScanGaps
+Save-ScanSummary $script:SessionVerdict
 $slabel = Get-SessionLabel $script:SessionRaw
 if ($slabel -ge 0) {
     Update-SessionModelOnline $script:SessionVerdict.Vector $slabel
@@ -5540,4 +5767,5 @@ if ($script:_DevMode) {
 Write-Host ""
 W "  Done." Green
 Write-Host ""
-Read-Host "  Press Enter to exit"
+# Nothing waits for a keypress any more, so the result must survive the window
+# closing: it is written to the HTML report and to last-scan.txt (see Save-ScanSummary).
