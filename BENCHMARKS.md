@@ -51,8 +51,8 @@ abnormal; in an ordinary application classpath it is not.
 | | |
 |---|---|
 | classes parsed | 77834 |
-| time | 26.9 s |
-| per class | 0.345 ms |
+| time | ~30 s |
+| per class | ~0.4 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -68,6 +68,16 @@ so a normal run only pays for the unverified remainder.
   accusing, and deciding it needs identity (hash verification), not a bigger model.
 - A false-flag count of 0 means none of *these* 122 libraries were flagged.
   It is evidence, not a guarantee.
+
+## History
+
+Appended by every CI run, so the direction of travel is visible instead of
+asserted. `libraries` is the size of the negative corpus - a false-flag count
+of 0 means more as that number grows.
+
+| commit | real libraries | false flags | aim | dropper | depth-proof |
+|---|---:|---:|:--:|:--:|:--:|
+| `local` | 122 ████ | 0 | ok | ok | ok |
 
 ## Regression gates
 

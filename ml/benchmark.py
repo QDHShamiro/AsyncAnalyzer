@@ -197,9 +197,12 @@ def main():
         out()
         out("| | |")
         out("|---|---|")
+        # Coarse on purpose: this file is committed by CI, and reporting raw
+        # wall-clock would produce a diff on every single run for no information.
+        per_ms = elapsed / max(classes, 1) * 1000
         out("| classes parsed | %d |" % classes)
-        out("| time | %.1f s |" % elapsed)
-        out("| per class | %.3f ms |" % (elapsed / max(classes, 1) * 1000))
+        out("| time | ~%d s |" % (int(round(elapsed / 5.0)) * 5))
+        out("| per class | ~%.1f ms |" % per_ms)
         out()
         out("Verified mods are skipped entirely during a real scan (they are capped safe),")
         out("so a normal run only pays for the unverified remainder.")
@@ -217,6 +220,44 @@ def main():
         out("  accusing, and deciding it needs identity (hash verification), not a bigger model.")
         out("- A false-flag count of 0 means none of *these* %d libraries were flagged." % len(libs))
         out("  It is evidence, not a guarantee.")
+        out()
+
+        # ------------------------------------------------------------ history ---
+        import csv as _csv
+        hist_path = os.path.join(HERE, "benchmark_history.csv")
+        stamp = os.environ.get("GITHUB_SHA", "local")[:7]
+        row = {"commit": stamp, "libraries": len(libs), "cheat_rule_fp": len(cheat_fp),
+               "agent_matches": len(agent_fp),
+               "aim": int(bool(det.get("KillAura"))), "flight": int(bool(det.get("Flight"))),
+               "dropper": int(bool(det.get("Loader"))), "depth_ok": int(depth_ok),
+               "ms_per_class": round(per_ms, 2)}
+        hist = []
+        if os.path.exists(hist_path):
+            with open(hist_path) as f:
+                hist = list(_csv.DictReader(f))
+        # one row per distinct commit; re-runs of the same commit overwrite
+        hist = [h for h in hist if h.get("commit") != row["commit"]]
+        hist.append({k: str(v) for k, v in row.items()})
+        with open(hist_path, "w", newline="") as f:
+            w = _csv.DictWriter(f, fieldnames=list(row))
+            w.writeheader()
+            w.writerows(hist)
+
+        out("## History")
+        out()
+        out("Appended by every CI run, so the direction of travel is visible instead of")
+        out("asserted. `libraries` is the size of the negative corpus - a false-flag count")
+        out("of 0 means more as that number grows.")
+        out()
+        out("| commit | real libraries | false flags | aim | dropper | depth-proof |")
+        out("|---|---:|---:|:--:|:--:|:--:|")
+        for h in hist[-12:]:
+            bar = "\u2588" * max(1, int(int(h["libraries"]) / 25))
+            out("| `%s` | %s %s | %s | %s | %s | %s |" % (
+                h["commit"], h["libraries"], bar, h["cheat_rule_fp"],
+                "ok" if h["aim"] == "1" else "**no**",
+                "ok" if h["dropper"] == "1" else "**no**",
+                "ok" if h["depth_ok"] == "1" else "**no**"))
         out()
 
         status = "PASS" if not failures else "FAIL"
