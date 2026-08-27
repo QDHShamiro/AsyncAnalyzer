@@ -17,14 +17,20 @@
 
 ---
 
-## ⚡ Run it (no install)
+## ⚡ Run it (no install, no typing)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1')"
 ```
 
-Type `auto` to auto-detect your mods folder, or press **Enter** for `.minecraft\mods`.
-Want to read the whole script first? Open the raw URL in your browser — it's all there.
+**That's it — it finds your Minecraft by itself.** No path to type, no Enter to press. It
+auto-detects every install (all launchers + a deep scan of your drives for portable /
+renamed installs), picks the right one (the running instance, else the one with the most
+mods), and scans it.
+
+- Want to pick manually or paste a path? Add `-Ask`.
+- Know the exact folder? Add `-Path "C:\...\mods"`.
+- Want to read the whole script first? Open the raw URL in your browser — it's all there.
 
 ---
 
@@ -32,11 +38,12 @@ Want to read the whole script first? Open the raw URL in your browser — it's a
 
 | | |
 |---|---|
-| 🧠 **Real AI, offline** | A trained logistic-regression model (22 features) runs entirely in PowerShell. No cloud, no API key, nothing uploaded. |
+| 🧠 **Two real AIs, offline** | One model scores every **mod** (22 features), a second scores the **whole scan** (15 signals: mods + system + processes + live JVM memory + deleted-file history). Both run entirely in PowerShell — no cloud, no API key, nothing uploaded. |
 | 📈 **Self-improving** | Every scan makes it smarter — it remembers verified & cheat hashes, nudges its own model, and auto-updates from GitHub. |
 | ✅ **No false flags** | Verified mods (Modrinth/CurseForge) are **hard-capped as safe**. Anticheats full of `killaura`/`reach` strings are recognised, not flagged. **0 false positives** on 37 real libraries. |
 | 🔎 **Explains itself** | Every flag shows the AI probability *and* the exact reasons — package path, obfuscation, signatures, network behaviour. |
-| 🔒 **Trustworthy** | Read-only. Only your mods folder by default. Live-memory & whole-PC scans are opt-in. |
+| 👻 **Catches ghost clients** | Ghost clients are *injected* into the running game, not dropped in `mods`. If Minecraft is running, the live-memory check turns on by itself (announced openly) — the only way to see an injected client. External clients that run as their own process are caught by name. |
+| 🔒 **Trustworthy** | Read-only. Only your mods folder by default. The whole-PC scan is opt-in and asked for separately. |
 | 🎨 **Beautiful report** | A dark-mode HTML report with score bars, badges and reasons — shareable as *"proof I don't cheat."* |
 
 ---
@@ -54,6 +61,10 @@ Instead of *"one bad word = FLAGGED"*, every mod gets a **0–100 score**:
 | 🔴 **Confirmed** | 85–100 | Cheat. |
 
 The score blends the **AI model** with hard rules that always win: a known-cheat hash, a cheat-client package path (`net/ccbluex`, `org/chainlibs`…), or a known cheat download site. Verified / known-good mods are capped safe no matter what.
+
+**A cheat can't hide behind a legit mod.** The mod id (`"id":"sodium"`) lives in the jar's own `fabric.mod.json` — the jar writes it itself, so it proves nothing. A **hash-verified** file really is that mod and stays capped safe; but a jar that merely *claims* a known mod id while carrying injector/cheat evidence is treated as **impersonation → Confirmed**. That covers both a cheat pretending to be Sodium and a real mod someone injected cheat code into (its hash stops matching the moment it's tampered with).
+
+**Nothing slips through as "unknown".** A jar with a random / hash-style filename (like `hb4zz1xxrd4.jar` — exactly how Doomsday and ghost clients ship) that *isn't* verified is floored to **Review** so you always see it, instead of it hiding in an "unknown" pile. A random name **never on its own** makes something a flag — it just gets surfaced for a look. If it *also* has a cheat package path, a cheat download site or a known hash, the hard rules push it to **Confirmed**.
 
 ```mermaid
 flowchart LR
@@ -73,13 +84,64 @@ flowchart LR
 
 ---
 
+## 🔭 The overall-scan verdict
+
+Single files aren't the whole story — a ghost client can be injected into the running
+game, run from a folder outside `mods`, or be deleted right before the screenshare. So
+after **every** stage has run (mods, system checks, processes, JVM, deleted-file
+history), a second AI (15 signals) scores the **scan as a whole** and prints one clear answer:
+
+```
+╔═════════════════════════════════════════════════════════════════════════╗
+║  OVERALL SCAN VERDICT (AI, whole scan)                                  ║
+║  CLEAN — NOTHING FOUND                                                  ║
+║  Score 2/100    AI probability 2%                                       ║
+╚═════════════════════════════════════════════════════════════════════════╝
+```
+
+### 👻 Injected ghost clients — what it actually tells you
+
+Doomsday and friends inject themselves into the **running game**, so the jar may already
+be deleted. When Minecraft is running the live-memory check turns on by itself and reports
+three things, not just "something found":
+
+```
+◉ INJECTED CHEAT CLIENT: doomsday
+    identified live in javaw.exe (PID 8124) at 0x1F4A0000, 37 hit(s). This IS a cheat
+    and it is loaded in the running game right now — it is not in the mods folder at all.
+◉ Cheat module active in memory: autocrystal
+    found in javaw.exe (PID 8124) at 0x1F51C000, 12 hit(s). A cheat feature is live in the game.
+```
+
+- **Which hack** — a named client (from the same community list in `signatures.json`, so
+  adding a client there teaches the memory scan too) vs. a **module** that tells you what
+  it's doing (`autocrystal`, `killaura`, `holefill`…).
+- **Where** — process, PID and memory address, plus how many hits (1 hit could be chat
+  text; dozens means loaded code).
+- **Whether it's a cheat** — a named client in the live heap sets the overall verdict to
+  **Confirmed**, because the cheat is running *right now*.
+
+**Deleted it right before the screenshare?** If `.jar` files ran on this PC and are now
+gone **while Minecraft is still open**, the overall verdict goes to at least **Likely** —
+the classic wipe-before-the-check pattern. If the game isn't running, the same deletions
+stay **Clean**; people update mods all the time.
+
+It weighs the evidence the way a screenshare admin would: a **confirmed cheat jar**,
+an **injected JVM** or a **running cheat process** is proof (→ Likely/Confirmed);
+**cheat jars stashed outside the mods folder** are worth a look (→ Review); and
+"lots of unverified mods" is completely normal and stays **Clean**. Then it *learns
+from that scan* — see below.
+
+---
+
 ## 🧠 Self-improvement
 
 Detection gets better **every time you use it** — all on your machine, nothing uploaded:
 
 1. **Hash memory** — every verified mod is remembered as *good* (instant + offline next time); every hard-confirmed cheat is remembered as *cheat*.
 2. **Online learning** — each confirmed verdict does one bounded SGD step on the model weights (anchored to the base model, so it adapts but can never drift into false positives). Stored in `%APPDATA%\AsyncAnalyzer\learned.json`.
-3. **Cloud auto-update** — on start it pulls the newest model + community signature list from this repo, so improvements reach **everyone** (turn off with `-NoUpdate`).
+3. **Whole-scan learning** — every *finished scan* also teaches the overall-scan AI, so the tool gets better at reading a **situation**, not just a file. Only unambiguous scans teach it (a hard-confirmed cheat / injected JVM → *cheat*; an all-verified, issue-free scan → *clean*); anything in between teaches it nothing, which is what stops it drifting.
+4. **Cloud auto-update** — on start it pulls the newest models + community signature list from this repo, so improvements reach **everyone** (turn off with `-NoUpdate`).
 
 > Proven: after confirming a handful of a *new* cheat family, the model's score for it climbs from **20% → 66%** — while all 37 real clean libraries stay Clean. (`python3 ml/test_selflearn.py`)
 
@@ -90,9 +152,31 @@ Detection gets better **every time you use it** — all on your machine, nothing
 ## 🔒 Is it safe? (yes — exactly what it does)
 
 - **Read-only.** Never changes, deletes or quarantines anything.
-- **Runs on your PC.** Never uploads your files or data.
+- **Never uploads your files.** Your mods, documents and personal data stay on your PC.
 - **Network = hash lookups only** (Modrinth / CurseForge / Megabase) + fetching the public model. Only a file *hash* is ever sent, never the file.
 - Default scan touches **only your mods folder**. Whole-PC scan and live-memory read are **opt-in**.
+- **Team mode is off by default.** If a team turns it on (see below), the tool uploads the *scan result* (mod list, hashes, verdict, overall verdict, usernames) to that team's own dashboard — and shows the scanned person a clear notice first. Still never the files themselves.
+
+---
+
+## 👥 Team mode — shared scan history
+
+Running a screenshare / anticheat team? Turn on **team mode** and every scan (yours, Luis's, any staff) lands in **one shared dashboard** — and **the AI itself learns from everyone's scans**, not just each PC. Confirmed detections from all team members train **two** shared models on the backend — one for single mods, one for whole scans — and every client pulls both on the next run. The more your team scans, the smarter it gets for everyone.
+
+<div align="center">
+
+`Staff runs scan` → `result + labelled samples upload` → `one shared model trains on all scans` → `every client pulls the smarter model`
+
+</div>
+
+- Deploy the tiny backend once (**Cloudflare Worker**, free & always-on, or a **zero-dep Node server**) — full steps in [`server/README.md`](server/README.md).
+- Flip it on from **`ml/signatures.json`** in your repo (no need to touch the script):
+  ```json
+  "telemetry": { "enabled": true, "endpoint": "https://…workers.dev", "key": "your-write-secret", "pullSignatures": true }
+  ```
+- The tool shows the scanned person an **upload notice** (honest by design). Set `"enabled": false` to turn it off for everyone instantly.
+
+The dashboard shows who scanned whom, when, the verdict, and every flagged mod with its reasons — a clean, shareable proof log.
 
 ---
 
@@ -100,10 +184,12 @@ Detection gets better **every time you use it** — all on your machine, nothing
 
 | Flag | Does |
 |---|---|
-| *(none)* | Fast, **mods-folder-only** scan. Recommended. |
+| *(none)* | **Auto-detects** your Minecraft and scans it. Recommended. |
+| `-Ask` | Pick the install from a list / paste a path manually. |
+| `-Path "C:\…\mods"` | Scan an exact folder. |
 | `-SelfTest` | Verify the AI + verdict logic on your machine, then exit. |
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
-| `-DeepMemory` | Also read live Minecraft memory for loaded cheats. |
+| `-DeepMemory` | Force the live-memory check on. It already turns on by itself whenever Minecraft is running. |
 | `-Share` | Export confirmed cheat hashes locally to contribute them. |
 | `-NoUpdate` | Skip the GitHub model/signature auto-update. |
 | `-NoLearn` | Don't adapt the local model this run. |
@@ -130,6 +216,9 @@ ml/
 ├── online_learn.py    # the self-improvement SGD step (matches the .ps1)
 ├── verdict.py         # reference port of the verdict logic
 ├── signatures.json    # community cheat list (auto-downloaded by the tool)
+├── session_model.py   # the overall-scan model (source of truth for its weights)
+├── session_model.json # overall-scan weights the .ps1 embeds + auto-updates from
+├── test_session.py    # proves the overall-scan AI scores + learns correctly
 ├── model.json         # trained weights + version + metrics
 ├── test_verdict.py    # end-to-end tests (cheats, clean, anticheat, verified)
 └── test_selflearn.py  # proves self-learning helps without false positives
@@ -149,15 +238,22 @@ The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassis
 | Test | Result |
 |---|---|
 | `ml/train_model.py` | precision **1.00**, recall **1.00**; worst real-library cheat score **0.13** |
-| `ml/test_verdict.py` | **42/42** — cheats caught, 37 real libs Clean, anticheats Clean |
+| `ml/test_verdict.py` | **52/52** — cheats caught, 37 real libs Clean, anticheats Clean, impersonation closed |
 | `ml/test_selflearn.py` | learns a new family 20 → 66% while keeping every clean file safe |
-| `-SelfTest` (in-tool) | 6 known cases (Doomsday, grabber, Sodium, anticheat, verified…) all pass |
+| `ml/test_session.py` | **27/27** — overall-scan AI: clean scans stay Clean, learns a new *whole-scan* pattern 13 → 30% without drifting |
+| federated (live backend) | overall-scan model learned 13 → 39% across 30 scans from 3 team members; clean + hard-confirmed unchanged |
+| `-SelfTest` (in-tool) | 26 known cases — mod-level, impersonation and whole-scan — all pass |
 
 ---
 
 ## 🤝 Contributing cheat intelligence
 
-Found a cheat the tool missed? Add its SHA1 to `ml/signatures.json` → `knownCheatHashes` (or open an issue with the hash). Everyone's tool picks it up on the next run via auto-update.
+`ml/signatures.json` is a community cheat database the tool auto-downloads every run. Found a cheat it missed? Add one of these (or open an issue) and **everyone's** tool picks it up on the next run:
+
+- `knownCheatHashes` — a confirmed cheat **SHA1** → instant 100% detection.
+- `packagePaths` — a distinctive cheat-client Java package (e.g. `org/chainlibs`, `net/wurstclient`) → legit mods never ship these.
+- `clientTokens` — a distinctive client filename token (keep it **compound**, e.g. `ghostclient`, never a bare word like `ghost`, so legit mods aren't false-flagged).
+- `downloadDomains` — a cheat download site (`{ "match": "doomsdayclient", "name": "DoomsdayClient" }`); a jar downloaded from there is flagged by its `Zone.Identifier`.
 
 ---
 
