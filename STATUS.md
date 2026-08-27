@@ -107,6 +107,14 @@ Proven: `ml/test_session.py` 20/20; live backend test learned a novel whole-scan
 - **`$script:ScanGaps`** records everything that could not be checked (no admin, game closed, idle installs skipped, memory budget hit, unreadable folder) and prints it with the verdict.
 - Mirrored + pinned in `ml/test_autoscan.py` (16 cases), including that escalation changes only search breadth.
 
+## Benchmarks & CI (public, continuous)
+- `ml/benchmark.py` -> generates `BENCHMARKS.md`. **Never hand-edit that file**; regenerate it.
+- `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all six suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
+- **Regression gates fail the build**: no real library flagged by a cheat rule; aim + dropper always detected; detection independent of hiding depth.
+- Corpus: `ml/fetch_jars.py` pulls **122** real libraries from Maven Central (cached in CI). Chosen to be hard: LWJGL (Minecraft's own input/GL library), AspectJ + OpenTelemetry (real Java agents), JNA, Spring, BouncyCastle.
+- Two results are reported honestly instead of tuned away: 11 libraries match the Java-agent rule (correct - they really are agents; the rule is scoped to a jar in a mods folder), and ESP is left undetected on purpose (identical behaviour to a mob-radar minimap).
+- To add data: extend the `LIBS` list in `fetch_jars.py` (clean side) or `ml/corpus_src/` (behaviour side), then rerun the benchmark.
+
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test** - THE open item. Shamiro decided: run `-SelfTest` (expect **26/26**) and one real scan BEFORE merging PR #2. Nothing has ever run in real PowerShell.
