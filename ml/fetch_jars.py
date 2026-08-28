@@ -64,7 +64,12 @@ LIBS = [
  # If this one does not land either, leave it: the fetcher reports it as missing,
  # 13 genuine instrumentation libraries are already in the corpus, and guessing
  # coordinates in a loop is not measurement.
- ("net/fabricmc","sponge-mixin","0.13.2+mixin.0.8.5","fabric"),
+ # Mixin is on Maven Central too, and that matters: fetched only from
+ # maven.fabricmc.net it is missing on any machine that cannot reach that host,
+ # and this is the ONE library a self-wipe or instrumentation rule is most
+ # likely to false-flag. It did - see corpus_src/clean/DebugDecompiler.java -
+ # and it was caught by CI rather than locally for exactly this reason.
+ ("net/fabricmc","sponge-mixin","0.13.2+mixin.0.8.5"),
  ("net/fabricmc","tiny-mappings-parser","0.3.0+build.17","fabric"),
  ("net/fabricmc","tiny-remapper","0.8.6","fabric"),
  ("net/fabricmc","access-widener","2.1.0"),

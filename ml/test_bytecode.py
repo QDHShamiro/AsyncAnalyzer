@@ -45,7 +45,8 @@ def build(tmp):
     # a mod jar. Bundling it would make every jar look like it touches packets.
     for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot", "CoreModAura", "SelfWipe"]),
                         ("clean", ["Minimap", "ConfigBinder", "Keybinds",
-                                   "MixinRender", "MixinFreelook", "CoreModPerf", "NativeUnpack"])):
+                                   "MixinRender", "MixinFreelook", "CoreModPerf", "NativeUnpack",
+                                   "DebugDecompiler"])):
         for nm in names:
             jp = os.path.join(jars, "%s_%s.jar" % (kind, nm))
             subprocess.run(["jar", "cf", jp] + sorted(glob.glob(

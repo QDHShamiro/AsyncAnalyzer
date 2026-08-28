@@ -722,7 +722,11 @@ $script:bcBehaviour = [ordered]@{
     # A jar working out where its own file is. Ordinary code has no reason to - it
     # is how something finds itself in order to delete itself.
     'selfpath'   = '\.getProtectionDomain|\.getCodeSource|ProtectionDomain|CodeSource'
-    'filedelete' = 'File\.delete|\.deleteOnExit|Files\.delete|Files\.deleteIfExists'
+    # (^|/) so the class name has to BE File/Files, not merely end in it: without
+    # it, Guava's MoreFiles.deleteRecursively (which contains the literal
+    # 'Files.delete') made sponge-mixin - the framework nearly every mod is
+    # built on - read as a jar that deletes itself.
+    'filedelete' = '(?:^|/)File\.delete|\.deleteOnExit|(?:^|/)Files\.delete|(?:^|/)Files\.deleteIfExists'
     # Unpacking a bundled native library and cleaning up the copy afterwards. This
     # is the innocent reason a class locates its own jar and then deletes a file,
     # and naming it is what lets the self-wipe signal exclude it.
