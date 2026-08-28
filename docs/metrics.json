@@ -4,7 +4,7 @@
   "agent_matches": 14,
   "tool_version": "4.0.0",
   "model_version": 2,
-  "session_version": 2,
+  "session_version": 3,
   "sig_version": 6,
-  "stamp": "c046d59"
+  "stamp": "9ccd292"
 }
