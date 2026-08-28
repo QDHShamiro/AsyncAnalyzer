@@ -96,6 +96,7 @@ Write-Host ""
 Show-MacroScan
 Show-LogScan
 Show-InstanceScan
+Show-ClientJarScan
 
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {

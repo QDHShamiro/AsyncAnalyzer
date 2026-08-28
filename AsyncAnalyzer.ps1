@@ -6970,6 +6970,17 @@ function Run-BamScan {
     Write-Host ""
 }
 
+# Folders the user can write to without asking anybody. A DLL loaded into the
+# game out of one of these is at least worth a look; out of Program Files or
+# System32 it is a product, and checking its signature is time wasted.
+$script:userWritableMarkers = @('\users\', '\appdata\', '\temp\', '\downloads\', '\public\', '\programdata\')
+
+function Test-UserWritablePath([string]$Path) {
+    $p = ([string]$Path).ToLower().Replace('/', '\')
+    foreach ($m in $script:userWritableMarkers) { if ($p.Contains($m)) { return $true } }
+    return $false
+}
+
 function Test-CheatName([string]$Value) {
     # Mirror of _names_hit() in ml/instscan.py: is this class or path naming a known
     # cheat? A package path is matched as a substring (it IS a path); a client token
@@ -7002,6 +7013,118 @@ function Test-CheatConfigDir([string]$Name) {
         if ($n -eq ($t.ToLower() -replace '[^a-z0-9]', '')) { return $t.ToLower() }
     }
     return ""
+}
+
+# ---------------------------------------------------------------------------
+# The game jar itself.
+#
+# versions/<v>/ was read for its .json only. The <v>.jar next to it - the game's
+# own code - was never hashed and never analysed, so a patched client jar with
+# an aura compiled straight into it was invisible: not in the mods folder, not
+# scanned, not hashed. It is the oldest trick there is.
+#
+# It needs no heuristic. Mojang's own launcher JSON carries the official SHA1 of
+# the client jar it describes, so this can PROVE whether the file on disk is the
+# one Mojang published. Zero false positives by construction: either the hash
+# matches or it does not. A profile with no hash of its own (Forge, Fabric and
+# OptiFine inherit the jar from a parent version) claims nothing.
+#
+# When it does not match, the same bytecode analysis that runs over every mod
+# runs over the jar, so the report says WHAT is in there rather than only that
+# something is.
+# ---------------------------------------------------------------------------
+function Run-ClientJarScan {
+    $res = @{
+        Official = [System.Collections.Generic.List[string]]::new()
+        Patched  = [System.Collections.Generic.List[object]]::new()
+        NoHash   = [System.Collections.Generic.List[string]]::new()
+    }
+    $roots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try { $d = [System.IO.Path]::GetDirectoryName(([string]$t).TrimEnd('\')); if ($d) { [void]$roots.Add($d) } } catch {}
+    }
+    foreach ($root in $roots) {
+        $vdir = [System.IO.Path]::Combine($root, 'versions')
+        if (-not [System.IO.Directory]::Exists($vdir)) { continue }
+        foreach ($vd in @([System.IO.Directory]::GetDirectories($vdir) | Select-Object -First 60)) {
+            $name = [System.IO.Path]::GetFileName($vd)
+            $vj   = [System.IO.Path]::Combine($vd, "$name.json")
+            $jar  = [System.IO.Path]::Combine($vd, "$name.jar")
+            if (-not [System.IO.File]::Exists($vj) -or -not [System.IO.File]::Exists($jar)) { continue }
+            $official = ""
+            try {
+                $fi = [System.IO.FileInfo]::new($vj)
+                if ($fi.Length -le 4MB) {
+                    $txt = [System.IO.File]::ReadAllText($vj)
+                    # Read the sha1 out of downloads.client without a JSON parse:
+                    # these files nest deeply and ConvertFrom-Json on PowerShell
+                    # 5.1 is both slow and depth-limited.
+                    $m = [regex]::Match($txt, '(?s)"client"\s*:\s*\{.*?"sha1"\s*:\s*"([0-9a-fA-F]{40})"')
+                    if ($m.Success) { $official = $m.Groups[1].Value.ToLower() }
+                }
+            } catch {}
+            if (-not $official) {
+                # Forge, Fabric and OptiFine profiles inherit the jar from a
+                # parent version and describe only what to add. Nothing to
+                # compare against, so nothing is claimed.
+                [void]$res.NoHash.Add("$name  (this profile carries no official hash of its own)")
+                continue
+            }
+            $have = Get-FileSHA1 $jar
+            if (-not $have) { [void]$res.NoHash.Add("$name  (the jar could not be read)"); continue }
+            if ($have.ToLower() -eq $official) {
+                [void]$res.Official.Add("$name  (matches Mojang's published SHA1)")
+            } else {
+                $bc = Get-BytecodeFeatures $jar $script:BcMaxClasses
+                $why = [System.Collections.Generic.List[string]]::new()
+                if ($bc -and $bc.ClassesParsed -gt 0) {
+                    if ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
+                        [void]$why.Add("forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint" + (Get-BcWitness $bc @('movepacket','rotation')))
+                    }
+                    if ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
+                        [void]$why.Add("attacks entities picked out of a full entity sweep" + (Get-BcWitness $bc @('entityscan','attack')))
+                    }
+                    if ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+                        [void]$why.Add("places blocks while forging its own movement packet" + (Get-BcWitness $bc @('blockplace','movepacket')))
+                    }
+                    if ($bc.cryptoRatio -ge 0.5 -and ($bc.classloadRatio -gt 0 -or $bc.reflectRatio -ge 0.5)) {
+                        [void]$why.Add("decrypts data and defines classes from it at runtime" + (Get-BcWitness $bc @('crypto')))
+                    }
+                }
+                [void]$res.Patched.Add([PSCustomObject]@{
+                    Version = $name; Jar = $jar; Have = $have; Official = $official
+                    Why = @($why)
+                })
+            }
+        }
+    }
+    return $res
+}
+
+function Show-ClientJarScan {
+    $cj = Run-ClientJarScan
+    if ($cj.Official.Count -eq 0 -and $cj.Patched.Count -eq 0 -and $cj.NoHash.Count -eq 0) { return }
+    $script:SysArea = "The game's own jar"
+    Write-SysSection "THE GAME'S OWN JAR"
+    W "  $([char]0x2502)  Checked $($cj.Official.Count + $cj.Patched.Count) version jar(s) against Mojang's published hashes" DarkGray
+    foreach ($p in $cj.Patched) {
+        $items = @("$($p.Jar)", "on disk : $($p.Have)", "Mojang  : $($p.Official)") + @($p.Why | ForEach-Object { "behaviour: $_" })
+        Write-SystemFlag "FAIL" "The game jar for $($p.Version) is NOT the one Mojang published:" $items
+        Write-Detail "Every versions/<v>/<v>.json carries the official SHA1 of the client jar it describes. The jar on disk was hashed and compared against it." `
+            $(if ($p.Why.Count -gt 0) { "The jar does not match, and reading its bytecode found cheat behaviour in it: $($p.Why -join '; ')." } else { "The jar does not match. The bytecode reader found no cheat behaviour in it, so this could also be an old or hand-modified install $([char]0x2014) but it is not the file Mojang shipped." }) `
+            "There is no heuristic here: either the hash matches or it does not." `
+            "Compare the two hashes yourself, and re-download the version through the launcher to get the official jar back."
+        $script:SystemIssues++
+        if ($p.Why.Count -gt 0) { $script:Evidence.HardConfirmed++ }
+    }
+    if ($cj.Official.Count -gt 0 -and $cj.Patched.Count -eq 0) {
+        Write-SystemFlag "OK" "The game's own jar $([char]0x2014) $($cj.Official.Count) version(s) match Mojang's published hash exactly"
+    }
+    foreach ($n in $cj.NoHash) {
+        Add-ScanGap "The game jar for $n could not be checked against an official hash, so whether it was modified is unknown"
+    }
+    Write-SysSectionEnd
 }
 
 function Run-InstanceScan {
@@ -7620,12 +7743,18 @@ function Run-PCscan {
             }
         }
 
-        if ($isSuspiciousName -and $isSuspiciousPath) {
-            $flaggedProcs.Add([PSCustomObject]@{ Name = $name; PID = $proc.Id; Path = $path; Reason = "Suspicious name + suspicious path ($pathReason)" })
-        } elseif ($isSuspiciousName) {
-            $unknownProcs.Add([PSCustomObject]@{ Name = $name; PID = $proc.Id; Path = $path; Reason = "Unrecognized process name pattern" })
-        } elseif ($isSuspiciousPath) {
-            $flaggedProcs.Add([PSCustomObject]@{ Name = $name; PID = $proc.Id; Path = $path; Reason = $pathReason })
+        # A LOCATION is not evidence. This used to be enough on its own, and
+        # "runs from AppData\Roaming" is where Zoom, Slack, Signal, Telegram and
+        # Obsidian live. Measured: with Zoom running, a scan of 25 mods that were
+        # all verified and nothing else wrong came out Likely 60 - because the
+        # count fed cheat_procs, which is a hard rule. Only a KNOWN cheat process
+        # name is a finding now (handled above); everything else here is a note
+        # that is shown and counts for nothing.
+        if ($isSuspiciousName -or $isSuspiciousPath) {
+            $why = if ($isSuspiciousName -and $isSuspiciousPath) { "unusual name, and $pathReason" }
+                   elseif ($isSuspiciousName) { "unrecognised process-name pattern" }
+                   else { $pathReason }
+            $unknownProcs.Add([PSCustomObject]@{ Name = $name; PID = $proc.Id; Path = $path; Reason = $why })
         }
     }
 
@@ -8359,23 +8488,20 @@ function Run-PCscan {
 
     Write-Host ""
     W "  Scanning loaded DLLs in javaw.exe for injection indicators..." DarkGray
-    $dllSuspiciousPatterns = @(
-        '(?i)(cheat|hack|inject|hook|bypass|spoof|aimbot|triggerbot|autoclicker|killaura|esp|xray|wallhack|flyhack|speedhack)',
-        '(?i)(minhook|easyhook|detours|subhook|polyhook|xenos|extreme_injector)',
-        '(?i)(keylog|ratclient|backdoor|stealer|grabber|webhook|tokengrab)',
-        '(?i)(reshacker|dnspy|x64dbg|ollydbg|cheatengine|processhacker|artmoney)'
-    )
-    $dllSafePrefixes = @(
-        'C:\Windows\','C:\Program Files\Java\','C:\Program Files\Eclipse Adoptium\',
-        'C:\Program Files\Microsoft\','C:\Program Files (x86)\Java\',
-        'C:\Program Files\Amazon Corretto\','C:\Program Files\BellSoft\',
-        "$($env:LOCALAPPDATA)\Medal\",
-        "$($env:LOCALAPPDATA)\Discord\",
-        "$($env:APPDATA)\Discord\",
-        "$($env:LOCALAPPDATA)\Programs\medal\",
-        "$($env:LOCALAPPDATA)\GeForce Experience\"
-    )
+    # This check used to search the whole DLL path for substrings, two of which
+    # were "hook" and "esp". Measured against nine real, common DLLs it flagged
+    # six: OBS's graphics-hook64.dll (which OBS injects into every game it
+    # records, so the person most likely to trip it was the one recording the
+    # screenshare), RivaTuner's RTSSHooks64.dll (the FPS counter), Overwolf,
+    # an NVIDIA component, and a game with "esp" in its name.
+    #
+    # What actually separates those from an injector: they are signed by their
+    # vendor. So a FINDING now needs both - unsigned AND a name the same
+    # boundary-anchored client matcher recognises. That is deliberately strict
+    # and misses an injector with a dull name; an unsigned DLL out of a
+    # user-writable folder is still shown, as a note that counts for nothing.
     $dllFlags = [System.Collections.Generic.List[object]]::new()
+    $dllNotes = [System.Collections.Generic.List[object]]::new()
     $dllScanned = 0
     $javaProcs = Get-Process -Name @("javaw","java") -ErrorAction SilentlyContinue
     foreach ($jp in $javaProcs) {
@@ -8385,16 +8511,22 @@ function Run-PCscan {
                 $dllScanned++
                 $dllShort = [System.IO.Path]::GetFileName($dll)
                 Write-Host "`r  Scanning DLL: $($dllShort.Substring(0,[Math]::Min($dllShort.Length,38)).PadRight(38))  checked: $dllScanned  flagged: $($dllFlags.Count)" -NoNewline -ForegroundColor DarkGray
-                $isSafe = $false
-                foreach ($sp in $dllSafePrefixes) {
-                    if ($dll.StartsWith($sp, [System.StringComparison]::OrdinalIgnoreCase)) { $isSafe = $true; break }
-                }
-                if ($isSafe) { continue }
-                foreach ($pat in $dllSuspiciousPatterns) {
-                    if ($dll -match $pat) {
-                        $dllFlags.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Pattern = $pat })
-                        break
-                    }
+                # Only DLLs out of a folder the user can write to get their
+                # signature checked. Everything under System32 or Program Files
+                # is a product, and Get-AuthenticodeSignature over a hundred
+                # system modules is time the scan does not need to spend.
+                if (-not (Test-UserWritablePath $dll)) { continue }
+                $signed = $false
+                try { $signed = ((Get-AuthenticodeSignature -LiteralPath $dll -ErrorAction Stop).Status -eq 'Valid') } catch {}
+                if ($signed) { continue }
+                # The LEAF only. Run over the whole path, a Windows user called
+                # "sigma" would have had every unsigned DLL on their PC flagged,
+                # because C:\Users\sigma\ matches on separator boundaries.
+                $hit = Test-CheatName ([System.IO.Path]::GetFileName($dll))
+                if ($hit) {
+                    $dllFlags.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, and named after a known cheat client ($hit)" })
+                } else {
+                    $dllNotes.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded from a folder the user can write to" })
                 }
             }
         } catch {}
@@ -8404,14 +8536,20 @@ function Run-PCscan {
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) INJECTABLE DLL SCAN (javaw) " + "$([char]0x2500)" * 42 + "$([char]0x2510)") DarkCyan
     $dllScannedLine = "  $([char]0x2502)  Scanned $dllScanned module(s) in Java process"
     W ($dllScannedLine + (" " * [Math]::Max(0, 75 - $dllScannedLine.Length)) + "$([char]0x2502)") DarkGray
-    if ($dllFlags.Count -eq 0) {
-        W ("  $([char]0x2502)   OK $([char]0x2014) no suspicious DLLs loaded in Java process" + (" " * 24) + "$([char]0x2502)") DarkCyan
-    } else {
-        foreach ($f in $dllFlags) {
-            Write-Host ""
-            W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  PID $($f.PID) ($($f.Process))" Red
-            W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
-        }
+    if ($dllFlags.Count -eq 0 -and $dllNotes.Count -eq 0) {
+        W ("  $([char]0x2502)   OK $([char]0x2014) every module in the game process is signed or from a system folder" + (" " * 3) + "$([char]0x2502)") DarkCyan
+    }
+    foreach ($f in $dllFlags) {
+        Write-Host ""
+        W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  PID $($f.PID) ($($f.Process))" Red
+        W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
+        W "  $([char]0x2502)    Why    : $($f.Why)" DarkGray
+    }
+    foreach ($f in $dllNotes) {
+        Write-Host ""
+        W "  $([char]0x2502)  $([char]0x2139) worth a look  PID $($f.PID) ($($f.Process))" DarkYellow
+        W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkGray
+        W "  $([char]0x2502)    Why    : $($f.Why) $([char]0x2014) not counted, plenty of small legitimate tools are unsigned" DarkGray
     }
     W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
 
@@ -8457,6 +8595,16 @@ function Run-PCscan {
         Add-Finding "WARN" "Rest of the PC" "$($exeFlags.Count) suspicious .exe file(s)" `
             @($exeFlags | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
             "Executables in the usual download and game folders were matched against known injector and cheat-loader names." | Out-Null
+    }
+    if ($dllNotes.Count -gt 0) {
+        # Shown, never counted: plenty of small legitimate tools are unsigned.
+        $script:SysArea = "Rest of the PC"
+        Write-SystemFlag "STATE" "$($dllNotes.Count) unsigned module(s) loaded into the game from a user-writable folder" `
+            @($dllNotes | ForEach-Object { "$($_.DLL)  (PID $($_.PID))" })
+        Write-Detail "Every module loaded inside the running javaw/java process was listed, and the ones outside system folders had their digital signature checked." `
+            "Unsigned is not the same as malicious - small tools, older software and anything home-built are unsigned too - so this is not counted against anyone." `
+            "It is here because an injector is almost never signed, and this is the shortest list a moderator can eyeball." `
+            "Look at what each file is before drawing any conclusion."
     }
     if ($dllFlags.Count -gt 0) {
         Add-Finding "FAIL" "Rest of the PC" "$($dllFlags.Count) suspicious DLL(s) loaded inside the Java process" `
@@ -8600,6 +8748,7 @@ Write-Host ""
 Show-MacroScan
 Show-LogScan
 Show-InstanceScan
+Show-ClientJarScan
 
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {

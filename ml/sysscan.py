@@ -26,6 +26,11 @@ Run:  python3 test_sysscan.py
 """
 import re
 
+# The same three buckets the live-process check uses (see ml/test_memory.py):
+# a FINDING has no innocent explanation and may decide a band; a NOTE is real,
+# shown, and never counted.
+FINDING, NOTE = "finding", "note"
+
 # An address that sends the name nowhere. A hosts line pointing at a real IP is
 # a redirect and can be a LAN setup, a mirror, a corporate split-horizon - so it
 # is not read as blocking anything.
@@ -122,3 +127,62 @@ def prefetch_image(fname):
     """FOO.EXE-1A2B3C4D.pf -> foo.exe. The hash suffix is not part of the name."""
     m = _PREFETCH.match(fname)
     return (m.group(1) if m else fname).lower()
+
+
+# --------------------------------------------------- inside the game process --
+# The old check searched the full DLL path for substrings, one of which was
+# "hook" and one of which was "esp". Measured against nine real, common DLLs it
+# flagged six, including OBS's graphics-hook64.dll - which OBS injects into every
+# game it records, so the person most likely to trip it was the one recording the
+# screenshare - and RivaTuner's RTSSHooks64.dll, which is the FPS counter.
+#
+# What actually separates them: OBS, RivaTuner, NVIDIA and Overwolf are all
+# signed by their vendor. An injector built for a cheat almost never is.
+
+# Folders the user can write to without asking anybody. A DLL loaded into the
+# game out of one of these is at least worth a look; out of Program Files or
+# System32 it is a product.
+USER_WRITABLE = ("\\users\\", "\\appdata\\", "\\temp\\", "\\downloads\\",
+                 "\\public\\", "\\programdata\\")
+
+
+def user_writable(path):
+    p = path.lower().replace("/", "\\")
+    return any(m in p for m in USER_WRITABLE)
+
+
+def dll_verdict(path, signed, names_hit):
+    """finding / note / None for one DLL loaded inside the game process.
+
+    A FINDING needs both: unsigned AND a name the cheat matcher recognises.
+    That is deliberately strict - it misses an injector with a dull name - and
+    the alternative was flagging OBS on every recorded screenshare.
+
+    A NOTE is an unsigned DLL loaded out of a folder the user can write to. It
+    is shown and never counted, so the signal is not thrown away entirely.
+    """
+    if signed:
+        return None
+    if names_hit(path):
+        return FINDING
+    if user_writable(path):
+        return NOTE
+    return None
+
+
+def process_verdict(name, path, known_cheat_names, odd_location):
+    """finding / note / None for one running process.
+
+    Only a KNOWN cheat process name is a finding. Location used to be enough on
+    its own, and "runs from AppData\\Roaming" is where Zoom, Slack, Signal,
+    Telegram and Obsidian live - measured: Zoom running turned a scan with 25
+    verified mods and nothing else wrong into Likely 60, because the count fed
+    cheat_procs, which is a hard rule.
+    """
+    n = name.lower()
+    base = n[:-4] if n.endswith(".exe") else n
+    if base in known_cheat_names or n in known_cheat_names:
+        return FINDING
+    if odd_location:
+        return NOTE
+    return None

@@ -11,6 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sysscan as S
+from sysscan import FINDING, NOTE
 
 # The tool's own client-name matcher, boundary-anchored, as instscan/logscan use
 # it. Passed into autostart_action so both sides share one list.
@@ -147,6 +148,60 @@ def main():
         ok = (img == want_img) and (got == want_hit)
         report(ok, "%-30s -> %-22s %-5s %s", fname, img, got, why)
 
+    print("\n=== DLLs inside the game process: signed, or not ===")
+    # The old check searched the whole path for substrings. Six of these nine
+    # real DLLs were flagged by it, including the one OBS injects into every
+    # game it records - so the person most likely to trip it was the one
+    # recording the screenshare.
+    DLL = [
+        (r"C:\Program Files\obs-studio\data\obs-plugins\win-capture\graphics-hook64.dll",
+         True, None, "CLEAN: OBS game capture, signed - the old check matched 'hook'"),
+        (r"C:\Program Files (x86)\RivaTuner Statistics Server\RTSSHooks64.dll",
+         True, None, "CLEAN: the MSI Afterburner FPS overlay, signed"),
+        (r"C:\Users\s\AppData\Local\Overwolf\OWClientHook.dll",
+         True, None, "CLEAN: Overwolf, signed even though it sits in AppData"),
+        (r"C:\Games\Desperados III\bin\engine.dll",
+         True, None, "CLEAN: a game with 'esp' in its name"),
+        (r"C:\Program Files\NVIDIA Corporation\NvContainer\nvinject.dll",
+         True, None, "CLEAN: an NVIDIA component, signed"),
+        (r"C:\Users\s\AppData\Local\Temp\doomsday-inject.dll",
+         False, FINDING, "unsigned AND named after a known client"),
+        (r"C:\Users\s\Downloads\vape.dll",
+         False, FINDING, "unsigned AND named"),
+        (r"C:\Users\s\AppData\Local\Temp\a1b2c3.dll",
+         False, NOTE, "unsigned in a user-writable folder, but the name says nothing"),
+        (r"C:\Windows\System32\somethingodd.dll",
+         False, None, "unsigned but in System32 - not the player's doing"),
+    ]
+    for path, signed, want, why in DLL:
+        got = S.dll_verdict(path, signed, names_hit)
+        report(got == want, "%-52s -> %-8s %s", path[-52:], got or "-", why)
+
+    print("\n=== Running processes: a location is not evidence ===")
+    # Measured: with Zoom running, a scan of 25 mods that were all verified and
+    # nothing else wrong came out Likely 60 - because the count fed cheat_procs,
+    # which is a hard rule.
+    KNOWN = {"doomsday", "vape", "wurstclient"}
+    PROC = [
+        ("doomsday.exe", r"C:\Users\s\Downloads\doomsday.exe", False, FINDING,
+         "a known cheat process name"),
+        ("Zoom.exe", r"C:\Users\s\AppData\Roaming\Zoom\bin\Zoom.exe", True, NOTE,
+         "CLEAN: Zoom is where a screenshare call happens"),
+        ("slack.exe", r"C:\Users\s\AppData\Roaming\Slack\slack.exe", True, NOTE,
+         "CLEAN: Slack"),
+        ("Signal.exe", r"C:\Users\s\AppData\Roaming\Signal\Signal.exe", True, NOTE,
+         "CLEAN: Signal"),
+        ("winlogon.exe", r"C:\Windows\System32\winlogon.exe", False, None,
+         "CLEAN: Windows itself, which the old NAME patterns matched"),
+        ("explorer.exe", r"C:\Windows\explorer.exe", False, None, "CLEAN: Explorer"),
+    ]
+    for name, path, odd, want, why in PROC:
+        got = S.process_verdict(name, path, KNOWN, odd)
+        report(got == want, "%-24s -> %-8s %s", name, got or "-", why)
+    # The property that makes the Note safe: nothing here may raise cheat_procs.
+    counted = sum(1 for n, p, o, _w, _y in PROC if S.process_verdict(n, p, KNOWN, o) == FINDING)
+    report(counted == 1, "exactly %d of those six may raise cheat_procs (want 1)", counted)
+
     # ---- parity with the shipped PowerShell ---------------------------------
     print("\n=== PowerShell / Python parity ===")
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -158,6 +213,8 @@ def main():
     # Comments are stripped first: this file explains what it removed, and the
     # explanation naming the old pattern is not the old pattern.
     ps_code = "\n".join(l for l in ps.split("\n") if not l.lstrip().startswith("#"))
+    pc = open(os.path.join(root, "src", "96-pcscan.ps1"), encoding="utf-8").read()
+    pc_code = "\n".join(l for l in pc.split("\n") if not l.lstrip().startswith("#"))
     for gone, what in (
             (r"'aac'|\"aac\"|,aac,", "the 'aac' substring in the hosts list"),
             (r"updater\|java", "the scheduled-task name guess"),
@@ -166,6 +223,31 @@ def main():
     ):
         hit = re.search(gone, ps_code)
         report(not hit, "removed: %s", what)
+
+    # The DLL check used to search the whole path for substrings, two of which
+    # were "hook" and "esp". OBS injects graphics-hook64.dll into every game it
+    # records - so the person most likely to trip it was the one recording the
+    # screenshare - and RTSSHooks64.dll is the MSI Afterburner FPS counter.
+    for gone, what in (
+            (r"hook\|bypass", "the DLL name-substring list"),
+            (r"dllSafePrefixes", "the twelve-vendor DLL whitelist that replaced thinking"),
+    ):
+        report(not re.search(gone, pc_code), "removed: %s", what)
+    report("Get-AuthenticodeSignature" in pc_code,
+           "a DLL is judged by its signature, not by its name")
+    report("Test-UserWritablePath" in pc_code,
+           "and only modules outside system folders are checked at all")
+    # A location alone must not be able to raise cheat_procs any more.
+    _proc = re.search(r"if \(\$isSuspiciousName -or \$isSuspiciousPath\)(.{0,400})", pc_code, re.S)
+    report(bool(_proc) and "flaggedProcs" not in (_proc.group(1) if _proc else "x"),
+           "a process is not flagged for WHERE it runs from (Zoom, Slack, Signal)")
+    report("$script:Evidence.CheatProcs   = $flaggedProcs.Count" in pc_code
+           and "unknownProcs" not in re.search(
+               r"\$script:Evidence\.CheatProcs.*", pc_code).group(0),
+           "only a known cheat process name reaches cheat_procs")
+    # The game jar is checked against Mojang's own hash, with no heuristic.
+    report("Run-ClientJarScan" in pc_code and '"sha1"' in pc,
+           "the game jar is compared against the SHA1 in the launcher JSON")
 
     for var, want in (("sysBlackhole", S.BLACKHOLE),
                       ("sysAuthHosts", set(S.AUTH_HOSTS)),

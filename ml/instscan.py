@@ -113,3 +113,36 @@ if __name__ == "__main__":
     for p in sys.argv[1:]:
         print(p, classify_version_json(open(p, encoding="utf-8", errors="replace").read(),
                                        ["net/ccbluex"], ["wurstclient", "doomsday"]))
+
+
+# ------------------------------------------------- the game jar itself --------
+# Until now versions/<v>/ was read for its .json only. The <v>.jar next to it -
+# the game's own code - was never hashed and never analysed, so a patched client
+# jar with an aura compiled straight into it was invisible: not in the mods
+# folder, not scanned, not hashed.
+#
+# It does not need a heuristic. Mojang's own launcher JSON carries the official
+# SHA1 of the client jar it describes, so the tool can PROVE whether the file on
+# disk is the one Mojang shipped. Zero false positives by construction: either
+# the hash matches or it does not.
+
+
+def client_jar_check(version_json, jar_sha1):
+    """(verdict, official_sha1) for one versions/<v>/<v>.json.
+
+    verdict is:
+      "official"  the jar is byte-for-byte what Mojang published
+      "patched"   there is an official hash and the file does not match it
+      "no-hash"   this profile carries no hash of its own (Forge, Fabric and
+                  OptiFine profiles inherit the jar from a parent version and
+                  describe only what to add), so there is nothing to compare
+                  and nothing may be claimed
+    """
+    dl = (version_json or {}).get("downloads") or {}
+    client = dl.get("client") or {}
+    official = (client.get("sha1") or "").lower()
+    if not official:
+        return "no-hash", ""
+    if not jar_sha1:
+        return "no-hash", official
+    return ("official" if jar_sha1.lower() == official else "patched"), official

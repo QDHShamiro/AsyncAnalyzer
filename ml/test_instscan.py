@@ -117,6 +117,37 @@ def main():
         check("%s matches Python" % name, got == rx.pattern,
               "" if got == rx.pattern else "\n        ps=%r\n        py=%r" % (got, rx.pattern))
 
+    print()
+    print("=== The game jar itself, against Mojang's own hash ===")
+    # versions/<v>/ was read for its .json only; the <v>.jar next to it - the
+    # game's own code - was never hashed and never analysed. A patched client jar
+    # with an aura compiled into it was invisible: not in the mods folder, not
+    # scanned. It needs no heuristic, because the launcher JSON carries the
+    # official SHA1 of the jar it describes.
+    OFFICIAL = "cd1a1ee0b0b0f0d0e0e0f0a0b0c0d0e0f0a0b0c0"
+    JAR_CASES = [
+        ({"downloads": {"client": {"sha1": OFFICIAL}}}, OFFICIAL, "official",
+         "byte-for-byte what Mojang published"),
+        ({"downloads": {"client": {"sha1": OFFICIAL}}}, OFFICIAL.upper(), "official",
+         "hex case must not matter"),
+        ({"downloads": {"client": {"sha1": OFFICIAL}}}, "0" * 40, "patched",
+         "the file is not the one Mojang shipped"),
+        ({"downloads": {"client": {"sha1": OFFICIAL}}}, "", "no-hash",
+         "the jar could not be hashed - claim nothing"),
+        ({"inheritsFrom": "1.20.1", "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher"},
+         OFFICIAL, "no-hash",
+         "a Forge profile inherits the jar and carries no hash of its own"),
+        ({"downloads": {}}, OFFICIAL, "no-hash", "an empty downloads block"),
+        ({}, OFFICIAL, "no-hash", "no downloads block at all"),
+        (None, OFFICIAL, "no-hash", "an unreadable profile"),
+    ]
+    for vj, sha, want, why in JAR_CASES:
+        got, official = instscan.client_jar_check(vj, sha)
+        ok = got == want
+        passed += ok
+        failed += not ok
+        print("  [%s] %-9s %s" % ("PASS" if ok else "FAIL", got, why))
+
     print("\n=== RESULT: %d passed, %d failed ===" % (passed, failed))
     return 0 if failed == 0 else 1
 
