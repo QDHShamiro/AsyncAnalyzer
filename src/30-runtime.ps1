@@ -610,7 +610,33 @@ $script:bcBehaviour = [ordered]@{
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe')
+$script:bcDerived = @('selfwipe', 'hiddenapi')
+
+# --- reflective use of the same API ------------------------------------------
+#
+# The table above reads the constant pool's SYMBOL TABLE. That is what makes it
+# survive obfuscation of a cheat's own names: to call a Minecraft method you must
+# name it there.
+#
+# You can avoid naming it there at all, though. Class.forName("net.minecraft...")
+# plus getDeclaredMethod("setYRot") moves every one of those names into STRING
+# constants and the rules stop seeing them. Measured: an aim cheat rewritten that
+# way scored Clean, 3/100 - one refactor evaded all twelve rules.
+#
+# Same vocabulary, matched against strings, minus the leading "\." that anchors a
+# member ref - a reflective call names the method bare. Only the categories a
+# cheat needs: a mod calling Class.forName to see whether another mod is present
+# is ordinary, one reflectively assembling a movement packet is not.
+$script:bcReflectiveApi = [ordered]@{
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
+    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b'
+    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b'
+    'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
+    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
+    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+}
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are
 # everyday library code and would drag legitimate jars in.

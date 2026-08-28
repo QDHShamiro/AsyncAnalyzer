@@ -1287,7 +1287,33 @@ $script:bcBehaviour = [ordered]@{
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe')
+$script:bcDerived = @('selfwipe', 'hiddenapi')
+
+# --- reflective use of the same API ------------------------------------------
+#
+# The table above reads the constant pool's SYMBOL TABLE. That is what makes it
+# survive obfuscation of a cheat's own names: to call a Minecraft method you must
+# name it there.
+#
+# You can avoid naming it there at all, though. Class.forName("net.minecraft...")
+# plus getDeclaredMethod("setYRot") moves every one of those names into STRING
+# constants and the rules stop seeing them. Measured: an aim cheat rewritten that
+# way scored Clean, 3/100 - one refactor evaded all twelve rules.
+#
+# Same vocabulary, matched against strings, minus the leading "\." that anchors a
+# member ref - a reflective call names the method bare. Only the categories a
+# cheat needs: a mod calling Class.forName to see whether another mod is present
+# is ordinary, one reflectively assembling a movement packet is not.
+$script:bcReflectiveApi = [ordered]@{
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
+    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b'
+    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b'
+    'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
+    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
+    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+}
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are
 # everyday library code and would drag legitimate jars in.
@@ -1475,6 +1501,17 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             $hit = @{}
             foreach ($k in $script:bcBehaviour.Keys) {
                 if ($cp.Symbols -match $script:bcBehaviour[$k]) { $hit[$k] = $true }
+            }
+            # Reflective use of the same API. Only counts when this class actually
+            # reflects - a string alone is a mention, reflection makes it a call.
+            if ($hit['reflect']) {
+                $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n"
+                foreach ($rk in $script:bcReflectiveApi.Keys) {
+                    if (-not $hit[$rk] -and $sblob -match $script:bcReflectiveApi[$rk]) {
+                        $hit[$rk] = $true
+                        $hit['hiddenapi'] = $true
+                    }
+                }
             }
             # A class that finds its own jar and deletes a file, and is not
             # unpacking a native library: that is a jar removing itself.
@@ -1820,6 +1857,13 @@ function Get-ModVerdict($ctx) {
         # twice, on a corpus this sandbox cannot reach. Two narrowings did not fix
         # it, so it is reported rather than tuned until it goes quiet: a rule that
         # flags real code is worse than a gap, because this tool accuses people.
+        # Reaching the Minecraft API through reflection so its names never enter
+        # the symbol table. On its own this only says the mod hides which API it
+        # calls - the rules above already scored whatever it was hiding - but a
+        # moderator should see that it was hidden, because no ordinary mod does it.
+        if ($bc.hiddenapiRatio -gt 0) {
+            [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses")
+        }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
@@ -2064,6 +2108,8 @@ function Invoke-SelfTest {
         @{ Label = "Mod that reads its own jar location"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Jetpack mod (writes velocity)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Update checker (http + reflection)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ netRatio = 1.0; reflectRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Aim cheat hidden behind reflection"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 4 }); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; reflectRatio = 1.0; hiddenapiRatio = 1.0 }) } }
+        @{ Label = "Compat shim reflecting on a MC class"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0; inputRatio = 1.0 }) } }
     )
     $pass = 0; $fail = 0
     foreach ($c in $cases) {

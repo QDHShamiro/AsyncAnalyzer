@@ -237,6 +237,34 @@ def body(kind, obf):
       java.security.CodeSource cs = getClass().getProtectionDomain().getCodeSource();
       if (cs.getLocation() != null) hit++;
     } catch (Exception e) {}'''
+    if kind == "reflaim":
+        # The same aim cheat, reaching Minecraft reflectively so none of its API
+        # names land in the symbol table. Before this was detected, this exact
+        # shape scored Clean at 3/100.
+        return '''    try {
+      Class<?> pk = Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket");
+      Class<?> pl = Class.forName("net.minecraft.client.player.LocalPlayer");
+      pl.getDeclaredMethod("setYRot", float.class).invoke(me, 1.0f);
+      pl.getDeclaredMethod("setXRot", float.class).invoke(me, 0.5f);
+      Object o = pk.getDeclaredConstructors()[0].newInstance();
+      hit += o.hashCode();
+    } catch (Exception e) {}'''
+    if kind == "reflspeed":
+        return '''    try {
+      Class<?> e2 = Class.forName("net.minecraft.world.entity.Entity");
+      e2.getDeclaredMethod("setDeltaMovement", double.class).invoke(me, 1.8);
+      Class.forName("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket");
+    } catch (Exception e) {}'''
+    if kind == "compat":
+        # A legitimate compatibility shim: it reflects, and it names a Minecraft
+        # class, to find out whether another mod is installed. It never names a
+        # packet, a rotation setter or a motion write - which is the whole
+        # difference, and why this rule is scoped to those and not to any MC name.
+        return '''    try {
+      Class<?> c = Class.forName("net.minecraft.client.Minecraft");
+      c.getDeclaredMethod("getInstance");
+      for (java.lang.reflect.Field f : c.getDeclaredFields()) { f.setAccessible(true); }
+    } catch (Exception e) {}'''
     if kind == "printer":
         # Litematica-style schematic printer: places blocks through the game's own
         # interaction manager while a key is held. No forged movement, no forged
@@ -375,6 +403,9 @@ def variants():
         ["invmove"], ["httpcfg"], ["selfdel"], ["freecam"],
         ["httpcfg", "selfdel"], ["invmove", "aim"], ["freecam", "esp"],
         ["selfdel", "httpcfg", "load"],
+        # the same cheats, reaching Minecraft reflectively so their API names
+        # never enter the symbol table
+        ["reflaim"], ["reflspeed"], ["reflaim", "esp"], ["reflspeed", "nofall"],
         # a ghost client is a bundle, not one module
         ["aim", "scaffold", "velocity"], ["reach", "nofall", "freecam"],
         ["httpcfg", "load", "invmove"],
@@ -407,6 +438,7 @@ def variants():
         ["updatecheck"], ["updatecheck", "cfg"],
         ["resourceclean"], ["modloader"], ["modloader", "cfg"],
         ["jetpack", "grapple", "elytraboost"],
+        ["compat"], ["compat", "cfg"], ["compat", "updatecheck"],
         # realistic packs: several legit utilities in one jar
         ["printer", "invsort", "key"], ["radar", "reachdisp", "zoom"],
         ["shoulder", "sprint", "map"], ["veinmine", "invsort", "cfg"],

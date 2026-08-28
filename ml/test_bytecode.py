@@ -168,6 +168,39 @@ def parity_test():
                   % (k, sorted(a - b), sorted(b - a)))
     print("  %d categories compared, %d mismatch(es)" % (len(py_cats), failed))
 
+    # The reflective table lives in two places as well, and it is the one that
+    # closes the evasion - a drift there reopens it silently.
+    ps_refl = re.search(r"\$script:bcReflectiveApi = \[ordered\]@\{(.*?)\n\}", ps, re.S)
+    if ps_refl:
+        ps_r = dict(re.findall(r"^\s*'(\w+)'\s*=\s*'(.*)'\s*$", ps_refl.group(1), re.M))
+        py_r = {k[3:]: v.pattern for k, v in bytecode._REFLECTIVE_API.items()}
+        same = {k: ps_r.get(k) == py_r[k] for k in py_r}
+        bad = [k for k, ok in same.items() if not ok]
+        passed += len(py_r) - len(bad)
+        failed += len(bad)
+        print("  reflective table: %d categories, %d mismatch(es)%s"
+              % (len(py_r), len(bad), (" -> " + ", ".join(bad)) if bad else ""))
+        if set(ps_r) != set(py_r):
+            failed += 1
+            print("  FAIL  reflective categories differ: ps=%s py=%s"
+                  % (sorted(ps_r), sorted(py_r)))
+    else:
+        failed += 1
+        print("  FAIL  no reflective table found in the PowerShell source")
+
+    # An aim cheat that reaches Minecraft reflectively used to score Clean at
+    # 3/100 - every behaviour rule was evadable with one refactor. Pin the close.
+    for sym, want in (("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket", True),
+                      ("com.example.MovePlayerHelper", False),
+                      ("setYRot", True),
+                      ("resetYRotation", False)):
+        got = any(rx.search(sym) for rx in bytecode._REFLECTIVE_API.values())
+        ok = got == want
+        passed += ok
+        failed += (not ok)
+        print("  %s  reflective token on %-58s -> %s"
+              % ("PASS" if ok else "FAIL", sym, got))
+
     # A bare "\.swing" matched javax/swing and rhino's swingGui field. Pin the fix:
     # a Swing application dropped into a mods folder must not read as combat code.
     for sym, want in (("javax/swing/JButton.setText", False),

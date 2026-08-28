@@ -305,6 +305,13 @@ function Get-ModVerdict($ctx) {
         # twice, on a corpus this sandbox cannot reach. Two narrowings did not fix
         # it, so it is reported rather than tuned until it goes quiet: a rule that
         # flags real code is worse than a gap, because this tool accuses people.
+        # Reaching the Minecraft API through reflection so its names never enter
+        # the symbol table. On its own this only says the mod hides which API it
+        # calls - the rules above already scored whatever it was hiding - but a
+        # moderator should see that it was hidden, because no ordinary mod does it.
+        if ($bc.hiddenapiRatio -gt 0) {
+            [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses")
+        }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
@@ -549,6 +556,8 @@ function Invoke-SelfTest {
         @{ Label = "Mod that reads its own jar location"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Jetpack mod (writes velocity)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Update checker (http + reflection)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ netRatio = 1.0; reflectRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Aim cheat hidden behind reflection"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 4 }); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; reflectRatio = 1.0; hiddenapiRatio = 1.0 }) } }
+        @{ Label = "Compat shim reflecting on a MC class"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0; inputRatio = 1.0 }) } }
     )
     $pass = 0; $fail = 0
     foreach ($c in $cases) {

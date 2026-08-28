@@ -163,6 +163,10 @@ BEHAVIOUR = {
 # are usually unrelated classes, which is exactly how the first version of the
 # self-wipe rule matched sixteen bytecode libraries.
 DERIVED = {
+    # set when a behaviour was found only through reflection - worth surfacing on
+    # its own, because deliberately hiding which Minecraft API you call is not
+    # something an ordinary mod has a reason to do
+    "bc_hiddenapi": lambda hits: False,   # set directly, not derived from others
     # a class that finds its own jar and deletes a file, and is not unpacking a
     # native library: that is a jar removing itself
     "bc_selfwipe": lambda hits: ("bc_selfpath" in hits and "bc_filedelete" in hits
@@ -178,6 +182,47 @@ _REFLECTIVE_NAMES = {
     "bc_classload": re.compile(r"^(defineClass|defineAnonymousClass|defineHiddenClass)$"),
     "bc_instrument": re.compile(r"^(premain|agentmain|retransformClasses)$"),
 }
+
+# --- reflective use of the same API ------------------------------------------
+#
+# The behaviour categories above read the constant pool's SYMBOL TABLE - Class
+# entries and member refs. That is what makes them survive obfuscation of a cheat's
+# own names: to call a Minecraft method you must name it there.
+#
+# You can, however, avoid naming it there at all. Class.forName("net.minecraft...")
+# plus getDeclaredMethod("setYRot") moves every one of those names into STRING
+# constants, and the rules stop seeing them. Measured: an aim cheat rewritten that
+# way scored Clean, 3/100 - one refactor evades all twelve rules.
+#
+# So the same vocabulary is matched against strings too. The tokens are the same,
+# minus the leading "\." that anchors them to a member ref, because a reflective
+# call names the method bare: getDeclaredMethod("setYRot").
+#
+# Kept to the categories a cheat needs and a compatibility shim does not. A mod
+# doing Class.forName on some class to check whether another mod is installed is
+# ordinary; one that reflectively assembles a movement packet is not.
+# The tokens are chosen, not derived by stripping the qualifiers off the table
+# above: a reflective call names the class and the method SEPARATELY, so
+# "MultiPlayerGameMode\.attack" has no reflective form, and the bare word "attack"
+# would match anything. What is listed here is the part that is distinctively
+# Minecraft on its own - a packet class, an intermediary name, a method that
+# exists nowhere else.
+_REFLECTIVE_API = {
+    "bc_movepacket": r"ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828",
+    "bc_rotation":   r"\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b",
+    "bc_attack":     r"ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824"
+                     r"|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b",
+    "bc_motion":     r"\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b"
+                     r"|\bmethod_18798\b",
+    "bc_blockplace": r"ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885"
+                     r"|\bmethod_2896\b",
+    "bc_blockbreak": r"ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846"
+                     r"|\bmethod_2910\b",
+    "bc_container":  r"ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813"
+                     r"|AbstractContainerMenu",
+    "bc_pktlisten":  r"ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535",
+}
+_REFLECTIVE_API = {k: re.compile(v) for k, v in _REFLECTIVE_API.items()}
 
 _WORDY = re.compile(rb"^[\x20-\x7e]{4,}$")
 
@@ -296,6 +341,15 @@ def extract_jar(path, max_classes=0):
             for k, rx in _COMPILED.items():
                 if rx.search(blob):
                     hit_here.add(k)
+            # Reflective use of the same API. Only counts when this class actually
+            # reflects - a string alone is a mention, reflection makes it a call.
+            if "bc_reflect" in hit_here:
+                sblob = "\n".join(
+                    x.decode("utf-8", "ignore") for x in strings if len(x) < 200)
+                for k, rx in _REFLECTIVE_API.items():
+                    if k not in hit_here and rx.search(sblob):
+                        hit_here.add(k)
+                        hit_here.add("bc_hiddenapi")
             for k, fn in DERIVED.items():
                 if fn(hit_here):
                     hit_here.add(k)

@@ -167,6 +167,17 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             foreach ($k in $script:bcBehaviour.Keys) {
                 if ($cp.Symbols -match $script:bcBehaviour[$k]) { $hit[$k] = $true }
             }
+            # Reflective use of the same API. Only counts when this class actually
+            # reflects - a string alone is a mention, reflection makes it a call.
+            if ($hit['reflect']) {
+                $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n"
+                foreach ($rk in $script:bcReflectiveApi.Keys) {
+                    if (-not $hit[$rk] -and $sblob -match $script:bcReflectiveApi[$rk]) {
+                        $hit[$rk] = $true
+                        $hit['hiddenapi'] = $true
+                    }
+                }
+            }
             # A class that finds its own jar and deletes a file, and is not
             # unpacking a native library: that is a jar removing itself.
             if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp'] -and -not $hit['archive']) {
