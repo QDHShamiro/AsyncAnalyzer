@@ -118,10 +118,52 @@ function Test-LoadedFromDisk([string]$Token) {
     return $false
 }
 
+# The class or classes a rule actually fired on, as a phrase to append to its
+# reason line. A rule that pairs two behaviours is only answered by a class that
+# carries both, so the caller passes the same categories the rule tested.
+function Get-BcWitness($Bc, [string[]]$Cats, [int]$Max = 2) {
+    if ($null -eq $Bc -or -not $Bc.ContainsKey('ClassHits')) { return "" }
+    $out = [System.Collections.Generic.List[string]]::new()
+    # Sorted, so two scans of the same jar name the same class.
+    foreach ($cn in @($Bc.ClassHits.Keys | Sort-Object)) {
+        $have = @($Bc.ClassHits[$cn])
+        $all = $true
+        foreach ($c in $Cats) { if ($have -notcontains $c) { $all = $false; break } }
+        if ($all) {
+            [void]$out.Add($cn)
+            if ($out.Count -ge $Max) { break }
+        }
+    }
+    if ($out.Count -gt 0) { return " [in $($out -join ', ')]" }
+    # The rules compare jar-wide RATIOS, so the two halves of a pair can sit in
+    # different classes. Say which, rather than saying nothing: one class doing
+    # both is a sharper fact than two classes doing one each, and a person
+    # reading the report should be able to tell those apart.
+    $parts = [System.Collections.Generic.List[string]]::new()
+    foreach ($c in $Cats) {
+        $where = [System.Collections.Generic.List[string]]::new()
+        foreach ($cn in @($Bc.ClassHits.Keys | Sort-Object)) {
+            if (@($Bc.ClassHits[$cn]) -contains $c) {
+                [void]$where.Add($cn)
+                if ($where.Count -ge $Max) { break }
+            }
+        }
+        if ($where.Count -gt 0) { [void]$parts.Add("$c in $($where -join ', ')") }
+    }
+    if ($parts.Count -eq 0) { return "" }
+    return " [$($parts -join '; ')]"
+}
+
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
             StrReadableRatio = 0.0; StrEntropy = 0.0
-            MixinAreas = [System.Collections.Generic.List[string]]::new() }
+            MixinAreas = [System.Collections.Generic.List[string]]::new()
+            # Which class each behaviour was seen in. The rules combine two
+            # categories ("forges movement AND writes a rotation"), so what a
+            # person needs in order to check the finding themselves is the class
+            # that carries BOTH - see Get-BcWitness. Without it the report says
+            # "a class in here", which is not something anyone can verify.
+            ClassHits = @{} }
     foreach ($k in $script:bcBehaviour.Keys) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     foreach ($k in $script:bcDerived) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     $short = 0; $names = 0; $readable = 0; $totalStr = 0; $entSum = 0.0; $entN = 0
@@ -252,6 +294,9 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
                 }
             }
             foreach ($k in $hit.Keys) { $f[$k]++ }
+            # Bounded: a large obfuscated jar can hit on hundreds of classes and
+            # the report only ever names two.
+            if ($hit.Count -gt 0 -and $f.ClassHits.Count -lt 80) { $f.ClassHits[$e.FullName] = @($hit.Keys) }
 
             $names++
             if ($simple.Length -le 2) { $short++ }

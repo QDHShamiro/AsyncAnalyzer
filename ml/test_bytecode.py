@@ -346,6 +346,56 @@ def main():
                 "PASS" if ok else "FAIL", nm, r["bc_mixin"], r["bc_mixintarget"],
                 ",".join(r["mixin_areas"]) or "-", got, want))
 
+        # ---- every rule that fires must be able to say WHERE ------------------
+        # "a class in here does X" is not something a moderator, or the person
+        # being accused, can check. The report names the class the rule actually
+        # fired on, so both sides can open the jar and look.
+        print("\n=== Every finding names the class it came from ===")
+        WITNESS_RULES = [
+            (["bc_movepacket", "bc_rotation"], "aim/killaura"),
+            (["bc_blockplace", "bc_movepacket"], "scaffold"),
+            (["bc_movepacket", "bc_motion"], "speed/no-fall"),
+            (["bc_entityscan", "bc_attack"], "target sweep"),
+            (["bc_crypto", "bc_classload"], "loader/dropper"),
+        ]
+        fired = 0
+        for jp in sorted(glob.glob(os.path.join(jars, "cheat_*.jar"))):
+            nm = os.path.basename(jp)[6:-4]
+            r = bytecode.extract_jar(jp)
+            for cats, label in WITNESS_RULES:
+                if not all(r[c + "_ratio"] > 0 for c in cats):
+                    continue
+                fired += 1
+                w = bytecode.witness(r["class_hits"], cats)
+                # Non-empty, and the class it names really does carry the
+                # categories - a witness that points at the wrong class would be
+                # worse than none at all.
+                named = [x.strip() for x in w.strip(" []").replace("in ", "").split(",")] if w else []
+                ok = bool(w) and any(
+                    all(c in r["class_hits"].get(n, ()) for c in cats) for n in named)
+                passed += ok
+                failed += (not ok)
+                print("  [%s] %-16s %-14s -> %s" % (
+                    "PASS" if ok else "FAIL", nm, label, w.strip() or "NOTHING"))
+        # A rule set that stopped firing would report a clean run over nothing.
+        ok = fired >= 6
+        passed += ok
+        failed += (not ok)
+        print("  [%s] %d rule firings had a witness to produce (needs 6+)" % (
+            "PASS" if ok else "FAIL", fired))
+        # And the clean corpus must produce no firing at all to be witnessed.
+        clean_fired = 0
+        for jp in sorted(glob.glob(os.path.join(jars, "clean_*.jar"))):
+            r = bytecode.extract_jar(jp)
+            for cats, _label in WITNESS_RULES:
+                if all(r[c + "_ratio"] > 0 for c in cats):
+                    clean_fired += 1
+        ok = clean_fired == 0
+        passed += ok
+        failed += (not ok)
+        print("  [%s] no clean jar fires one of these rules at all (%d)" % (
+            "PASS" if ok else "FAIL", clean_fired))
+
         cp, cf = coverage_test()
         passed += cp
         failed += cf

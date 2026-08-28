@@ -328,12 +328,12 @@ function Get-ModVerdict($ctx) {
         # separation on the corpus was total - no legitimate mod fakes its own movement.
         if ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint; normal mods never do this")
+            [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint; normal mods never do this" + (Get-BcWitness $bc @('movepacket','rotation')))
         }
         # Loader / dropper: decrypt something, then define a class out of the plaintext.
         if ($bc.cryptoRatio -ge 0.5 -and ($bc.classloadRatio -gt 0 -or $bc.reflectRatio -ge 0.5)) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: decrypts data and defines classes from it at runtime $([char]0x2014) loader/dropper pattern")
+            [void]$reasons.Add("Behaviour: decrypts data and defines classes from it at runtime $([char]0x2014) loader/dropper pattern" + (Get-BcWitness $bc @('crypto')))
         }
         # Forging your own movement is the line between automating the game and
         # lying to the server about where you are. Each of these pairs that forgery
@@ -341,41 +341,41 @@ function Get-ModVerdict($ctx) {
         # corpus at 0 hits across 405 clean jars, 177 of them real libraries.
         if ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement")
+            [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement" + (Get-BcWitness $bc @('blockplace','movepacket')))
         }
         if ($bc.movepacketRatio -gt 0 -and $bc.motionRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match $([char]0x2014) speed / no-fall / blink. The game never produced this movement")
+            [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match $([char]0x2014) speed / no-fall / blink. The game never produced this movement" + (Get-BcWitness $bc @('movepacket','motion')))
         }
         if ($bc.containerRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement")
+            [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement" + (Get-BcWitness $bc @('container','movepacket')))
         }
         # Strong, but not the same order of certainty as forging movement, so these
         # flag rather than confirm.
         if ($bc.movepacketRatio -gt 0 -and $bc.inputRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: sends its own movement packets and never reads the keyboard $([char]0x2014) the movement is not coming from the player")
+            [void]$reasons.Add("Behaviour: sends its own movement packets and never reads the keyboard $([char]0x2014) the movement is not coming from the player" + (Get-BcWitness $bc @('movepacket')))
         }
         if ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep $([char]0x2014) killaura / reach / triggerbot pick their target this way")
+            [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep $([char]0x2014) killaura / reach / triggerbot pick their target this way" + (Get-BcWitness $bc @('entityscan','attack')))
         }
         if ($bc.attackRatio -gt 0 -and $bc.inputRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: attacks without ever reading a key or mouse button $([char]0x2014) the hits are not coming from the player (autoclicker / triggerbot)")
+            [void]$reasons.Add("Behaviour: attacks without ever reading a key or mouse button $([char]0x2014) the hits are not coming from the player (autoclicker / triggerbot)" + (Get-BcWitness $bc @('attack')))
         }
         if ($bc.pktlistenRatio -gt 0 -and $bc.motionRatio -gt 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back")
+            [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back" + (Get-BcWitness $bc @('pktlisten','motion')))
         }
         if ($bc.blockbreakRatio -gt 0 -and $bc.inputRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: breaks blocks without reading input $([char]0x2014) nuker. A vein miner breaks blocks too, but only while the player is mining")
+            [void]$reasons.Add("Behaviour: breaks blocks without reading input $([char]0x2014) nuker. A vein miner breaks blocks too, but only while the player is mining" + (Get-BcWitness $bc @('blockbreak')))
         }
         if ($bc.rotationRatio -gt 0 -and $bc.renderRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them")
+            [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them" + (Get-BcWitness $bc @('rotation','render')))
         }
         # NOT a rule. A jar that locates its own file and deletes it is exactly the
         # wipe pattern, and it is still measured ($bc.selfwipeRatio) - but it does
@@ -395,10 +395,10 @@ function Get-ModVerdict($ctx) {
         # without a score cannot cause a false flag - it does not move the band - and
         # a jar that finds its own file and deletes it is worth a moderator seeing.
         if ($bc.selfwipeRatio -gt 0) {
-            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes a file $([char]0x2014) the shape of a mod that removes itself after running. NOT scored: this pattern also flagged real bytecode libraries twice, so it is written down for you rather than counted against the file")
+            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes a file $([char]0x2014) the shape of a mod that removes itself after running. NOT scored: this pattern also flagged real bytecode libraries twice, so it is written down for you rather than counted against the file" + (Get-BcWitness $bc @('selfwipe')))
         }
         if ($bc.hiddenapiRatio -gt 0) {
-            [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses")
+            [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses" + (Get-BcWitness $bc @('hiddenapi')))
         }
         # Mixins. Not an accusation and not scored: a Fabric mod IS mixins - Sodium,
         # Lithium and the Fabric API are nothing else. What is worth writing down is

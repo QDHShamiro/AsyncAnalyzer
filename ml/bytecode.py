@@ -413,6 +413,34 @@ def _shannon(b):
     return -sum((c / n) * math.log(c / n, 2) for c in counts if c)
 
 
+def witness(class_hits, cats, max_names=2):
+    """The class(es) a rule actually fired on. Mirrors Get-BcWitness.
+
+    A rule that pairs two behaviours is only answered by a class carrying both,
+    so the caller passes the same categories the rule tested. Sorted, so two
+    scans of the same jar name the same class.
+    """
+    both = []
+    for name in sorted(class_hits):
+        if all(c in class_hits[name] for c in cats):
+            both.append(name)
+            if len(both) >= max_names:
+                break
+    if both:
+        return " [in %s]" % ", ".join(both)
+    # The rules compare jar-wide RATIOS, so the two halves of a pair can sit in
+    # different classes. Say which, rather than saying nothing: one class doing
+    # both is a sharper fact than two classes doing one each, and a person
+    # reading the report should be able to tell those apart.
+    parts = []
+    for c in cats:
+        where = [n for n in sorted(class_hits) if c in class_hits[n]][:max_names]
+        if where:
+            parts.append("%s in %s" % (c[3:] if c.startswith("bc_") else c,
+                                       ", ".join(where)))
+    return " [%s]" % "; ".join(parts) if parts else ""
+
+
 def extract_jar(path, max_classes=0):
     """Parse the classes in a jar and return raw behavioural counts.
 
@@ -428,6 +456,7 @@ def extract_jar(path, max_classes=0):
     readable = total_str = 0
     ent_sum = ent_n = 0.0
     mixin_areas = set()
+    class_hits = {}
 
     try:
         z = zipfile.ZipFile(path)
@@ -537,6 +566,13 @@ def extract_jar(path, max_classes=0):
                         pass
             for k in hit_here:
                 out[k] += 1
+            # Which class each behaviour was seen in. The rules combine two
+            # categories ("forges movement AND writes a rotation"), so what a
+            # person needs in order to check the finding is the class carrying
+            # BOTH - see witness(). Bounded: a big obfuscated jar hits on
+            # hundreds of classes and the report only ever names two.
+            if hit_here and len(class_hits) < 80:
+                class_hits[n] = set(hit_here)
             # structural obfuscation: measured on the symbol table, not raw bytes
             simple = n.rsplit("/", 1)[-1][:-6]
             total_names += 1
@@ -564,6 +600,7 @@ def extract_jar(path, max_classes=0):
     # Evidence for the report, not a feature: which parts of the game this jar
     # compiles itself into. Ordered as declared so the line reads the same way twice.
     out["mixin_areas"] = [a for a, _ in _MIXIN_AREA if a in mixin_areas]
+    out["class_hits"] = class_hits
     return out
 
 
