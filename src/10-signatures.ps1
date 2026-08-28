@@ -571,6 +571,20 @@ $script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System
 # Everything this run could NOT check. An autonomous tool must never report "clean"
 # for a check it silently skipped, so every limitation is collected and shown with
 # the verdict instead of being swallowed.
+# ---------------------------------------------------------------------------
+# Windows system checks - the tables. Mirrors ml/sysscan.py.
+#
+# An address that sends a name nowhere. A hosts line pointing at a REAL ip is a
+# redirect, not a block: LAN setups, mirrors and split-horizon DNS all do it.
+$script:sysBlackhole = @('0.0.0.0', '0:0:0:0:0:0:0:0', '127.0.0.1', '255.255.255.255', '::', '::1')
+# The game's own login servers. Blackholing these while playing is not a
+# preference; it is the client being kept from talking to Mojang.
+$script:sysAuthHosts = @('sessionserver.mojang.com', 'authserver.mojang.com', 'api.mojang.com', 'api.minecraftservices.com')
+# Folders a launcher actually keeps a Minecraft install in. Used to decide
+# whether a Defender exclusion is about Minecraft AT ALL - the check this
+# replaced matched the substring 'mod', which covers ModernWarfare and \Models\.
+$script:sysMcMarkers = @('\.minecraft', '\.lunarclient', '\badlion', '\feather', '\labymod', '\prismlauncher', '\multimc', '\polymc', '\atlauncher', '\modrinthapp', '\curseforge\minecraft', '\.technic', '\.tlauncher', '\gdlauncher')
+
 $script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
 # Jars that ran on this PC and are gone now, from BOTH sources: the BAM registry
 # (needs admin, sees executables) and the live JVM's own record of what it loaded

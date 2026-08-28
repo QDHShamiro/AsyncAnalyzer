@@ -805,6 +805,10 @@ function Write-SystemFlag([string]$Level, [string]$Msg, [string[]]$Items = @()) 
         "WARN" { W "  $([char]0x2502) " DarkYellow -NoNewline; W " WARN " Black -NoNewline; W "  $Msg" Yellow }
         "OK"   { W "  $([char]0x2502) " DarkGreen -NoNewline; W "  OK  " White -NoNewline; W "  $Msg" Green }
         "INFO" { W "  $([char]0x2502) " DarkGray -NoNewline; W "  ??  " White -NoNewline; W "  $Msg" DarkGray }
+        # How the PC is set up. Real, shown, and deliberately outside every filter
+        # that decides anything: a third-party antivirus turns the Windows firewall
+        # off by itself, and that must not become a coverage gap OR a finding.
+        "STATE" { W "  $([char]0x2502) " DarkGray -NoNewline; W " STATE" White -NoNewline; W "  $Msg" DarkGray }
     }
     $items = @($Items)
     if ($items.Count -gt 0) {

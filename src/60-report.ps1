@@ -27,8 +27,43 @@ function Get-LevelStyle([string]$level) {
         # INFO never reaches a card - it is routed to the coverage gaps instead - but
         # it keeps a style so nothing renders blank if that ever changes.
         "INFO" { return @{ c = "#9aa8ba"; label = "NOT RUN";  rank = 2 } }
+        # The state of the PC: real, worth seeing, and not evidence of cheating.
+        # It has its own level so no filter that looks for FAIL/WARN can pick it
+        # up by accident - a firewall turned off by an antivirus must never end
+        # up in "Look at these first".
+        "STATE" { return @{ c = "#9aa8ba"; label = "PC STATE"; rank = 4 } }
         default { return @{ c = "#3ddc84"; label = "CLEAR";   rank = 3 } }
     }
+}
+
+# One card, used for findings and for the PC-state block alike. They are the same
+# object with a different level, and rendering them two different ways once meant
+# writing the markup twice and letting the copies drift.
+function New-FindingCard($f) {
+    $ls = Get-LevelStyle $f.Level
+    $itemHtml = ""
+    if (@($f.Items).Count -gt 0) {
+        $li = ""
+        foreach ($i in @($f.Items)) { $li += "<li class='mono'>$(Enc $i)</li>" }
+        $itemHtml = "<div class='why'><div class='eyebrow'>What exactly was found ($(@($f.Items).Count))</div><ul class='evidence'>$li</ul></div>"
+    }
+    $rz = ""
+    if ($f.What) { $rz += "<div class='r'><span class='rl'>What this check does</span>$(Enc $f.What)</div>" }
+    if ($f.Why)  { $rz += "<div class='r'><span class='rl'>Why it matters</span>$(Enc $f.Why)</div>" }
+    if ($f.How)  { $rz += "<div class='r'><span class='rl'>How it gets there</span>$(Enc $f.How)</div>" }
+    if ($f.Fix)  { $rz += "<div class='r'><span class='rl'>What to do</span>$(Enc $f.Fix)</div>" }
+    $reasonHtml = if ($rz) { "<div class='why'><div class='eyebrow'>Reasoning</div><div class='reason-grid'>$rz</div></div>" } else { "" }
+    return @"
+<article class="find" style="--lc:$($ls.c);">
+  <header class="find-head">
+    <span class="tag" style="background:$($ls.c);">$($ls.label)</span>
+    <h3>$(Enc $f.Title)</h3>
+    <span class="area">$(Enc $f.Area)</span>
+  </header>
+  $itemHtml
+  $reasonHtml
+</article>
+"@
 }
 
 function New-HtmlReport([string]$OutPath = "") {
@@ -165,6 +200,18 @@ function New-HtmlReport([string]$OutPath = "") {
         "<details><summary>Verified mods ($($verified.Count)) &mdash; hash matched a real release on Modrinth or CurseForge</summary><table><thead><tr><th>Mod</th><th>File</th><th>Status</th></tr></thead><tbody>$verRows</tbody></table></details>"
     } else { "" }
 
+    # ---- the state of the PC, kept apart from the accusation ----------------
+    # A third-party antivirus turns the Windows firewall off by itself; script
+    # logging is off by default on home Windows. Counting either against a player
+    # is how an innocent person collects "system issues". They are still shown,
+    # because a Security log cleared an hour before the screenshare is something
+    # a moderator wants to see - it just is not the tool's claim to make.
+    $stateRows = ""
+    foreach ($f in $state) { $stateRows += New-FindingCard $f }
+    $stateBox = if ($state.Count -eq 0) {
+        "<div class='panel clear'>Firewall on, script logging at its default, Security log not cleared. Nothing to note about how this PC is set up.</div>"
+    } else { $stateRows }
+
     # ---- look at these first ------------------------------------------------
     # A moderator reads this during a call, with somebody waiting. The report is
     # thorough, which is the same thing as long: the verdict is at the top and
@@ -226,32 +273,10 @@ function New-HtmlReport([string]$OutPath = "") {
     # a staff member has to work through with things that were never findings.
     $real  = @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })
     $clear = @($script:Findings | Where-Object { $_.Level -eq "OK" })
+    $state = @($script:Findings | Where-Object { $_.Level -eq "STATE" })
     $findCards = ""
     foreach ($f in ($real | Sort-Object @{ e = { (Get-LevelStyle $_.Level).rank } }, Area)) {
-        $ls = Get-LevelStyle $f.Level
-        $itemHtml = ""
-        if (@($f.Items).Count -gt 0) {
-            $li = ""
-            foreach ($i in @($f.Items)) { $li += "<li class='mono'>$(Enc $i)</li>" }
-            $itemHtml = "<div class='why'><div class='eyebrow'>What exactly was found ($(@($f.Items).Count))</div><ul class='evidence'>$li</ul></div>"
-        }
-        $rz = ""
-        if ($f.What) { $rz += "<div class='r'><span class='rl'>What this check does</span>$(Enc $f.What)</div>" }
-        if ($f.Why)  { $rz += "<div class='r'><span class='rl'>Why it matters</span>$(Enc $f.Why)</div>" }
-        if ($f.How)  { $rz += "<div class='r'><span class='rl'>How it gets there</span>$(Enc $f.How)</div>" }
-        if ($f.Fix)  { $rz += "<div class='r'><span class='rl'>What to do</span>$(Enc $f.Fix)</div>" }
-        $reasonHtml = if ($rz) { "<div class='why'><div class='eyebrow'>Reasoning</div><div class='reason-grid'>$rz</div></div>" } else { "" }
-        $findCards += @"
-<article class="find" style="--lc:$($ls.c);">
-  <header class="find-head">
-    <span class="tag" style="background:$($ls.c);">$($ls.label)</span>
-    <h3>$(Enc $f.Title)</h3>
-    <span class="area">$(Enc $f.Area)</span>
-  </header>
-  $itemHtml
-  $reasonHtml
-</article>
-"@
+        $findCards += New-FindingCard $f
     }
     if (-not $findCards) {
         $findCards = "<div class='panel clear'><b class='goodfg'>Nothing outside the mods folder.</b> Every check listed under coverage came back clear.</div>"
@@ -518,6 +543,12 @@ footer a:hover{text-decoration:underline;}
     <button class="btn" onclick="cp(this)">Copy summary</button>
   </div>
   <div class="tscroll"><table id="ft"><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allRows</tbody></table></div>
+</section>
+
+<section>
+  <h2>How this PC is set up<span class="count">$($state.Count)</span></h2>
+  <p class="note">Not cheat evidence and not counted against anyone &mdash; a third-party antivirus switches the Windows firewall off by itself. Here because a moderator should see it, and because the dates can matter.</p>
+  $stateBox
 </section>
 
 <section>

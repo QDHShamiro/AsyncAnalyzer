@@ -157,12 +157,30 @@ check("the plain summary uses the same finding filter",
       '$realF = @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })' in REPORT)
 check("an INFO check is not counted as a finding for its area",
       '$_.Area -eq $a -and ($_.Level -eq "FAIL" -or $_.Level -eq "WARN")' in REPORT)
-# every INFO call site must carry a message that reads as a gap, not a result
-info_msgs = re.findall(r'Write-SystemFlag "INFO" "([^"]+)"', DISCOVERY + (ROOT / "src" / "91-system.ps1").read_text(encoding="utf-8"))
-check("there is at least one INFO call site to protect", len(info_msgs) > 0, str(len(info_msgs)))
-bad = [m for m in info_msgs if not any(w in m.lower() for w in
-       ("administrator", "could not", "not accessible", "no ", "not read"))]
-check("every INFO message explains what could not be done", not bad, f"vague: {bad}")
+# A check that could not run has to say so in the coverage box. The system checks
+# now call Add-ScanGap directly instead of going through an INFO flag, so what
+# matters is that every failure path leads there rather than to silence.
+_SYS = (ROOT / "src" / "91-system.ps1").read_text(encoding="utf-8")
+_catches = re.findall(r"\}\s*catch\s*\{([^}]*)\}", _SYS)
+_silent = [c for c in _catches if c.strip() and "Add-ScanGap" not in c
+           and "Write-SystemFlag" not in c and "return" not in c]
+check("no system check fails silently - every catch reports or recovers",
+      not _silent, str(_silent)[:120])
+# and PC state must NOT be routed into the coverage box: the firewall being off
+# is not a check that failed to run.
+_flag_fn = re.search(r"function Write-SystemFlag.*?\n\}", DISCOVERY, re.S).group(0)
+check("PC state is not recorded as a coverage gap",
+      'if ($Level -eq "INFO") { Add-ScanGap $Msg }' in _flag_fn
+      and '"STATE"' in _flag_fn and 'STATE") { Add-ScanGap' not in _flag_fn)
+# A gap message has to say what was NOT checked, in words a moderator can act on.
+# "Defender exclusions - INFO" tells nobody anything; "could not be read, so an
+# exclusion hiding the mods folder would not have been seen" does.
+gap_msgs = re.findall(r'Add-ScanGap "([^"]{20,})"', _SYS)
+bad = [m for m in gap_msgs if not any(w in m.lower() for w in
+       ("administrator", "could not", "not be read", "would not have been seen",
+        "not checked", "not accessible"))]
+check("every system gap explains what could not be done", not bad, f"vague: {bad}")
+check("there are system gap messages at all", len(gap_msgs) >= 3, str(len(gap_msgs)))
 check("the no-gap box does not claim more than 'nothing was skipped'",
       "Nothing was skipped." in REPORT)
 
@@ -232,6 +250,39 @@ check("a clean scan is told plainly here as well",
 # Bounded: a pack with fifty flagged jars must not turn this into the report.
 check("the list is capped and says how many are left",
       "$shown -ge 8" in REPORT and "more below, in full" in REPORT)
+
+# --- the system checks must actually reach the report ------------------------
+# The whole SYSTEM FORENSICS section, IFEO hijacking included, used to print to
+# the console, bump a counter and reach the report not at all.
+SYSTEM = (ROOT / "src" / "91-system.ps1").read_text(encoding="utf-8")
+check("system checks create findings, not just console output",
+      "Add-Finding" in SYSTEM and SYSTEM.count("Add-Finding") >= 3)
+check("cheat-relevant and PC-state findings go to different areas",
+      '"System forensics"' in SYSTEM and '"PC state"' in SYSTEM)
+# The property that makes it safe to show PC state at all: it must not be able
+# to reach any filter that decides something.
+check("PC state is its own level, outside FAIL and WARN",
+      'Write-SystemFlag "STATE"' in SYSTEM
+      and '$script:SysArea = "PC state"' in SYSTEM
+      and '$_.Level -eq "STATE"' in REPORT)
+_state_helper = re.search(r"function Add-SysState.*?\n\}", SYSTEM, re.S)
+check("PC state never increments the system-issue counter",
+      bool(_state_helper) and "SystemIssues" not in _state_helper.group(0),
+      "Add-SysState must not touch $script:SystemIssues")
+_cheat_helper = re.search(r"function Add-SysCheat.*?\n\}", SYSTEM, re.S)
+check("cheat-relevant system findings DO count",
+      bool(_cheat_helper) and "SystemIssues++" in _cheat_helper.group(0))
+check("the PC-state block is rendered in its own section",
+      "$stateBox" in REPORT and REPORT.count("$stateBox") >= 2
+      and "How this PC is set up" in REPORT)
+# and it must sit below the findings, like the scan record
+_i_state = REPORT.find("<h2>How this PC is set up")
+check("PC state sits below the findings it is not part of",
+      _i_state > REPORT.find("<h2>Everything else that was found"),
+      f"state={_i_state}")
+# One card renderer for both, so the two cannot drift apart visually
+check("findings and PC state use one card renderer",
+      REPORT.count("New-FindingCard") >= 3)
 
 print("=== report checks ===")
 failed = 0

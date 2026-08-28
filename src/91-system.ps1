@@ -1,165 +1,271 @@
-function Run-SystemChecks {
-    Write-SysSection "SYSTEM FORENSICS"
+# ---------------------------------------------------------------------------
+# Windows system checks.
+#
+# Every check in here used to decide by GUESSING AT NAMES, and every one of them
+# fired on an ordinary gaming PC:
+#
+#   hosts     the line contains "aac"       -> any pi-hole blocklist
+#   tasks     the name contains "updater"   -> Discord, OneDrive, Razer, Epic
+#   Defender  the path contains "mod"       -> C:\Games\ModernWarfare
+#   prefetch  the name contains "LOADER"    -> fabric-loader
+#   startup   the value contains "java"     -> every Java application ever
+#
+# They are replaced by STRUCTURAL tests - what the entry actually does, not what
+# it is called. See ml/sysscan.py, where each one has the clean case that used
+# to trip it as a test.
+#
+# The second thing wrong here: none of these checks called Add-Finding. The whole
+# section, IFEO hijacking included - javaw.exe replaced by an injector, about as
+# conclusive as this tool gets - printed to the console, bumped a counter and
+# reached the report, the upload and "Look at these first" not at all. After the
+# call there was nothing left of it.
+#
+# Findings are now split in two, because they answer different questions:
+#   Add-SysCheat  bears on cheating. Counts, and can reach the report's first page.
+#   Add-SysState  is the state of the PC. Shown in its own block, never counted:
+#                 a third-party antivirus turns the Windows firewall off by
+#                 itself, and an innocent player must not collect "system issues"
+#                 for owning one.
+# ---------------------------------------------------------------------------
+# Write-SystemFlag already records the finding, under $script:SysArea - calling
+# Add-Finding here as well would put every system check in the report twice.
+function Add-SysCheat([string]$Level, [string]$Title, [string[]]$Items = @()) {
+    $script:SysArea = "System forensics"
+    Write-SystemFlag $Level $Title $Items
+    $script:SystemIssues++
+}
 
-    $hostsPath    = "$env:SystemRoot\System32\drivers\etc\hosts"
-    $hostsContent = Get-Content $hostsPath -ErrorAction SilentlyContinue
-    $suspHosts    = @("modrinth.com","curseforge.com","minecraft.net","mojang.com","hypixel.net","badlion.net","lunarclient.com","watchdog","anticheat","nocheatplus","aac","vulcan","grim")
-    $hostsFlags   = @()
-    foreach ($line in $hostsContent) {
-        if ($line -match '^\s*[^#]') {
-            foreach ($h in $suspHosts) { if ($line -match $h) { $hostsFlags += $line.Trim() } }
+function Add-SysState([string]$Title, [string[]]$Items = @()) {
+    $script:SysArea = "PC state"
+    Write-SystemFlag "STATE" $Title $Items
+}
+
+# A hosts line that really sends a name that matters to nowhere.
+# Returns "cheatsite", "auth" or "" - see hosts_block() in ml/sysscan.py.
+function Test-HostsBlock([string]$Line, [string[]]$CheatDomains) {
+    $l = ($Line -split '#', 2)[0].Trim()
+    if (-not $l) { return @{ Kind = ""; Host = "" } }
+    $parts = @($l -split '\s+' | Where-Object { $_ })
+    if ($parts.Count -lt 2) { return @{ Kind = ""; Host = "" } }
+    if ($script:sysBlackhole -notcontains $parts[0]) { return @{ Kind = ""; Host = "" } }
+    for ($i = 1; $i -lt $parts.Count; $i++) {
+        $h = $parts[$i].Trim('.').ToLower()
+        foreach ($d in $CheatDomains) {
+            $dl = ([string]$d).ToLower()
+            if ($dl -and ($h -eq $dl -or $h.EndsWith("." + $dl))) { return @{ Kind = "cheatsite"; Host = $h } }
+        }
+        foreach ($a in $script:sysAuthHosts) {
+            if ($h -eq $a -or $h.EndsWith("." + $a)) { return @{ Kind = "auth"; Host = $h } }
         }
     }
-    if ($hostsFlags.Count -gt 0) {
-        Write-SystemFlag "WARN" "Hosts file is blocking suspicious domains:" $hostsFlags
-        Write-Detail "The hosts file overrides DNS and redirects domain names to fake IPs." `
-            "Blocking Modrinth/Mojang/anticheat domains prevents ban syncs and cheat detection." `
-            "Cheaters add entries like '127.0.0.1 hypixel.net' to break AC connections." `
-            "Open C:\Windows\System32\drivers\etc\hosts and remove flagged lines."
-        $script:SystemIssues++
-    } else { Write-SystemFlag "OK" "Hosts file $([char]0x2014) no suspicious domain blocks" }
+    return @{ Kind = ""; Host = "" }
+}
 
+function Test-DefenderExclusion([string]$Path) {
+    $p = ([string]$Path).ToLower().Replace('/', '\')
+    foreach ($m in $script:sysMcMarkers) { if ($p.Contains($m)) { return $true } }
+    if ($p.TrimEnd('\').EndsWith('\mods')) { return $true }
+    # A process exclusion on the game's own runtime: nothing inside Minecraft is
+    # ever scanned again, which is the point of adding it.
+    if ($p -match '(?:^|\\)javaw?\.exe$') { return $true }
+    return $false
+}
+
+# Why this startup entry or scheduled task is worth reporting, or "".
+function Test-AutostartAction([string]$Command) {
+    if ([string]::IsNullOrWhiteSpace($Command)) { return "" }
+    $hit = Test-CheatName $Command
+    if ($hit) { return "names a known cheat client ($hit)" }
+    if ($Command.ToLower().Contains('-javaagent:')) { return "attaches a Java agent to the process it starts" }
+    # The switch alone would match -Execute; an encoded command is the switch
+    # followed by a base64 blob long enough to be a command.
+    if ($Command -match '(?i)\s-e[a-z]*\s+[A-Za-z0-9+/=]{40,}') { return "runs a base64-encoded PowerShell command" }
+    if ($Command -match '(?i)\.jar(?:"|\s|$)' -and $Command -match '(?i)(?:^|[\\/"\s])javaw?(?:\.exe)?(?:"|\s|$)') {
+        return "starts a .jar with Java at login"
+    }
+    return ""
+}
+
+# FOO.EXE-1A2B3C4D.pf -> foo.exe. The hash suffix is not part of the name, and
+# leaving it on is why "PROJECTOR.EXE" once matched a search for "INJECT".
+function Get-PrefetchImage([string]$FileName) {
+    $m = [regex]::Match($FileName, '(?i)^(.+)-[0-9A-F]{8}\.pf$')
+    return $(if ($m.Success) { $m.Groups[1].Value } else { $FileName }).ToLower()
+}
+
+function Run-SystemChecks {
+    Write-SysSection "SYSTEM FORENSICS"
+    $script:SysArea = "System forensics"
+
+    # ---- hosts file --------------------------------------------------------
+    # Only lines that point a name at a blackhole address, and only for names
+    # that have no business being in a hosts file: a cheat vendor's own domain,
+    # or the game's login servers. Blocking Modrinth or CurseForge is a parental
+    # filter, not a cheat, and used to be flagged as one.
+    $hostsPath   = "$env:SystemRoot\System32\drivers\etc\hosts"
+    $hostsCheat  = @()
+    $hostsAuth   = @()
+    $hostDomains = @(@($script:cheatDomainMap | ForEach-Object { $_.match }) | Where-Object { $_ -and ([string]$_).Contains('.') })
+    foreach ($line in @(Get-Content $hostsPath -ErrorAction SilentlyContinue)) {
+        $hb = Test-HostsBlock $line $hostDomains
+        if ($hb.Kind -eq "cheatsite") { $hostsCheat += "$($hb.Host)  <-  $($line.Trim())" }
+        elseif ($hb.Kind -eq "auth")  { $hostsAuth  += "$($hb.Host)  <-  $($line.Trim())" }
+    }
+    if ($hostsCheat.Count -gt 0) {
+        Add-SysCheat "FAIL" "A cheat vendor's own domain is redirected in the hosts file:" $hostsCheat
+        Write-Detail "The hosts file overrides DNS: these names resolve to nowhere on this PC." `
+            "The domain belongs to a cheat client. Nothing puts it in a hosts file except software that talks to it $([char]0x2014) usually a cracked build being kept from phoning home for a licence check." `
+            "Added by editing C:\Windows\System32\drivers\etc\hosts, which needs administrator rights." `
+            "Open that file and remove the flagged lines."
+    } elseif ($hostsAuth.Count -gt 0) {
+        Add-SysCheat "WARN" "The game's own login servers are blackholed in the hosts file:" $hostsAuth
+        Write-Detail "These are Mojang's session and authentication servers." `
+            "Blocking them stops the client talking to Mojang while the game still runs $([char]0x2014) offline-mode and cracked setups do this, and so does anything that does not want its session seen." `
+            "Added by editing C:\Windows\System32\drivers\etc\hosts." `
+            "Open that file and remove the flagged lines, then check the game still logs in."
+    } else { Write-SystemFlag "OK" "Hosts file $([char]0x2014) nothing that matters is redirected" }
+
+    # ---- Defender exclusions -----------------------------------------------
     try {
         $mpExcReg = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths" -ErrorAction Stop
-        $defExc   = $mpExcReg.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | Select-Object -ExpandProperty Name
-        $javaExc  = $defExc | Where-Object { $_ -match 'java|minecraft|jdk|jre|mod|\.minecraft|launcher' }
-        if ($javaExc) {
-            Write-SystemFlag "WARN" "Windows Defender exclusions cover Java/Minecraft paths:" @($javaExc)
-            Write-Detail "Defender exclusions tell Windows Security to never scan specific folders." `
-                "Excluding the Minecraft folder means any malware inside a mod is never detected." `
-                "Cheat installers add these via PowerShell or registry to protect themselves." `
-                "Windows Security > Virus & threat protection > Manage settings > Remove exclusions."
-            $script:SystemIssues++
-        } else { Write-SystemFlag "OK" "Defender exclusions $([char]0x2014) no Java/Minecraft paths excluded" }
-    } catch { Write-SystemFlag "INFO" "Defender exclusions $([char]0x2014) run as Administrator for full check" }
+        $defExc   = @($mpExcReg.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | Select-Object -ExpandProperty Name)
+        $javaExc  = @($defExc | Where-Object { Test-DefenderExclusion $_ })
+        if ($javaExc.Count -gt 0) {
+            Add-SysCheat "WARN" "Windows Defender is told never to scan the Minecraft install:" $javaExc
+            Write-Detail "An exclusion tells Windows Security to skip a folder or a process entirely." `
+                "Anything inside the excluded path is never scanned again $([char]0x2014) which is exactly what a cheat installer wants, and also what somebody chasing frames might set by hand." `
+                "Set in Windows Security, or by a script writing to the Defender registry key." `
+                "Windows Security > Virus & threat protection > Manage settings > Exclusions."
+        } else { Write-SystemFlag "OK" "Defender exclusions $([char]0x2014) the Minecraft install is not excluded" }
+    } catch { Add-ScanGap "Windows Defender exclusions could not be read $([char]0x2014) that needs Administrator, so an exclusion hiding the mods folder would not have been seen" }
 
-    $ifeoPaths = @("HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options")
+    # ---- IFEO -------------------------------------------------------------
+    # Replacing an executable with another one. On a game PC this has no
+    # innocent version, and when the hijacked image is the game's own runtime it
+    # is as close to proof as this tool gets.
     $ifeoFlags = @()
-    foreach ($rp in $ifeoPaths) {
-        if (Test-Path $rp) {
-            $children = Get-ChildItem $rp -ErrorAction SilentlyContinue
-            foreach ($child in $children) {
-                $prop = Get-ItemProperty -Path $child.PSPath -Name "Debugger" -ErrorAction SilentlyContinue
-                if ($prop -and $prop.Debugger -notmatch 'vsjitdebugger|drwatson|ntsd') {
-                    $ifeoFlags += "$($child.PSChildName) -> $($prop.Debugger)"
-                }
+    $ifeoGame  = $false
+    $rp = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
+    if (Test-Path $rp) {
+        foreach ($child in @(Get-ChildItem $rp -ErrorAction SilentlyContinue)) {
+            $prop = Get-ItemProperty -Path $child.PSPath -Name "Debugger" -ErrorAction SilentlyContinue
+            if ($prop -and $prop.Debugger -notmatch 'vsjitdebugger|drwatson|ntsd|windbg') {
+                $ifeoFlags += "$($child.PSChildName) -> $($prop.Debugger)"
+                if ($child.PSChildName -match '(?i)^(javaw?|minecraft.*|.*launcher)\.exe$') { $ifeoGame = $true }
             }
         }
     }
     if ($ifeoFlags.Count -gt 0) {
-        Write-SystemFlag "FAIL" "IFEO hijacking detected:" $ifeoFlags
-        Write-Detail "Image File Execution Options (IFEO) allows replacing any EXE with another." `
-            "When javaw.exe is hijacked, every Minecraft launch runs a cheat injector first." `
-            "Set via Registry Editor at HKLM\...\Image File Execution Options\javaw.exe" `
-            "Delete the 'Debugger' value from the flagged key in regedit."
-        $script:SystemIssues++
-    } else { Write-SystemFlag "OK" "IFEO $([char]0x2014) no process hijacking detected" }
+        Add-SysCheat $(if ($ifeoGame) { "FAIL" } else { "WARN" }) `
+            $(if ($ifeoGame) { "The game's own executable is hijacked (IFEO):" } else { "An executable is hijacked (IFEO):" }) $ifeoFlags
+        Write-Detail "Image File Execution Options lets Windows run a different program whenever a named executable is launched." `
+            $(if ($ifeoGame) { "The hijacked name is the game's own runtime, so every Minecraft launch runs the listed program FIRST. That is what an injector is." } else { "Whatever launches the name on the left actually runs the program on the right." }) `
+            "Set under HKLM\...\Image File Execution Options\<name>\Debugger, which needs administrator rights." `
+            "Open regedit, go to the flagged key and delete its 'Debugger' value."
+    } else { Write-SystemFlag "OK" "IFEO $([char]0x2014) no executable is hijacked" }
+
+    # ---- execution history: prefetch ---------------------------------------
+    # Through the same boundary-anchored client matcher the log and instance
+    # readers use, on the image name with its hash suffix removed. The old
+    # substring list matched fabric-loader, examiner.exe and projector.exe.
+    $prefetchDir = "$env:SystemRoot\Prefetch"
+    if (Test-Path $prefetchDir) {
+        $prefFlags = @()
+        foreach ($pf in @(Get-ChildItem $prefetchDir -Filter "*.pf" -ErrorAction SilentlyContinue)) {
+            $img = Get-PrefetchImage $pf.Name
+            $hit = Test-CheatName $img
+            if ($hit) { $prefFlags += "$img  ($hit, last run $($pf.LastWriteTime.ToString('yyyy-MM-dd HH:mm')))" }
+        }
+        if ($prefFlags.Count -gt 0) {
+            Add-SysCheat "FAIL" "Windows recorded a known cheat client being executed:" $prefFlags
+            Write-Detail "Windows writes a .pf file the first time any program runs, to make later starts faster." `
+                "The recorded name matches a known cheat client. The record survives deleting the program $([char]0x2014) it is proof that it ran on this PC, with the date it last did." `
+                "C:\Windows\Prefetch, one file per executable." `
+                "Nothing to fix: this is evidence, and deleting it destroys it."
+        } else { Write-SystemFlag "OK" "Prefetch $([char]0x2014) no known client in the execution history" }
+    } else { Add-ScanGap "Windows Prefetch could not be read, so programs that ran and were then deleted could not be checked there" }
+
+    # ---- autostart: Run keys ------------------------------------------------
+    $runKeys = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run",
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+    )
+    $runFlags = @()
+    foreach ($rk in $runKeys) {
+        if (-not (Test-Path $rk)) { continue }
+        $props = Get-ItemProperty $rk -ErrorAction SilentlyContinue
+        foreach ($pr in @($props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' })) {
+            $val = [string]$pr.Value
+            $why = Test-AutostartAction $val
+            if ($why) { $runFlags += "$($pr.Name) $([char]0x2014) $why$([char]0x0A)      $val" }
+        }
+    }
+    if ($runFlags.Count -gt 0) {
+        Add-SysCheat "WARN" "A startup entry does something a launcher does not:" $runFlags
+        Write-Detail "Run and RunOnce start programs automatically at every login." `
+            "Starting a jar, attaching a Java agent or running an encoded PowerShell command at login is not how any launcher or game installs itself." `
+            "Registry, under Software\Microsoft\Windows\CurrentVersion\Run." `
+            "Open regedit, go to the flagged key and delete the entry after reading what it points at."
+    } else { Write-SystemFlag "OK" "Startup entries $([char]0x2014) nothing starts a jar or an agent at login" }
+
+    # ---- autostart: scheduled tasks ----------------------------------------
+    # By ACTION, not by name. The check this replaces flagged any task whose name
+    # contained update/sync/helper/service/loader/check/runner/java and was not
+    # from one of eight vendors - which is Discord, OneDrive, Epic, Razer,
+    # Logitech, Corsair, Spotify and Brave on an ordinary PC.
+    try {
+        $taskFlags = @()
+        foreach ($t in @(Get-ScheduledTask -ErrorAction Stop)) {
+            foreach ($a in @($t.Actions)) {
+                $cmd = (("$($a.Execute) $($a.Arguments)").Trim())
+                $why = Test-AutostartAction $cmd
+                if ($why) { $taskFlags += "$($t.TaskPath)$($t.TaskName) $([char]0x2014) $why$([char]0x0A)      $cmd" }
+            }
+        }
+        if ($taskFlags.Count -gt 0) {
+            Add-SysCheat "WARN" "A scheduled task does something a launcher does not:" $taskFlags
+            Write-Detail "Scheduled tasks run programs at login, on a timer or on an event." `
+                "The task's ACTION starts a jar, attaches a Java agent or runs an encoded command $([char]0x2014) none of which any game or launcher schedules." `
+                "Task Scheduler (taskschd.msc)." `
+                "Open the flagged task, read its Actions tab, and delete it if you do not recognise what it starts."
+        } else { Write-SystemFlag "OK" "Scheduled tasks $([char]0x2014) none starts a jar, an agent or an encoded command" }
+    } catch { Add-ScanGap "Scheduled tasks could not be listed $([char]0x2014) a task starting a cheat at login would not have been seen" }
+
+    # ---- PC state: real, reported, deliberately not counted ----------------
+    Write-Host ""
+    W "  $([char]0x2502)  PC state $([char]0x2014) not cheat evidence, but a moderator should see it" DarkCyan
+    $script:SysArea = "PC state"
+
+    try {
+        $fw = @(Get-NetFirewallProfile -ErrorAction Stop | Where-Object { $_.Enabled -eq $false })
+        if ($fw.Count -gt 0) {
+            Add-SysState ("Windows Firewall is off on: " + ($fw.Name -join ', '))
+            Write-Detail "The firewall blocks connections this PC did not ask for." `
+                "Most third-party antivirus suites turn the Windows firewall off and use their own, so this on its own says nothing about cheating." `
+                "" "If no other firewall is installed, turn it back on in Windows Security."
+        } else { Write-SystemFlag "OK" "Firewall $([char]0x2014) on for every profile" }
+    } catch { Add-ScanGap "Firewall status could not be read" }
 
     $psLogKey  = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
     $psLogging = if (Test-Path $psLogKey) { (Get-ItemProperty $psLogKey -ErrorAction SilentlyContinue).EnableScriptBlockLogging } else { $null }
     if ($psLogging -eq 0) {
-        Write-SystemFlag "WARN" "PowerShell Script Block Logging is DISABLED via policy"
-        Write-Detail "Script Block Logging records every PowerShell command to the event log." `
-            "Disabling it makes PowerShell-based malware invisible to forensic tools." `
-            "" "Set-ItemProperty -Path 'HKLM:\...\ScriptBlockLogging' -Name EnableScriptBlockLogging -Value 1"
-        $script:SystemIssues++
-    } else { Write-SystemFlag "OK" "PowerShell Script Block Logging $([char]0x2014) enabled or default" }
+        Add-SysState "PowerShell script logging is switched off by policy"
+        Write-Detail "Script Block Logging records PowerShell commands to the event log." `
+            "It is off by default on home Windows, so this is only interesting if somebody turned it off deliberately." `
+            "" "Set EnableScriptBlockLogging to 1 under HKLM\...\PowerShell\ScriptBlockLogging."
+    } else { Write-SystemFlag "OK" "PowerShell script logging $([char]0x2014) enabled or left at the default" }
 
     try {
-        $logEvents = Get-WinEvent -FilterHashtable @{LogName='Security';Id=1102;StartTime=(Get-Date).AddDays(-30)} -MaxEvents 1 -ErrorAction Stop
-        if ($logEvents) {
-            Write-SystemFlag "WARN" "Security event log was recently cleared"
-            Write-Detail "Event ID 1102 is logged whenever the Security event log is manually cleared." `
-                "Clearing it destroys evidence of past malware or unauthorized access." `
-                "Normal users almost never clear this log. It was cleared deliberately." ""
-            $script:SystemIssues++
-        } else { Write-SystemFlag "OK" "Security event log $([char]0x2014) not recently cleared" }
-    } catch { Write-SystemFlag "OK" "Security event log $([char]0x2014) no clearing events found" }
-
-    $bamKey   = "HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings"
-    $bamFlags = @()
-    if (Test-Path $bamKey) {
-        $bamChildren = Get-ChildItem $bamKey -ErrorAction SilentlyContinue
-        foreach ($child in $bamChildren) {
-            $vals = Get-ItemProperty -Path $child.PSPath -ErrorAction SilentlyContinue
-            $vals.PSObject.Properties | Where-Object { $_.Name -match '\\' -and $_.Name -match '\.(exe|jar)$' } | ForEach-Object {
-                if ($_.Name -match 'cheat|hack|inject|stealer|miner|payload|exploit|crack|loader|bypass') { $bamFlags += $_.Name }
-            }
-        }
-    }
-    if ($bamFlags.Count -gt 0) {
-        Write-SystemFlag "FAIL" "BAM registry: suspicious executables recently executed:" $bamFlags
-        Write-Detail "BAM (Background Activity Monitor) logs every executable launched, stored in registry." `
-            "Logged EXE names match known cheat clients or malware. Proves they were run on this PC." `
-            "BAM data persists for 7 days. Check HKLM\SYSTEM\...\bam\State\UserSettings." ""
-        $script:SystemIssues++
-    } else { Write-SystemFlag "OK" "BAM/DAM registry $([char]0x2014) no suspicious executables recorded" }
-
-    try {
-        $stRaw     = schtasks /query /fo CSV /nh 2>$null | ConvertFrom-Csv -Header TaskName,NextRun,Status
-        $suspTasks = $stRaw | Where-Object {
-            $_.TaskName -notmatch 'Microsoft|Adobe|Google|Mozilla|Steam|NVIDIA|Intel|AMD' -and
-            $_.TaskName -match 'update|sync|helper|service|loader|check|runner|updater|java'
-        }
-        if ($suspTasks) {
-            Write-SystemFlag "WARN" ("Suspicious scheduled tasks found: " + @($suspTasks).Count) @($suspTasks | ForEach-Object { $_.TaskName })
-            Write-Detail "Scheduled tasks run programs automatically at login, on a timer, or on events." `
-                "These tasks launch Java or scripts with generic names like 'updater'." `
-                "Malware uses scheduled tasks to persist across reboots." `
-                "Open Task Scheduler (taskschd.msc) and delete suspicious tasks."
-            $script:SystemIssues++
-        } else { Write-SystemFlag "OK" "Scheduled tasks $([char]0x2014) nothing suspicious" }
-    } catch { Write-SystemFlag "INFO" "Scheduled tasks $([char]0x2014) run as Administrator for full check" }
-
-    try {
-        $fw = Get-NetFirewallProfile -ErrorAction Stop | Where-Object { $_.Enabled -eq $false }
-        if ($fw) {
-            Write-SystemFlag "WARN" ("Windows Firewall DISABLED on profiles: " + ($fw.Name -join ', '))
-            Write-Detail "Windows Firewall blocks unauthorized inbound and outbound network connections." `
-                "With the firewall off, malware can open server sockets for RATs/reverse shells." `
-                "" "Windows Security > Firewall & network protection > Enable all profiles."
-            $script:SystemIssues++
-        } else { Write-SystemFlag "OK" "Firewall $([char]0x2014) enabled on all profiles" }
-    } catch { Write-SystemFlag "INFO" "Firewall status $([char]0x2014) could not read" }
-
-    $prefetchDir = "$env:SystemRoot\Prefetch"
-    if (Test-Path $prefetchDir) {
-        $prefFlags = Get-ChildItem $prefetchDir -Filter "*.pf" -ErrorAction SilentlyContinue |
-                     Where-Object { $_.Name -match 'CHEAT|HACK|INJECT|STEALER|MINER|PAYLOAD|EXPLOIT|LOADER|LIQUIDBOUNCE|WURST|METEOR|VAPE|RISE|SIGMA|BARITONE' }
-        if ($prefFlags) {
-            Write-SystemFlag "WARN" "Prefetch shows suspicious programs were recently executed:" @($prefFlags | ForEach-Object { $_.Name })
-            Write-Detail "Windows Prefetch (.pf files) records every program launched to speed up restarts." `
-                "These filenames match known cheat clients, injectors, or malware tools." `
-                "Prefetch data persists even if the original program was deleted." ""
-            $script:SystemIssues++
-        } else { Write-SystemFlag "OK" "Prefetch $([char]0x2014) no suspicious execution history" }
-    } else { Write-SystemFlag "INFO" "Prefetch $([char]0x2014) directory not accessible" }
-
-    $runKeys = @(
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run",
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-    )
-    $runFlags = @()
-    foreach ($rk in $runKeys) {
-        if (Test-Path $rk) {
-            $props = Get-ItemProperty $rk -ErrorAction SilentlyContinue
-            $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
-                $val = $_.Value.ToString()
-                if ($val -match 'java|\.jar|powershell.*encoded|mshta|wscript|cscript' -and $val -notmatch 'JetBrains|Eclipse|IntelliJ|Visual Studio|Android') {
-                    $runFlags += "$($_.Name) = $val"
-                }
-            }
-        }
-    }
-    if ($runFlags.Count -gt 0) {
-        Write-SystemFlag "WARN" "Startup registry entries launching Java/scripts:" $runFlags
-        Write-Detail "Run/RunOnce registry keys launch programs automatically at every Windows login." `
-            "These entries auto-start Java processes or encoded PowerShell scripts." `
-            "Malware uses this to reload itself after every reboot." `
-            "Open regedit, navigate to the flagged key, and delete the suspicious entry."
-        $script:SystemIssues++
-    } else { Write-SystemFlag "OK" "Startup registry $([char]0x2014) no suspicious auto-run entries" }
+        $ev = @(Get-WinEvent -FilterHashtable @{LogName='Security';Id=1102;StartTime=(Get-Date).AddDays(-30)} -MaxEvents 1 -ErrorAction Stop)
+        if ($ev.Count -gt 0) {
+            Add-SysState ("The Security event log was cleared on " + $ev[0].TimeCreated.ToString('yyyy-MM-dd HH:mm'))
+            Write-Detail "Windows writes event 1102 whenever somebody clears the Security log." `
+                "Clearing it removes the record of what ran and when. Ordinary users have no reason to, so the DATE is the interesting part $([char]0x2014) compare it with when the screenshare was arranged." `
+                "" ""
+        } else { Write-SystemFlag "OK" "Security event log $([char]0x2014) not cleared in the last 30 days" }
+    } catch { Write-SystemFlag "OK" "Security event log $([char]0x2014) no clearing recorded" }
 
     Write-SysSectionEnd
 }
