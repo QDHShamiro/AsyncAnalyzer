@@ -162,7 +162,9 @@ def main():
         "PASS" if grew else "FAIL"))
 
     for name, rx in (("logChatLine", logscan.CHAT),
-                     ("logCodeContext", logscan.CODE_CONTEXT)):
+                     ("logCodeContext", logscan.CODE_CONTEXT),
+                     ("logModListHeader", logscan.MOD_LIST_HEADER),
+                     ("logModListItem", logscan.MOD_LIST)):
         m = re.search(r"\$script:%s\s*=\s*'((?:[^']|'')*)'" % name, ps)
         got = m.group(1).replace("''", "'") if m else None
         ok = got == rx.pattern
@@ -171,6 +173,52 @@ def main():
         print("  [%s] %s matches Python%s" % (
             "PASS" if ok else "FAIL", name,
             "" if ok else "\n        ps=%r\n        py=%r" % (got, rx.pattern)))
+
+    # ---- the mod list is its own context ---------------------------------------
+    # The game prints "Loading N mods:" and then one line per mod. Inside that
+    # block a name is LOADED CODE by definition - chat cannot appear there. That
+    # is why it is read separately: the general classifier throws these lines
+    # away, because "- doomsday 1.0" has no package dots, no .jar and no stack
+    # frame to prove it is anything but prose.
+    print("\n=== The mod list the game prints, read as its own context ===")
+    ML_PKGS = ["doomsdayclient", "net/wurstclient"]
+    ML_TOKS = ["doomsday", "wurstclient", "meteorclient", "vape"]
+    ML_CASES = [
+        (["[12:00:00] [main/INFO]: Loading 3 mods:", "\t- fabric 0.15.0",
+          "\t- doomsday 1.0", "\t- sodium 0.5.8"],
+         ["doomsday"], "a cheat listed among the loaded mods"),
+        (["[12:00:00] [main/INFO]: Loading 2 mods:", "\t- fabric 0.15.0",
+          "\t- sodium 0.5.8"],
+         [], "an ordinary pack lists nothing"),
+        (["Mod List:", "\t- vape 1.0"],
+         ["vape"], "4-char name still reachable at the token floor"),
+        (["[12:00:00] [main/INFO]: <player> doomsday is trash",
+          "[12:00:01] [main/INFO]: <player> Loading 3 mods: lol"],
+         [], "chat quoting the header must not arm the parser"),
+        # The one that would pass for the wrong reason without the CHAT guard:
+        # chat arms it, and the very next chat line is shaped like a list item.
+        (["[12:00:01] [Async Chat Thread - #0/INFO]: Loading 3 mods:",
+          "[12:00:02] [Async Chat Thread - #0/INFO]: - doomsday 1.0"],
+         [], "chat shaped exactly like a mod list is still chat"),
+        (["[12:00:00] [main/INFO]: Loading 2 mods:", "\t- fabric 0.15.0",
+          "[12:00:02] [main/INFO]: Done!", "\t- doomsday 1.0"],
+         [], "a line after the block ends is no longer the mod list"),
+    ]
+    for lines, want, why in ML_CASES:
+        got = logscan.mod_list_cheats(lines, ML_PKGS, ML_TOKS)
+        ok = got == want
+        passed += ok
+        failed += not ok
+        print("  [%s] %-50s -> %s" % ("PASS" if ok else "FAIL", why, got or "nothing"))
+
+    # The point of reading it at all: the general classifier cannot see these.
+    blind = logscan.classify_line("\t- doomsday 1.0", ML_PKGS, ML_TOKS)
+    ok = blind == (None, "")
+    passed += ok
+    failed += not ok
+    print("  [%s] %-50s -> %s" % (
+        "PASS" if ok else "FAIL",
+        "the line classifier alone would miss it entirely", blind))
 
     print("\n=== RESULT: %d passed, %d failed ===" % (passed, failed))
     return 0 if failed == 0 else 1

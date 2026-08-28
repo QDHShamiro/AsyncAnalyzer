@@ -87,6 +87,10 @@ def parse_mod_list(lines):
     did not look at."""
     out, armed = [], False
     for line in lines:
+        # Chat first, as everywhere else: a player can type "Loading 3 mods:" and
+        # must not be able to arm the parser by doing it.
+        if CHAT.search(line):
+            continue
         if MOD_LIST_HEADER.search(line):
             armed = True
             continue
@@ -96,6 +100,39 @@ def parse_mod_list(lines):
                 out.append((m.group(1), m.group(2)))
             elif out:
                 armed = False
+    return out
+
+
+def mod_list_cheats(lines, packages, tokens):
+    """Cheat names that appear in the game's own "Loading N mods:" block.
+
+    Inside that block a name is definitionally LOADED CODE - chat cannot appear
+    there and neither can a server MOTD - which is a stronger context than any
+    single line gives. It matters because the general classifier throws these
+    lines away: "- doomsday 1.0" has no package dots, no .jar and no stack frame
+    to prove it is code, so CODE_CONTEXT never matches it.
+    """
+    out = []
+    for mod_id, _version in parse_mod_list(lines):
+        low = mod_id.lower()
+        hit = ""
+        for p in packages:
+            for form in (p.lower(), p.lower().replace("/", ".")):
+                if form in low:
+                    hit = form
+                    break
+            if hit:
+                break
+        if not hit:
+            for t in tokens:
+                tl = t.lower()
+                if len(tl) < TOKEN_FLOOR:
+                    continue
+                if re.search(r"(?:^|[/.\\_\-])%s(?:$|[/.\\_\-])" % re.escape(tl), low):
+                    hit = tl
+                    break
+        if hit and hit not in out:
+            out.append(hit)
     return out
 
 

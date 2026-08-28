@@ -703,6 +703,42 @@ function Run-LogScan {
                 $txt = Read-LogText $lf
                 if ($null -eq $txt) { continue }
                 $res.Files++
+                # "Loading 147 mods:" followed by "  - modid 1.2.3" - Fabric and
+                # Forge both print it. Inside that block a name is definitionally
+                # LOADED CODE: chat cannot appear there, and neither can a server
+                # MOTD. That is a stronger context than any single line gives, and
+                # the general line classifier throws these lines away because
+                # "- doomsday 1.0" has no package dots, no .jar and no stack frame
+                # to prove it is code. Read only from latest.log: one file, the
+                # session that is actually being screenshared.
+                if ([System.IO.Path]::GetFileName($lf) -ieq 'latest.log') {
+                    $armed = $false
+                    foreach ($mlLine in ($txt -split "`r?`n")) {
+                        # Chat first, as everywhere else: a player can type
+                        # "Loading 3 mods:" and must not arm the parser with it.
+                        if ($mlLine -match $script:logChatLine) { continue }
+                        if ($mlLine -match $script:logModListHeader) { $armed = $true; continue }
+                        if (-not $armed) { continue }
+                        $tail = ($mlLine -split '\]: ')[-1]
+                        $mm = [regex]::Match($tail, $script:logModListItem)
+                        if ($mm.Success) {
+                            $mid = $mm.Groups[1].Value
+                            if (-not $res.LoadedMods.Contains($mid)) { [void]$res.LoadedMods.Add($mid) }
+                            $cn = Test-CheatName $mid
+                            if ($cn) {
+                                $key = "log-modlist|$cn"
+                                if ($seenEvidence.Add($key)) {
+                                    [void]$res.Hits.Add([PSCustomObject]@{
+                                        Kind = "cheat"; Evidence = $cn
+                                        File = $lf
+                                        When = $(try { [System.IO.File]::GetLastWriteTime($lf).ToString('yyyy-MM-dd HH:mm') } catch { "?" })
+                                        Line = "mod list: $($mlLine.Trim())"
+                                    })
+                                }
+                            }
+                        } elseif ($res.LoadedMods.Count -gt 0) { $armed = $false }
+                    }
+                }
                 # One search over the whole file before any line is looked at
                 # individually. A clean player's logs contain none of these names,
                 # and Test-LogLine costs ~75 string operations per line - over 25

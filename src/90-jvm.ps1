@@ -329,7 +329,11 @@ function Run-JVMScan {
                 # and saying so is the difference between "clean" and "I looked".
                 foreach ($ld in $loadedDirs) {
                     if (-not (Test-ScannedDir $ld)) {
-                        $r.Gaps.Add("The running game is loading mods from $ld, which this scan did not look at $([char]0x2014) re-run with -Path '$ld' to include it.")
+                        # Not a gap - a target. The tool scans it itself a moment
+                        # later (Invoke-LateFolderScan), because "re-run it
+                        # yourself with -Path" is advice nobody follows while a
+                        # suspect is sitting on the other end of the call.
+                        if (-not $script:LateScanDirs.Contains($ld)) { [void]$script:LateScanDirs.Add($ld) }
                     }
                 }
 

@@ -21,6 +21,10 @@
         W "  $([char]0x2713) JVM $([char]0x2014) no agents, no remote debugger, no loaded cheat code in the heap" DarkGray
         Add-Finding "OK" "Live game process" "Running Java process $([char]0x2014) no injected agent, no remote debugger, no cheat code loaded in the heap" | Out-Null
     }
+    # The live game named folders nothing on disk pointed at. Scan them now,
+    # with the same code the first pass used, before anything reads the totals.
+    Invoke-LateFolderScan
+
     # Notes are printed whether or not there were findings: they are real
     # observations, they move the model score through sys_issues, and they are
     # exactly the kind of thing a moderator should look at with their own eyes.

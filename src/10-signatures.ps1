@@ -577,6 +577,11 @@ $script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
 # (needs no admin, sees mods). One set rather than two counters, because the two
 # sources overlap and because whichever ran last used to overwrite the other.
 $script:DeletedJarPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+# Mods folders the RUNNING game turned out to be reading that the file scan never
+# opened. Found from the live process, so they arrive after the main pass - the
+# tool scans them in a second pass rather than telling a moderator to re-run it.
+$script:LateScanDirs = [System.Collections.Generic.List[string]]::new()
+$script:LateScanned  = 0
 $script:ScanTargets = @()
 $script:NoElevate   = [bool]$NoElevate
 $script:Escalated   = $false

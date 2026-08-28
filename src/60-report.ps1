@@ -65,12 +65,14 @@ function New-HtmlReport([string]$OutPath = "") {
     $depthWord = if ($script:DeepScan) { "deep (system, PC and memory included)" } else { "standard (mods and system)" }
     $recRows = @(
         @{ k = "Scanned at";       v = "$(Enc $stampLocal)<div class='dim'>$(Enc $stampUtc)</div>" }
+        @{ k = "Time taken";       v = "$([Math]::Round(((Get-Date) - $script:ScanStart).TotalSeconds, 1)) seconds<div class='dim'>started $(Enc ($script:ScanStart.ToString('HH:mm:ss'))) &mdash; a report that claims to be from this scan has to fit in that window</div>" }
         @{ k = "PC";               v = "<span class='mono'>$(Enc $env:COMPUTERNAME)</span>" }
         @{ k = "Windows user";     v = "<span class='mono'>$(Enc $env:USERNAME)</span>" }
         @{ k = "Administrator";    v = $(if ($isAdmin) { "<span class='yes'>yes</span> &mdash; full access" } else { "<span class='no'>no</span> &mdash; some checks were skipped" }) }
         @{ k = "Minecraft";        v = $(if ($mcRunning) { "<span class='yes'>running during the scan</span>" } else { "<span class='no'>not running</span> &mdash; nothing could be read out of the live game" }) }
         @{ k = "Scan depth";       v = "$(Enc $depthWord)<div class='dim'>up to $($script:BcMaxClasses) classes analysed per jar</div>" }
         @{ k = "Folders scanned";  v = $targetItems }
+        @{ k = "Second pass";      v = $(if ($script:LateScanned -gt 0) { "<span class='yes'>$($script:LateScanned) more jar(s)</span> found in $($script:LateScanDirs.Count) folder(s) the running game was reading that nothing on disk pointed at" } elseif ($script:LateScanDirs.Count -gt 0) { "the running game named $($script:LateScanDirs.Count) extra folder(s); they held nothing new" } else { "<span class='dim'>not needed &mdash; the running game loaded mods only from folders that were already scanned</span>" }) }
         @{ k = "Tool";             v = "AsyncAnalyzer $(Enc $script:Version) &mdash; mod model v$($script:mlModelVersion), $($script:mlSamples) examples learned" }
         @{ k = "Report ID";        v = "<span class='mono'>$(Enc $reportId)</span>" }
         @{ k = "Scan ID";          v = "<span class='mono big'>$(Enc $script:ScanId)</span>" }

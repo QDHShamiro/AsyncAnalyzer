@@ -216,6 +216,32 @@ else:
     ok("every mod-model feature is produced", "%d feature(s)" % len(mod_feats))
 
 
+# ------------------------------------------- script state nothing reads back ---
+# A $script: variable that is written and never read is a measurement that reaches
+# no decision - the same failure this whole file exists to catch, one level down.
+# It looks like working code and produces nothing. Assignment does not count as a
+# read, and neither does the declaration.
+assign = re.compile(r"\$script:(\w+)\s*(?:=|\+=|\+\+)")
+written = set(assign.findall(JOINED))
+# Every $script: mention that is NOT the left-hand side of an assignment.
+read_sites = set()
+for m in re.finditer(r"\$script:(\w+)", JOINED):
+    tail = JOINED[m.end():m.end() + 24]
+    if re.match(r"\s*(=[^=]|\+=|\+\+)", tail):
+        continue
+    read_sites.add(m.group(1))
+# Names the shipped script hands to the outside world (report, upload, summary)
+# by string rather than by $script: reference are read for real.
+for name in re.findall(r"[\"'](\w+)[\"']\s*=\s*\$script:", JOINED):
+    read_sites.add(name)
+write_only = sorted(n for n in written - read_sites
+                    if not n.startswith("_") and n not in ("Version", "Author", "ToolName"))
+if write_only:
+    fail("script state written and never read back", ", ".join(write_only))
+else:
+    ok("every piece of script state is read somewhere", "%d name(s)" % len(written))
+
+
 def main():
     print("=== dead-end audit ===")
     for what, detail in notes:
