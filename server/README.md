@@ -97,8 +97,9 @@ more. Every member can see it, only the server owner can rotate it, and rotating
 breaks every command already pasted in a staff channel.
 
 The scanner calls `GET /api/verify?key=…` before it does anything. Without a live
-key it refuses to scan. The tool is open source, so this is a gate rather than a
-lock: it stops the tool being pointed at people by nobody in particular.
+key it refuses to scan. The scanner is one readable file that anybody can edit, so
+this is a gate rather than a lock: it stops the tool being pointed at people by
+nobody in particular.
 
 ### The staff key is a different thing
 

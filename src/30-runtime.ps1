@@ -506,9 +506,9 @@ function Write-SessionCard($v, $raw) {
 # copy that belongs to no server has nobody to be accountable to for the verdict
 # it prints about somebody.
 #
-# The scanner is open source, so this is a gate and not a lock: anyone determined
-# can delete these lines. That is fine. It stops the tool being pointed at people
-# by nobody in particular, which is what it is for.
+# The scanner ships as one readable file, so this is a gate and not a lock: anyone
+# determined can delete these lines. That is fine. It stops the tool being pointed
+# at people by nobody in particular, which is what it is for.
 function Test-ServerKey {
     $key = if ($env:ASYNCANALYZER_KEY) { [string]$env:ASYNCANALYZER_KEY } else { "" }
     $endpoint = if ($env:ASYNCANALYZER_ENDPOINT) { [string]$env:ASYNCANALYZER_ENDPOINT } else { $script:HomeEndpoint }

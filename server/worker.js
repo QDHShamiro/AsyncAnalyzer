@@ -29,9 +29,12 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
 };
 
-const BASE_MODEL_URL = 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/ml/model.json';
-const BASE_SMODEL_URL = 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/ml/session_model.json';
-const TOOL_URL = 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1';
+// Shipped alongside the site, not fetched from GitHub. This repository is private,
+// so raw.githubusercontent.com answers 404 to the Worker exactly as it does to
+// everybody else - and a backend that cannot reach its own base model is a backend
+// that serves an untrained one. `python3 ml/site.py` copies these into site/assets.
+const BASE_MODEL = '/assets/model.json';
+const BASE_SMODEL = '/assets/session_model.json';
 
 function json(obj, code = 200, extra = {}) {
   return new Response(JSON.stringify(obj), {
@@ -70,9 +73,9 @@ function limited(map, ip, perMinute) {
 // added since would simply never be trained - silently, because a missing feature
 // multiplies by 0 rather than failing. Refetch the new base instead; the team
 // relearns from its next scans, which is cheap, and a half-trained model is not.
-async function loadModel(env, key, baseUrl) {
+async function loadModel(env, origin, key, assetPath) {
   const row = await env.DB.prepare('SELECT v FROM meta WHERE k = ?').bind(key).first();
-  const base = await (await fetch(baseUrl)).json();
+  const base = await (await env.ASSETS.fetch(new URL(assetPath, origin))).json();
   if (row) {
     const cur = JSON.parse(row.v);
     if ((cur.version || 0) >= (base.version || 0)) return cur;
@@ -85,8 +88,8 @@ async function loadModel(env, key, baseUrl) {
   await env.DB.prepare('INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)').bind(key, JSON.stringify(m)).run();
   return m;
 }
-const getModel = env => loadModel(env, 'model', BASE_MODEL_URL);
-const getSModel = env => loadModel(env, 'smodel', BASE_SMODEL_URL);
+const getModel = (env, origin) => loadModel(env, origin, 'model', BASE_MODEL);
+const getSModel = (env, origin) => loadModel(env, origin, 'smodel', BASE_SMODEL);
 
 function sgdStep(m, vec, label) {
   const O = m.feature_order, lr = 0.05, l2 = 0.02, clamp = 8;
@@ -150,14 +153,10 @@ export default {
     const isApi = path.startsWith('/api/') || path.startsWith('/auth/');
     if (isApi && limited(RATE, ip, 120)) return json({ error: 'Too many requests. Wait a minute.' }, 429);
 
-    // The one-liner a suspect runs points here rather than at GitHub, so the
-    // download and the upload are the same host - one domain for a moderator to
-    // read out loud, and one to allow if a network blocks the other.
-    if (path === '/run.ps1') {
-      const r = await fetch(TOOL_URL, { cf: { cacheTtl: 300, cacheEverything: true } });
-      if (!r.ok) return new Response('# AsyncAnalyzer is temporarily unavailable.\n', { status: 502, headers: { 'Content-Type': 'text/plain' } });
-      return new Response(r.body, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=300' } });
-    }
+    // /run.ps1 is a static asset written by build.py, so it is served by the asset
+    // handler before this Worker is reached: the suspect downloads the scanner from
+    // the same host the moderator read out, and from the same deploy as the API
+    // that will receive the result.
 
     if (!isApi) {
       const page = pageFor(path);
@@ -564,14 +563,14 @@ export default {
       // Training too: 500 SGD steps per request, from a key handed to the person
       // being scanned, would let anyone walk the shared model wherever they liked.
       if (staffKeyed && Array.isArray(b.samples) && b.samples.length) {
-        const m = await getModel(env);
+        const m = await getModel(env, url);
         let n = 0;
         for (const s of b.samples.slice(0, 500)) if (Array.isArray(s.vec) && (s.label === 0 || s.label === 1)) { sgdStep(m, s.vec, s.label); n++; }
         if (n) await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('model', ?)").bind(JSON.stringify(m)).run();
       }
       const ss = b.sessionSample;
       if (staffKeyed && ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1)) {
-        const smod = await getSModel(env);
+        const smod = await getSModel(env, url);
         sgdStep(smod, ss.vec, ss.label);
         await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('smodel', ?)").bind(JSON.stringify(smod)).run();
       }
@@ -635,7 +634,7 @@ export default {
     }
 
     if (req.method === 'GET' && (path === '/api/model' || path === '/api/smodel')) {
-      const m = path === '/api/model' ? await getModel(env) : await getSModel(env);
+      const m = path === '/api/model' ? await getModel(env, url) : await getSModel(env, url);
       return json({ version: m.version, trainedCount: m.trainedCount || 0, feature_order: m.feature_order, intercept: m.intercept, weights: m.weights });
     }
 

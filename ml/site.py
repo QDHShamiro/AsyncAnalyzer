@@ -550,6 +550,15 @@ def build_benchmark_stub(m, c):
 
 def main():
     os.makedirs(SITE, exist_ok=True)
+    os.makedirs(os.path.join(SITE, "assets"), exist_ok=True)
+    # The backend reads its base models from its own assets. This repository is
+    # private, so it cannot fetch them from raw.githubusercontent.com, and a
+    # backend that quietly fails to load a base model serves an untrained one.
+    for name in ("model.json", "session_model.json"):
+        src = os.path.join(HERE, name)
+        if os.path.exists(src):
+            with open(os.path.join(SITE, "assets", name), "w", encoding="utf-8") as f:
+                f.write(read(HERE, name))
     m, c = metrics(), counts()
     written = []
     for name, html_text in (("index.html", build_index(m, c)),
