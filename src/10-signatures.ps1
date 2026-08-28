@@ -367,7 +367,16 @@ function Test-RandomFilename([string]$JarName) {
     }
     $allAlpha = $analyze -replace '[^a-z]',''
     if ($allAlpha.Length -lt 4) { return $false }
-    $vowels = ($allAlpha.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
+    # .Contains, not -contains. PowerShell's -contains treats the LEFT side as a
+    # collection, and a string is a collection of ONE element - itself - so
+    # 'aeiou' -contains 'i' is False. The vowel count was therefore always 0, the
+    # ratio always 0, and "looks random" quietly meant nothing more than "has
+    # five letters and is not on the prefix list below". Every legitimate mod not
+    # in that hand-written list was floored to Review 35 with the reason
+    # "Unrecognized random / hash-style filename". Found by running the tool for
+    # real: HikariCP-5.1.0.jar and Java-WebSocket-1.5.6.jar were both called
+    # random-named.
+    $vowels = ($allAlpha.ToCharArray() | Where-Object { 'aeiou'.Contains($_) }).Count
     $ratio  = $vowels / $allAlpha.Length
     $looksRandom = ($ratio -lt 0.12 -and $allAlpha.Length -ge 5)
     return $looksRandom

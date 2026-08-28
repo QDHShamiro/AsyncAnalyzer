@@ -830,6 +830,26 @@ function Invoke-SelfTest {
             $ok = ($script:Findings[$script:Findings.Count - 1].What -eq "w")
             while ($script:Findings.Count -gt $before) { $script:Findings.RemoveAt($script:Findings.Count - 1) }
             $ok } }
+        # The filename heuristic, on names rather than on a flag. Every Python
+        # mirror takes random_name as an INPUT, so none of them could ever have
+        # caught this: 'aeiou' -contains $_ is always False - a string is a
+        # collection of one element, itself - so the vowel count was always 0 and
+        # "looks random" silently meant "has five letters and is not on the
+        # prefix list". HikariCP and Java-WebSocket were both called random-named
+        # and floored to Review. Found by running the tool for real.
+        @{ Label = "Real mod filenames are not called random"; Test = {
+            $real = @('HikariCP-5.1.0.jar','Java-WebSocket-1.5.6.jar','sodium-fabric-0.5.8.jar',
+                      'journeymap-1.20.1-5.9.7.jar','amqp-client-5.21.0.jar','asm-analysis-9.7.jar',
+                      'adventure-nbt-4.17.0.jar','ant-1.10.14.jar','wurstclient-7.36.jar')
+            @($real | Where-Object { Test-RandomFilename $_ }).Count -eq 0 } }
+        @{ Label = "...and a real random name still is"; Test = {
+            # gzfjalsrvp is the name the DoomsDay download page actually produced.
+            $rand = @('gzfjalsrvp.jar','xkcdvbnm.jar','qwrtzpfgh.jar','zzxcvbnmm.jar')
+            @($rand | Where-Object { Test-RandomFilename $_ }).Count -eq $rand.Count } }
+        @{ Label = "Vowels are counted, not compared to a whole word"; Test = {
+            # The exact shape of the bug, kept as a case of its own so a future
+            # rewrite of the heuristic cannot quietly reintroduce it.
+            (('hikaricp'.ToCharArray() | Where-Object { 'aeiou'.Contains($_) }).Count -eq 3) } }
         @{ Label = "Gaps are reported, never swallowed"; Test = {
             $before = $script:ScanGaps.Count
             Add-ScanGap "self-test probe gap"
@@ -838,7 +858,10 @@ function Invoke-SelfTest {
             while ($script:ScanGaps.Count -gt $before) { $script:ScanGaps.RemoveAt($script:ScanGaps.Count - 1) }
             $ok } }
         @{ Label = "Full report renders and is written"; Test = {
-            $tmp = Join-Path $env:TEMP "AsyncAnalyzer_SelfTest.html"
+            # GetTempPath, not $env:TEMP: the variable is not set on every host,
+            # and a self-test that fails because it could not find a temp folder
+            # reads exactly like a self-test that found a broken report.
+            $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "AsyncAnalyzer_SelfTest.html"
             $out = New-HtmlReport $tmp
             $ok = $false
             if ($out -and (Test-Path $out)) {

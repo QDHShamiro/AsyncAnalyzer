@@ -66,6 +66,36 @@ jobs:
           echo "--- dead-end audit ---"
           python3 audit.py
 
+      # THE check this project went without for far too long. Everything else
+      # here is a Python mirror of what the PowerShell is meant to do; none of it
+      # can see a syntax error, and none of it runs a single line of the shipped
+      # script. The first real Windows run died on a parse error - a $( ) holding
+      # a double quote inside a double-quoted string - that every mirror, every
+      # test and the brace counter had passed. ubuntu-latest ships pwsh.
+      - name: PowerShell parses
+        shell: pwsh
+        run: |
+          $errs = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./AsyncAnalyzer.ps1), [ref]$null, [ref]$errs)
+          if ($errs) {
+            $errs | ForEach-Object { "{0}:{1}  {2}" -f $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber, $_.Message }
+            exit 1
+          }
+          "no parse errors"
+
+      # And then actually RUN it. The self-test exercises the model, the verdict
+      # bands, the report renderer and the filename heuristics - the last of
+      # which is where a real run found that 'aeiou' -contains $_ is always
+      # False, so every legitimate mod outside a hand-written prefix list was
+      # being floored to Review.
+      - name: PowerShell self-test
+        shell: pwsh
+        run: |
+          $out = & ./AsyncAnalyzer.ps1 -SelfTest 2>&1 | Out-String
+          $out
+          if ($out -match 'self-test\(s\) FAILED' -or $out -notmatch 'All \d+ self-tests passed') { exit 1 }
+
       # Two hand-maintained implementations of one API. They had already drifted -
       # the deployed half left scanId out of /api/history, which is the field the
       # report tells moderators to look up - so both are started for real and

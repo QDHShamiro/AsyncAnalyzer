@@ -487,7 +487,16 @@ function Test-RandomFilename([string]$JarName) {
     }
     $allAlpha = $analyze -replace '[^a-z]',''
     if ($allAlpha.Length -lt 4) { return $false }
-    $vowels = ($allAlpha.ToCharArray() | Where-Object { 'aeiou' -contains $_ }).Count
+    # .Contains, not -contains. PowerShell's -contains treats the LEFT side as a
+    # collection, and a string is a collection of ONE element - itself - so
+    # 'aeiou' -contains 'i' is False. The vowel count was therefore always 0, the
+    # ratio always 0, and "looks random" quietly meant nothing more than "has
+    # five letters and is not on the prefix list below". Every legitimate mod not
+    # in that hand-written list was floored to Review 35 with the reason
+    # "Unrecognized random / hash-style filename". Found by running the tool for
+    # real: HikariCP-5.1.0.jar and Java-WebSocket-1.5.6.jar were both called
+    # random-named.
+    $vowels = ($allAlpha.ToCharArray() | Where-Object { 'aeiou'.Contains($_) }).Count
     $ratio  = $vowels / $allAlpha.Length
     $looksRandom = ($ratio -lt 0.12 -and $allAlpha.Length -ge 5)
     return $looksRandom
@@ -2899,6 +2908,26 @@ function Invoke-SelfTest {
             $ok = ($script:Findings[$script:Findings.Count - 1].What -eq "w")
             while ($script:Findings.Count -gt $before) { $script:Findings.RemoveAt($script:Findings.Count - 1) }
             $ok } }
+        # The filename heuristic, on names rather than on a flag. Every Python
+        # mirror takes random_name as an INPUT, so none of them could ever have
+        # caught this: 'aeiou' -contains $_ is always False - a string is a
+        # collection of one element, itself - so the vowel count was always 0 and
+        # "looks random" silently meant "has five letters and is not on the
+        # prefix list". HikariCP and Java-WebSocket were both called random-named
+        # and floored to Review. Found by running the tool for real.
+        @{ Label = "Real mod filenames are not called random"; Test = {
+            $real = @('HikariCP-5.1.0.jar','Java-WebSocket-1.5.6.jar','sodium-fabric-0.5.8.jar',
+                      'journeymap-1.20.1-5.9.7.jar','amqp-client-5.21.0.jar','asm-analysis-9.7.jar',
+                      'adventure-nbt-4.17.0.jar','ant-1.10.14.jar','wurstclient-7.36.jar')
+            @($real | Where-Object { Test-RandomFilename $_ }).Count -eq 0 } }
+        @{ Label = "...and a real random name still is"; Test = {
+            # gzfjalsrvp is the name the DoomsDay download page actually produced.
+            $rand = @('gzfjalsrvp.jar','xkcdvbnm.jar','qwrtzpfgh.jar','zzxcvbnmm.jar')
+            @($rand | Where-Object { Test-RandomFilename $_ }).Count -eq $rand.Count } }
+        @{ Label = "Vowels are counted, not compared to a whole word"; Test = {
+            # The exact shape of the bug, kept as a case of its own so a future
+            # rewrite of the heuristic cannot quietly reintroduce it.
+            (('hikaricp'.ToCharArray() | Where-Object { 'aeiou'.Contains($_) }).Count -eq 3) } }
         @{ Label = "Gaps are reported, never swallowed"; Test = {
             $before = $script:ScanGaps.Count
             Add-ScanGap "self-test probe gap"
@@ -2907,7 +2936,10 @@ function Invoke-SelfTest {
             while ($script:ScanGaps.Count -gt $before) { $script:ScanGaps.RemoveAt($script:ScanGaps.Count - 1) }
             $ok } }
         @{ Label = "Full report renders and is written"; Test = {
-            $tmp = Join-Path $env:TEMP "AsyncAnalyzer_SelfTest.html"
+            # GetTempPath, not $env:TEMP: the variable is not set on every host,
+            # and a self-test that fails because it could not find a temp folder
+            # reads exactly like a self-test that found a broken report.
+            $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "AsyncAnalyzer_SelfTest.html"
             $out = New-HtmlReport $tmp
             $ok = $false
             if ($out -and (Test-Path $out)) {
@@ -6228,10 +6260,16 @@ function Run-UsnScan {
             if ($null -eq $d) { continue }
             $hit = Test-CheatName $d.Name
             $isJar = $d.Name -match '(?i)\.(jar|litemod)$'
+            # Built before the string, not inside it. A $( ) subexpression that
+            # contains a double quote cannot sit inside a double-quoted string:
+            # the inner quote closes the outer one and the whole file stops
+            # parsing. That is what broke the first Windows run of this tool.
+            $whenPart = ""
+            if ($d.When) { $whenPart = ", " + $d.When }
             if ($hit) {
-                $res.Hits.Add("$($d.Name)  ($hit, $($d.Reason.Trim())$(if ($d.When) { ", $($d.When)" } else { "" }))")
+                $res.Hits.Add("$($d.Name)  ($hit, $($d.Reason.Trim())$whenPart)")
             } elseif ($isJar -and $script:FlaggedModsList.Contains($d.Name)) {
-                $res.Hits.Add("$($d.Name)  (a jar this scan flagged, $($d.Reason.Trim())$(if ($d.When) { ", $($d.When)" } else { "" }))")
+                $res.Hits.Add("$($d.Name)  (a jar this scan flagged, $($d.Reason.Trim())$whenPart)")
             }
         }
     } catch {
@@ -6847,7 +6885,10 @@ function Run-BamScan {
     W "  BAM SCAN $([char]0x2014) Background Activity Monitor" Cyan
     Write-Host ""
 
-    if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    # Test-IsAdmin, not a raw IsInRole call: the raw one can throw, and when it
+    # does the guard is skipped rather than failing closed - the admin-only block
+    # below then runs unguarded. Test-IsAdmin catches and returns false.
+    if (-not (Test-IsAdmin)) {
         W "  $([char]0x26A0)  Administrator privileges required for BAM scan. Skipping." Yellow
         Add-ScanGap "BAM history not read $([char]0x2014) programs that ran and were then deleted could not be checked"
         Write-Host ""

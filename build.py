@@ -30,6 +30,33 @@ def assemble():
     return "\n".join(open(p, encoding="utf-8").read() for p in parts), parts
 
 
+def parse_check(path):
+    """Run the shipped file past a real PowerShell parser, if one is here.
+
+    Everything else in this repo is a Python mirror of what the PowerShell is
+    meant to DO. None of it can see a syntax error. The first real Windows run
+    died on one - a $( ) holding a double quote inside a double-quoted string -
+    that the mirrors, the tests and the brace counter had all passed, because a
+    brace counter treats a string as opaque and that is exactly where the error
+    was. If pwsh is installed, use it; if not, say so rather than implying the
+    file was checked.
+    """
+    import shutil
+    import subprocess
+    pwsh = shutil.which("pwsh") or ("/opt/pwsh/pwsh" if os.path.exists("/opt/pwsh/pwsh") else None)
+    if not pwsh:
+        return None
+    script = (
+        "$e=$null;"
+        "$null=[System.Management.Automation.Language.Parser]::ParseFile('%s',[ref]$null,[ref]$e);"
+        "if($e){$e|ForEach-Object{'{0}:{1}  {2}' -f $_.Extent.StartLineNumber,"
+        "$_.Extent.StartColumnNumber,$_.Message};exit 1}" % path
+    )
+    r = subprocess.run([pwsh, "-NoProfile", "-Command", script],
+                       capture_output=True, text=True, timeout=300)
+    return (r.returncode == 0, (r.stdout + r.stderr).strip())
+
+
 def main():
     built, parts = assemble()
     check = "--check" in sys.argv
@@ -51,6 +78,14 @@ def main():
         f.write(built)
     print("built AsyncAnalyzer.ps1 from %d sections (%d lines)"
           % (len(parts), built.count("\n") + 1))
+    res = parse_check(OUT)
+    if res is None:
+        print("  (no pwsh here - the file was NOT parse-checked)")
+    elif res[0]:
+        print("  parsed by PowerShell: no errors")
+    else:
+        print("  PowerShell PARSE ERRORS:\n" + res[1], file=sys.stderr)
+        return 1
     return 0
 
 

@@ -276,7 +276,10 @@ function Run-BamScan {
     W "  BAM SCAN $([char]0x2014) Background Activity Monitor" Cyan
     Write-Host ""
 
-    if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    # Test-IsAdmin, not a raw IsInRole call: the raw one can throw, and when it
+    # does the guard is skipped rather than failing closed - the admin-only block
+    # below then runs unguarded. Test-IsAdmin catches and returns false.
+    if (-not (Test-IsAdmin)) {
         W "  $([char]0x26A0)  Administrator privileges required for BAM scan. Skipping." Yellow
         Add-ScanGap "BAM history not read $([char]0x2014) programs that ran and were then deleted could not be checked"
         Write-Host ""

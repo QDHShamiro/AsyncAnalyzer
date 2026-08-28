@@ -143,10 +143,16 @@ function Run-UsnScan {
             if ($null -eq $d) { continue }
             $hit = Test-CheatName $d.Name
             $isJar = $d.Name -match '(?i)\.(jar|litemod)$'
+            # Built before the string, not inside it. A $( ) subexpression that
+            # contains a double quote cannot sit inside a double-quoted string:
+            # the inner quote closes the outer one and the whole file stops
+            # parsing. That is what broke the first Windows run of this tool.
+            $whenPart = ""
+            if ($d.When) { $whenPart = ", " + $d.When }
             if ($hit) {
-                $res.Hits.Add("$($d.Name)  ($hit, $($d.Reason.Trim())$(if ($d.When) { ", $($d.When)" } else { "" }))")
+                $res.Hits.Add("$($d.Name)  ($hit, $($d.Reason.Trim())$whenPart)")
             } elseif ($isJar -and $script:FlaggedModsList.Contains($d.Name)) {
-                $res.Hits.Add("$($d.Name)  (a jar this scan flagged, $($d.Reason.Trim())$(if ($d.When) { ", $($d.When)" } else { "" }))")
+                $res.Hits.Add("$($d.Name)  (a jar this scan flagged, $($d.Reason.Trim())$whenPart)")
             }
         }
     } catch {
