@@ -185,7 +185,6 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
-| `4d830af` | 185 ███████ | 0 | ok | ok | ok |
 | `71b5528` | 186 ███████ | 0 | ok | ok | ok |
 | `9d44dee` | 186 ███████ | 0 | ok | ok | ok |
 | `2a46aac` | 186 ███████ | 0 | ok | ok | ok |
@@ -197,6 +196,7 @@ of 0 means more as that number grows.
 | `adc4a6d` | 186 ███████ | 0 | ok | ok | ok |
 | `35cc9ff` | 186 ███████ | 0 | ok | ok | ok |
 | `3e3ca00` | 186 ███████ | 0 | ok | ok | ok |
+| `dbbbc3f` | 186 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
