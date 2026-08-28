@@ -74,7 +74,7 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0 }
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
@@ -629,6 +629,100 @@ $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([Sy
 $script:goodMeta         = @{}
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
+# ---------------------------------------------------------------------------
+# Macro / autoclicker files - the half of an autoclicker that is not a mod
+#
+# An autoclicker is not in the mods folder. It is an AutoHotkey script on the
+# desktop, an AutoIt binary, or - the case people assume cannot be seen - a Lua
+# script running inside the mouse driver, where the clicks are produced below the
+# game entirely.
+#
+# The line held here is the same one the mod rules hold: clicking the mouse is not
+# a cheat. Millions of AutoHotkey scripts expand text and remap keys, and a G HUB
+# profile with a recoil script belongs to a shooter. So there are two levels, and
+# the difference is evidence rather than confidence:
+#   CHEAT  clicks IN A LOOP and names Minecraft - the window, javaw, a known
+#          client - or the file is named after the technique. No innocent reading.
+#   MACRO  clicks in a loop and nothing ties it to the game. Reported as exactly
+#          that, with the limitation stated, and never as an accusation.
+#
+# Mirrored in ml/macro.py, which is the source of these patterns; parity is
+# machine-checked by ml/test_macro.py.
+# ---------------------------------------------------------------------------
+$script:macroLangs = [ordered]@{
+    # Mouse-specific on purpose: a text expander or a window-tiling script uses
+    # Send with text and never names a mouse button, which is what keeps it out.
+    # 'repeat' is a real loop construct, not Sleep - one Click then Sleep is a hotkey.
+    '.ahk' = @{
+        'click' = '\bClick\b|\bMouseClick\b|\bLButton\b|\bRButton\b|\bMouseClickDrag\b'
+        'repeat' = '(?im)^\s*Loop\b|\bLoop\s*,|\bSetTimer\b|\bWhile\b|\bLoop\s*\{'
+        'mc' = 'ahk_exe\s+javaw?\.exe|ahk_class\s+LWJGL|ahk_class\s+GLFW|\bMinecraft\b|lunarclient|badlion|feather\s*client|labymod|prismlauncher'
+        'human' = '\bRandom\b|RandomSleep|jitter|humaniz'
+    }
+    '.ahk2' = @{
+        'click' = '\bClick\b|\bMouseClick\b|\bLButton\b|\bRButton\b|\bMouseClickDrag\b'
+        'repeat' = '(?im)^\s*Loop\b|\bLoop\s*,|\bSetTimer\b|\bWhile\b|\bLoop\s*\{'
+        'mc' = 'ahk_exe\s+javaw?\.exe|ahk_class\s+LWJGL|ahk_class\s+GLFW|\bMinecraft\b|lunarclient|badlion|feather\s*client|labymod|prismlauncher'
+        'human' = '\bRandom\b|RandomSleep|jitter|humaniz'
+    }
+    '.au3' = @{
+        'click' = '\bMouseClick\b|\bMouseDown\b|\bMouseUp\b|\{LBUTTON|\{RBUTTON'
+        'repeat' = '(?im)^\s*While\b|^\s*For\b|\bAdlibRegister\b|\bDo\b'
+        'mc' = 'WinActivate.*Minecraft|WinActive.*Minecraft|javaw?\.exe|LWJGL|\bMinecraft\b|lunarclient|badlion'
+        'human' = '\bRandom\b|jitter|humaniz'
+    }
+    # These names exist ONLY in the Logitech G HUB / G-series and Razer scripting
+    # APIs, and that is what makes .lua safe to scan at all: Minecraft's own Lua
+    # (ComputerCraft), Garry's Mod and Roblox share none of this vocabulary. A
+    # driver script that never touches a mouse button is a lighting or remap
+    # profile, of which there are a great many - hence the 'driver' gate.
+    '.lua' = @{
+        'click' = '\bPressMouseButton\b|\bReleaseMouseButton\b|\bPressAndReleaseMouseButton\b|\bMouseClick\b|\bIsMouseButtonPressed\b'
+        'repeat' = '(?im)^\s*while\b|^\s*repeat\b|^\s*for\b|\bSetTimer\b'
+        'mc' = '\bMinecraft\b|javaw|lunarclient|badlion|labymod'
+        'human' = '\bmath\.random\b|\brandom\b|jitter|humaniz'
+        'driver' = '\bOnEvent\b|\bGetMKeyState\b|\bOutputLogMessage\b|\bPlayMacro\b|\bEnablePrimaryMouseButtonEvents\b|\bMoveMouseRelative\b'
+    }
+    # Narrow on purpose: VBScript cannot click a mouse without an external object,
+    # so the only shape worth reading is SendKeys in a loop against the game.
+    '.vbs' = @{
+        'click' = '\bSendKeys\b|\bAppActivate\b'
+        'repeat' = '(?im)^\s*Do\b|^\s*While\b|^\s*For\b'
+        'mc' = '\bMinecraft\b|javaw?\.exe|lunarclient|badlion'
+        'human' = '\bRnd\b|\bRandomize\b'
+    }
+}
+# Filenames that name the TECHNIQUE. 'macro' on its own is deliberately absent -
+# it is what people call any automation, including the harmless kind.
+$script:macroCheatNames = @(
+    'autoclick', 'autoclicker', 'auto_click', 'auto-click',
+    'clicker', 'dragclick', 'drag_click', 'butterflyclick',
+    'butterfly_click', 'jitterclick', 'jitter_click', 'blockhit',
+    'block_hit', 'autotool', 'aimassist', 'aim_assist',
+    'triggerbot', 'autocrystal', 'auto_crystal', 'killaura',
+    'autoaim', 'auto_aim', 'autobridge', 'auto_bridge',
+    'bhop', 'autosprint', 'autototem', 'auto_totem',
+    'reachmacro', 'anchormacro', 'anchorbot', 'autoanchor',
+    'cpsmacro', 'clickermacro'
+)
+# Where a mouse or keyboard driver keeps the macros it runs. Presence is NOT a
+# finding - this hardware is owned by millions. What is worth recording is that a
+# macro profile exists and when it last changed, plus the scripts themselves where
+# the driver stores them as plain files.
+$script:macroDriverPaths = @(
+    @('Logitech G HUB', '%LOCALAPPDATA%\LGHUB\scripts', 'Lua macro scripts, one per profile')
+    @('Logitech G HUB', '%LOCALAPPDATA%\LGHUB\settings.db', 'profile database - can hold macros')
+    @('Logitech LGS', '%LOCALAPPDATA%\Logitech\Logitech Gaming Software\profiles', 'profile XML with macros')
+    @('Razer Synapse 3', '%PROGRAMDATA%\Razer\Synapse3\Accounts', 'device profiles with macros')
+    @('Razer Synapse 2', '%APPDATA%\Razer\Synapse\Accounts', 'device profiles with macros')
+    @('Corsair iCUE', '%APPDATA%\Corsair\CUE4', 'profile database - can hold macros')
+    @('SteelSeries GG', '%APPDATA%\SteelSeries\SteelSeries Engine 3', 'device profiles with macros')
+    @('Bloody / A4Tech', '%PROGRAMDATA%\A4TECH', 'onboard macro profiles')
+    @('Bloody / A4Tech', '%PROGRAMDATA%\Bloody7', 'onboard macro profiles')
+    @('Glorious Core', '%APPDATA%\GloriousCore', 'device profiles with macros')
+)
+$script:macroExtList = @('.ahk', '.ahk2', '.au3', '.lua', '.vbs')
+
 $script:mlModelVersion = 2
 $script:mlIntercept = -3.595535
 $script:mlFeatureOrder = @('pkgpath','cheatsite','strong_sig','weak_sig','fullwidth_str','fullwidth_cls','japanese_cls','singlechar_cls','numeric_cls','novowel_cls','avg_entropy','high_entropy','reflection','runtime_exec','http_download','http_exfil','nested_hollow','fake_identity','filename_client','random_name','verified','legit_modid')
@@ -893,6 +987,11 @@ function Get-SessionRaw {
         deleted_jars   = [int]$ev.DeletedJars
         mc_running     = $(if (@(Get-Process -Name javaw, java -ErrorAction SilentlyContinue).Count -gt 0) { 1 } else { 0 })
         mem_client     = [int]$ev.MemCheatClient
+        # A click macro is not a mod, so it reaches the whole-scan verdict through
+        # a hard rule rather than through the model - the model's 15 features are
+        # trained and versioned, and one cannot be bolted on without retraining.
+        macro_cheat    = [int]$ev.MacroCheat
+        macro_named    = [int]$ev.MacroNamed
     }
 }
 
@@ -938,6 +1037,13 @@ function Get-SessionVerdict($raw) {
     if ($raw.cheatsite_dl)       { $score = [Math]::Max($score, 60); [void]$reasons.Add("A mod was downloaded from a known cheat site") }
     if ($raw.stray_jars -gt 0 -or $raw.cheat_folders -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("Cheat files outside the mods folder: $($raw.stray_jars) jar(s), $($raw.cheat_folders) folder(s)") }
     if ($raw.mem_client -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("A named cheat client was identified inside the RUNNING game's memory $([char]0x2014) it is loaded right now, whatever the mods folder looks like") }
+    # An autoclicker is not a mod and never shows up in the mods folder. A script
+    # that repeats mouse input in a loop AND names the Minecraft window, the
+    # launcher or javaw has no second reading.
+    if ($raw.macro_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.macro_cheat) click macro(s) that repeat mouse input in a loop and name Minecraft $([char]0x2014) an autoclicker, aimed at this game") }
+    # One step weaker on purpose: the file is named after the technique, which says
+    # what it is without proving where it was used.
+    if ($raw.macro_named -gt 0) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.macro_named) click macro(s) named after a cheat technique (autoclicker, blockhit, butterfly-click $([char]0x2026))") }
     if ($raw.deleted_jars -gt 0 -and $raw.mc_running) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.deleted_jars) .jar file(s) ran on this PC and were deleted while Minecraft is still running $([char]0x2014) the classic 'wiped it before the screenshare' pattern") }
     if ($raw.bam_deleted -gt 0)  { [void]$reasons.Add("$($raw.bam_deleted) executable(s) ran on this PC and were deleted afterwards") }
     if ($raw.flagged -gt 0)      { [void]$reasons.Add("$($raw.flagged) flagged mod(s)") }
@@ -959,9 +1065,11 @@ function Get-SessionVerdictCached {
 
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
-    if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0) { return 1 }
+    if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0 -or
+        $raw.macro_cheat -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
         $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
+        $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }
@@ -2290,6 +2398,10 @@ function Invoke-SelfTest {
         @{ Label = "Cheat client live in game memory"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; mem_client = 1; jvm_inject = 1; mc_running = 1 } }
         @{ Label = "Jars deleted while MC still running"; Bands = @("Likely", "Confirmed"); Raw = @{ total_mods = 5; verified = 3; deleted_jars = 2; bam_deleted = 2; mc_running = 1 } }
         @{ Label = "Clean scan with Minecraft running"; Bands = @("Clean"); Raw = @{ total_mods = 25; verified = 25; mc_running = 1 } }
+        # An autoclicker is never in the mods folder, so the mods can be spotless
+        # and the scan still has to say what it found on the PC.
+        @{ Label = "Spotless mods, autoclicker aimed at MC"; Bands = @("Confirmed"); Raw = @{ total_mods = 25; verified = 25; macro_cheat = 1; mc_running = 1 } }
+        @{ Label = "Spotless mods, macro named as technique"; Bands = @("Likely"); Raw = @{ total_mods = 25; verified = 25; macro_named = 1 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {
@@ -4486,6 +4598,9 @@ W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud
 W "    $([char]0x2713) Verified mods are never flagged. Flags come with a reason + score." Green
 W "    $([char]0x2139) By default it only scans your mods folder. A deep, whole-PC scan is" DarkGray
 W "      optional and asked for separately." DarkGray
+W "    $([char]0x2139) The deep scan also reads macro scripts (.ahk .ahk2 .au3 .lua .vbs) in" DarkGray
+W "      Downloads, Desktop, Documents, Temp and your mouse driver's script folder," DarkGray
+W "      because an autoclicker is never in the mods folder. Read-only, like the rest." DarkGray
 if ($script:MemoryAuto) {
     W "    $([char]0x2139) Minecraft is running $([char]0x2014) the live-memory check is ON automatically." Yellow
     W "      That is the only way to catch a ghost client injected into the game." DarkGray
@@ -5248,6 +5363,132 @@ function Run-BamScan {
     Write-Host ""
 }
 
+function Test-MacroFile([string]$Name, [string]$Text) {
+    # Mirror of classify() in ml/macro.py; the tables live in $script:macroLangs and
+    # the reasoning is written out there. Returns @{ Level = ""|"macro"|"cheat" }.
+    $out = @{ Level = ""; Reasons = @() }
+    if ($null -eq $Name -or $null -eq $Text) { return $out }
+    $dot = $Name.LastIndexOf('.')
+    if ($dot -lt 0) { return $out }
+    $ext = $Name.Substring($dot).ToLower()
+    if (-not $script:macroLangs.Contains($ext)) { return $out }
+    $tbl = $script:macroLangs[$ext]
+    $stem = ($Name.Substring(0, $dot).ToLower() -replace ' ', '')
+    $named = ""
+    foreach ($n in $script:macroCheatNames) { if ($stem.Contains($n)) { $named = $n; break } }
+
+    # A driver script that never touches a mouse button is a lighting or key-remap
+    # profile, and there are a great many of those.
+    if ($ext -eq '.lua' -and -not ($Text -match $tbl['driver'])) { return $out }
+
+    $clicks = $Text -match $tbl['click']
+    $loops  = $Text -match $tbl['repeat']
+    $mc     = $Text -match $tbl['mc']
+    $human  = $Text -match $tbl['human']
+
+    if (-not ($clicks -and $loops)) {
+        # Named after the technique but with no click loop in it: worth a line, but
+        # it could be a readme or a leftover config, so it is never the accusation.
+        if ($named -ne "" -and $clicks) {
+            $out.Level = "macro"
+            $out.Reasons = @("named after '$named' and sends mouse input")
+        }
+        return $out
+    }
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    if ($ext -eq '.lua') { [void]$reasons.Add("runs inside the mouse driver, below the game") }
+    [void]$reasons.Add("repeats mouse input in a loop")
+    if ($human) { [void]$reasons.Add("randomises its own delay $([char]0x2014) imitating a human hand") }
+    if ($mc)    { [void]$reasons.Add("scoped to Minecraft (window, launcher or JVM named in the file)") }
+    if ($named -ne "") { [void]$reasons.Add("file is named after the technique ('$named')") }
+    $out.Level = if ($mc) { "cheat" } elseif ($named -ne "") { "named" } else { "macro" }
+    $out.Reasons = @($reasons)
+    return $out
+}
+
+function Expand-MacroPath([string]$P) {
+    try { return [System.Environment]::ExpandEnvironmentVariables($P) } catch { return $P }
+}
+
+function Run-MacroScan {
+    # The half of an autoclicker that is not a mod. Three places are looked at:
+    # loose script files where people keep them, the script folders a mouse driver
+    # runs code out of, and the driver's own profile store - the last only as
+    # "a macro profile exists and was last changed on X", because those are binary.
+    $res = @{
+        Cheat = [System.Collections.Generic.List[object]]::new()
+        Named = [System.Collections.Generic.List[object]]::new()
+        Macro = [System.Collections.Generic.List[object]]::new()
+        Profiles = [System.Collections.Generic.List[string]]::new()
+        Scanned = 0
+    }
+    $roots = [System.Collections.Generic.List[string]]::new()
+    foreach ($base in @(
+        [System.IO.Path]::Combine($env:USERPROFILE, "Downloads"),
+        [System.IO.Path]::Combine($env:USERPROFILE, "Desktop"),
+        [System.IO.Path]::Combine($env:USERPROFILE, "Documents"),
+        $env:TEMP
+    )) {
+        if ([string]::IsNullOrEmpty($base)) { continue }
+        [void]$roots.Add($base)
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                [void]$roots.Add($sub)
+                try { foreach ($sub2 in [System.IO.Directory]::GetDirectories($sub)) { [void]$roots.Add($sub2) } } catch {}
+            }
+        } catch {}
+    }
+    # The driver script folders. A macro that runs in the mouse is the one people
+    # assume a screenshare cannot see, and for the drivers that keep their scripts
+    # as plain files, it can.
+    foreach ($d in $script:macroDriverPaths) {
+        $p = Expand-MacroPath $d[1]
+        if ([System.IO.Directory]::Exists($p)) {
+            [void]$roots.Add($p)
+            try { foreach ($sub in [System.IO.Directory]::GetDirectories($p)) { [void]$roots.Add($sub) } } catch {}
+            try {
+                $di = [System.IO.DirectoryInfo]::new($p)
+                [void]$res.Profiles.Add("$($d[0]): $p $([char]0x2014) $($d[2]), last changed $($di.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))")
+            } catch {}
+        } elseif ([System.IO.File]::Exists($p)) {
+            try {
+                $fi = [System.IO.FileInfo]::new($p)
+                [void]$res.Profiles.Add("$($d[0]): $p $([char]0x2014) $($d[2]), $([math]::Round($fi.Length/1KB,1)) KB, last changed $($fi.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))")
+            } catch {}
+        }
+    }
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($root in $roots) {
+        if (-not [System.IO.Directory]::Exists($root)) { continue }
+        foreach ($ext in $script:macroExtList) {
+            try {
+                foreach ($mf in [System.IO.Directory]::EnumerateFiles($root, "*$ext", [System.IO.SearchOption]::TopDirectoryOnly)) {
+                    if (-not $seen.Add($mf)) { continue }
+                    $mn = [System.IO.Path]::GetFileName($mf)
+                    Spin "Scanning macro: $mn"
+                    $res.Scanned++
+                    try {
+                        $fi = [System.IO.FileInfo]::new($mf)
+                        if ($fi.Length -gt 2MB) { continue }
+                        $txt = [System.IO.File]::ReadAllText($mf)
+                    } catch { continue }
+                    $v = Test-MacroFile $mn $txt
+                    if ($v.Level -eq "") { continue }
+                    $rec = [PSCustomObject]@{
+                        Path = $mf; Reasons = $v.Reasons
+                        Meta = "size: $([math]::Round($fi.Length/1KB,1)) KB  modified: $($fi.LastWriteTime.ToString('yyyy-MM-dd'))"
+                    }
+                    if     ($v.Level -eq "cheat") { [void]$res.Cheat.Add($rec) }
+                    elseif ($v.Level -eq "named") { [void]$res.Named.Add($rec) }
+                    else                          { [void]$res.Macro.Add($rec) }
+                }
+            } catch {}
+        }
+    }
+    SpinClear
+    return $res
+}
+
 function Run-PCscan {
     Write-Host ""
     W ("$([char]0x2501)" * 76) Blue
@@ -5802,6 +6043,40 @@ function Run-PCscan {
     W "  $([char]0x2514)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2500)$([char]0x2518)" DarkCyan
 
     Write-Host ""
+    W "  Scanning for macro / autoclicker files..." DarkGray
+    $macro = Run-MacroScan
+    $pcIssues += ($macro.Cheat.Count + $macro.Named.Count)
+    $script:Evidence.MacroCheat = $macro.Cheat.Count
+    $script:Evidence.MacroNamed = $macro.Named.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) MACRO / AUTOCLICKER SCAN " + "$([char]0x2500)" * 45 + "$([char]0x2510)") DarkCyan
+    $mScanLine = "  $([char]0x2502)  Scanned $($macro.Scanned) script file(s) $([char]0x2014) .ahk .ahk2 .au3 .lua .vbs"
+    W ($mScanLine + (" " * [Math]::Max(0, 75 - $mScanLine.Length)) + "$([char]0x2502)") DarkGray
+    if ($macro.Cheat.Count -eq 0 -and $macro.Named.Count -eq 0 -and $macro.Macro.Count -eq 0) {
+        W ("  $([char]0x2502)   OK $([char]0x2014) no click macro found" + (" " * 48) + "$([char]0x2502)") DarkCyan
+    } else {
+        foreach ($f in $macro.Cheat) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  $($f.Path)" Red
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkYellow }
+            if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
+        }
+        foreach ($f in $macro.Named) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  $($f.Path)" Red
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkYellow }
+            if ($f.Meta) { W "  $([char]0x2502)    $($f.Meta)" DarkGray }
+        }
+        foreach ($f in $macro.Macro) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x2022) MACRO    $($f.Path)" Yellow
+            foreach ($r in $f.Reasons) { W "  $([char]0x2502)    $r" DarkGray }
+            W "  $([char]0x2502)    nothing in the file names Minecraft $([char]0x2014) not an accusation" DarkGray
+        }
+    }
+    foreach ($pr in $macro.Profiles) { W "  $([char]0x2502)  $([char]0x2022) $pr" DarkGray }
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
+
+    Write-Host ""
     W "  Scanning for obfuscated files..." DarkGray
     $obfFlags = [System.Collections.Generic.List[object]]::new()
     $obfRoots = [System.Collections.Generic.List[string]]::new()
@@ -6141,20 +6416,52 @@ function Run-PCscan {
             "The module list of the running Java process was read and compared against known injector DLLs." `
             "A DLL loaded into javaw.exe is running inside the game with full access to it." | Out-Null
     }
+    if ($macro.Cheat.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($macro.Cheat.Count) click macro(s) aimed at Minecraft" `
+            @($macro.Cheat | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
+            "AutoHotkey, AutoIt, mouse-driver Lua and VBScript files were read and checked for input sent in a loop." `
+            "An autoclicker does not live in the mods folder. These repeat mouse input automatically AND name Minecraft, the launcher or the technique $([char]0x2014) there is no other reading of that." `
+            "" "Note the paths and the modification dates before anything is deleted." | Out-Null
+    }
+    if ($macro.Named.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($macro.Named.Count) click macro(s) named after a cheat technique" `
+            @($macro.Named | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
+            "The same scan; these repeat mouse input in a loop and the file is named after the technique." `
+            "One step short of the row above: the file says what it is, but nothing in it names Minecraft, so it does not prove where it was used." | Out-Null
+    }
+    if ($macro.Macro.Count -gt 0) {
+        Add-Finding "WARN" "Rest of the PC" "$($macro.Macro.Count) click macro(s) with no link to Minecraft in the file" `
+            @($macro.Macro | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
+            "The same scan; these repeat mouse input in a loop but nothing in the file names the game." `
+            "Reported because a click macro is worth a person seeing during a screenshare. It is NOT an accusation: a recoil script for a shooter has exactly this shape and is not a Minecraft cheat." | Out-Null
+    }
+    if ($macro.Profiles.Count -gt 0) {
+        Add-Finding "INFO" "Rest of the PC" "$($macro.Profiles.Count) mouse/keyboard driver macro store(s) present" `
+            @($macro.Profiles) `
+            "The folders and profile databases where gaming mice and keyboards keep their macros were located." `
+            "Owning this hardware is not suspicious $([char]0x2014) millions of people do. The dates are here so a macro profile changed just before the screenshare is visible." | Out-Null
+    }
     if ($startupFlags.Count -gt 0) {
         Add-Finding "WARN" "Rest of the PC" "$($startupFlags.Count) suspicious autostart entr(y/ies)" `
             @($startupFlags | ForEach-Object { "$($_.Key) $([char]0x2192) $($_.Name) = $($_.Value)" }) `
             "Autostart locations were read to see what launches itself at login." `
             "Cheat loaders use autostart so they are running again before the game is." | Out-Null
     }
+    # The limit that can never be ruled out from the PC side, so it is stated on
+    # every scan rather than only when something was found: a macro burned into a
+    # mouse's ONBOARD memory runs on the device and leaves nothing here at all.
+    Add-ScanGap "Macros stored in a mouse or keyboard's ONBOARD memory (Bloody, A4Tech, and the onboard profiles of Razer/Logitech devices) run on the device itself and leave nothing on the PC $([char]0x2014) they cannot be detected by any PC scan"
     if ($flaggedProcs.Count -eq 0 -and $foundFolders.Count -eq 0 -and $fsFlags.Count -eq 0 -and
-        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $startupFlags.Count -eq 0) {
-        Add-Finding "OK" "Rest of the PC" "Processes, folders, stray jars, scripts, executables, loaded DLLs and autostart $([char]0x2014) nothing cheat-like" | Out-Null
+        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $startupFlags.Count -eq 0 -and
+        $macro.Cheat.Count -eq 0 -and $macro.Named.Count -eq 0 -and $macro.Macro.Count -eq 0) {
+        Add-Finding "OK" "Rest of the PC" "Processes, folders, stray jars, scripts, click macros, executables, loaded DLLs and autostart $([char]0x2014) nothing cheat-like" | Out-Null
     }
     W "  Startup flags       : " DarkGray -NoNewline; W "$($startupFlags.Count)" $(if($startupFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Cheat folders found : " DarkGray -NoNewline; W "$($foundFolders.Count)" $(if($foundFolders.Count -gt 0){"Red"}else{"Green"})
     W "  Flagged JARs        : " DarkGray -NoNewline; W "$($fsFlags.Count)" $(if($fsFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Flagged .py scripts : " DarkGray -NoNewline; W "$($pyFlags.Count)" $(if($pyFlags.Count -gt 0){"Red"}else{"Green"})
+    $macroHard = $macro.Cheat.Count + $macro.Named.Count
+    W "  Click macros        : " DarkGray -NoNewline; W "$macroHard" $(if($macroHard -gt 0){"Red"}else{"Green"})
     W "  Flagged EXE files   : " DarkGray -NoNewline; W "$($exeFlags.Count)" $(if($exeFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Injected DLLs       : " DarkGray -NoNewline; W "$($dllFlags.Count)" $(if($dllFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Flagged mods (scan) : " DarkGray -NoNewline; W "$($script:FlaggedModsList.Count)" $(if($script:FlaggedModsList.Count -gt 0){"Red"}else{"Green"})
@@ -6238,7 +6545,7 @@ Write-Host ""
 # escalated on its own if the mod pass turned anything up.
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {
-    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running"
+    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running. Running processes, stray jars, autostart entries and CLICK MACROS (.ahk/.au3/.lua/.vbs) were therefore not checked"
 }
 if ($doDeep -or $script:_DevMode) {
     Run-RecentActivity

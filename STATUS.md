@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (27), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (46), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (27), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -136,8 +136,37 @@ caught, all 11 legit mixin variants clean. Parity between `ml/bytecode.py` and t
 PowerShell tables is machine-checked in `test_bytecode.py` — a silent drift there
 reopens the hole.
 
+## Autoclickers / macro files (the half that is not a mod)
+- `ml/macro.py` is the source of truth for the patterns; `$script:macroLangs`,
+  `$script:macroCheatNames`, `$script:macroDriverPaths` in `src/10-signatures.ps1`
+  are **generated from it**, and `ml/test_macro.py` machine-checks that they match.
+- `Test-MacroFile` + `Run-MacroScan` (`src/96-pcscan.ps1`) read `.ahk .ahk2 .au3
+  .lua .vbs` in Downloads / Desktop / Documents / Temp (+2 sub-levels) and in the
+  script folders of G HUB, LGS, Synapse 2+3, iCUE, SteelSeries, Glorious, Bloody.
+- **Three levels, and the difference is evidence, not confidence.** Click loop +
+  names Minecraft -> **cheat** (session verdict >=85). Click loop + the FILE named
+  after the technique -> **named** (>=60). Click loop, nothing tying it to the game
+  -> **macro**, reported and never accused.
+- Why `.lua` is safe to scan at all: the rules require the Logitech/Razer driver
+  API (`PressMouseButton`, `OnEvent`, `IsMouseButtonPressed`...). Minecraft's own
+  Lua (ComputerCraft), Garry's Mod and Roblox share none of that vocabulary.
+- The negatives are the load-bearing half of `test_macro.py`: an AHK text expander,
+  a window tiler, a single remap, an AutoIt installer script, a ComputerCraft
+  turtle, a G HUB lighting profile, and **a recoil script for a shooter** - a real
+  click loop in a real mouse driver that is not a Minecraft cheat. 42/42.
+- Reaches the whole-scan verdict through **hard rules**, not model features: the 15
+  session features are trained and versioned and one cannot be bolted on without
+  retraining. `test_session.py` now machine-checks that the hard rules AND the
+  auto-label inputs are identical in `src/30-runtime.ps1` and `ml/session_model.py`
+  - a rule added on one side only used to be completely invisible.
+- **The honest limit, printed on every scan:** a macro burned into a mouse's
+  ONBOARD memory (Bloody, A4Tech, onboard Razer/Logitech profiles) runs on the
+  device and leaves nothing on the PC. `Add-ScanGap` states it unconditionally.
+  What IS visible is that a driver macro store exists and when it last changed.
+
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
+- CI runs nine suites now (`test_macro` added).
 - **CI owns both generated files.** Run the benchmark locally as much as you like, but do NOT commit the regenerated files - the bot writes them on every push to main, and committing your own copy produces a merge conflict every time (it already did once). If you do hit that conflict: resolve it by regenerating rather than hand-editing, and for the history take the UNION of both sides keyed by commit.
 - `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all seven suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
 - **Regression gates fail the build**: no real library flagged by a cheat rule; aim + dropper always detected; detection independent of hiding depth.
@@ -148,7 +177,7 @@ reopens the hole.
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **69/69**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **71/71**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

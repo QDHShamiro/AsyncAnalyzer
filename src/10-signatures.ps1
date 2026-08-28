@@ -531,3 +531,97 @@ $script:PathsFromConfig = @()
 $script:knownGoodHashes  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:goodMeta         = @{}
 $script:knownCheatHashes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+# ---------------------------------------------------------------------------
+# Macro / autoclicker files - the half of an autoclicker that is not a mod
+#
+# An autoclicker is not in the mods folder. It is an AutoHotkey script on the
+# desktop, an AutoIt binary, or - the case people assume cannot be seen - a Lua
+# script running inside the mouse driver, where the clicks are produced below the
+# game entirely.
+#
+# The line held here is the same one the mod rules hold: clicking the mouse is not
+# a cheat. Millions of AutoHotkey scripts expand text and remap keys, and a G HUB
+# profile with a recoil script belongs to a shooter. So there are two levels, and
+# the difference is evidence rather than confidence:
+#   CHEAT  clicks IN A LOOP and names Minecraft - the window, javaw, a known
+#          client - or the file is named after the technique. No innocent reading.
+#   MACRO  clicks in a loop and nothing ties it to the game. Reported as exactly
+#          that, with the limitation stated, and never as an accusation.
+#
+# Mirrored in ml/macro.py, which is the source of these patterns; parity is
+# machine-checked by ml/test_macro.py.
+# ---------------------------------------------------------------------------
+$script:macroLangs = [ordered]@{
+    # Mouse-specific on purpose: a text expander or a window-tiling script uses
+    # Send with text and never names a mouse button, which is what keeps it out.
+    # 'repeat' is a real loop construct, not Sleep - one Click then Sleep is a hotkey.
+    '.ahk' = @{
+        'click' = '\bClick\b|\bMouseClick\b|\bLButton\b|\bRButton\b|\bMouseClickDrag\b'
+        'repeat' = '(?im)^\s*Loop\b|\bLoop\s*,|\bSetTimer\b|\bWhile\b|\bLoop\s*\{'
+        'mc' = 'ahk_exe\s+javaw?\.exe|ahk_class\s+LWJGL|ahk_class\s+GLFW|\bMinecraft\b|lunarclient|badlion|feather\s*client|labymod|prismlauncher'
+        'human' = '\bRandom\b|RandomSleep|jitter|humaniz'
+    }
+    '.ahk2' = @{
+        'click' = '\bClick\b|\bMouseClick\b|\bLButton\b|\bRButton\b|\bMouseClickDrag\b'
+        'repeat' = '(?im)^\s*Loop\b|\bLoop\s*,|\bSetTimer\b|\bWhile\b|\bLoop\s*\{'
+        'mc' = 'ahk_exe\s+javaw?\.exe|ahk_class\s+LWJGL|ahk_class\s+GLFW|\bMinecraft\b|lunarclient|badlion|feather\s*client|labymod|prismlauncher'
+        'human' = '\bRandom\b|RandomSleep|jitter|humaniz'
+    }
+    '.au3' = @{
+        'click' = '\bMouseClick\b|\bMouseDown\b|\bMouseUp\b|\{LBUTTON|\{RBUTTON'
+        'repeat' = '(?im)^\s*While\b|^\s*For\b|\bAdlibRegister\b|\bDo\b'
+        'mc' = 'WinActivate.*Minecraft|WinActive.*Minecraft|javaw?\.exe|LWJGL|\bMinecraft\b|lunarclient|badlion'
+        'human' = '\bRandom\b|jitter|humaniz'
+    }
+    # These names exist ONLY in the Logitech G HUB / G-series and Razer scripting
+    # APIs, and that is what makes .lua safe to scan at all: Minecraft's own Lua
+    # (ComputerCraft), Garry's Mod and Roblox share none of this vocabulary. A
+    # driver script that never touches a mouse button is a lighting or remap
+    # profile, of which there are a great many - hence the 'driver' gate.
+    '.lua' = @{
+        'click' = '\bPressMouseButton\b|\bReleaseMouseButton\b|\bPressAndReleaseMouseButton\b|\bMouseClick\b|\bIsMouseButtonPressed\b'
+        'repeat' = '(?im)^\s*while\b|^\s*repeat\b|^\s*for\b|\bSetTimer\b'
+        'mc' = '\bMinecraft\b|javaw|lunarclient|badlion|labymod'
+        'human' = '\bmath\.random\b|\brandom\b|jitter|humaniz'
+        'driver' = '\bOnEvent\b|\bGetMKeyState\b|\bOutputLogMessage\b|\bPlayMacro\b|\bEnablePrimaryMouseButtonEvents\b|\bMoveMouseRelative\b'
+    }
+    # Narrow on purpose: VBScript cannot click a mouse without an external object,
+    # so the only shape worth reading is SendKeys in a loop against the game.
+    '.vbs' = @{
+        'click' = '\bSendKeys\b|\bAppActivate\b'
+        'repeat' = '(?im)^\s*Do\b|^\s*While\b|^\s*For\b'
+        'mc' = '\bMinecraft\b|javaw?\.exe|lunarclient|badlion'
+        'human' = '\bRnd\b|\bRandomize\b'
+    }
+}
+# Filenames that name the TECHNIQUE. 'macro' on its own is deliberately absent -
+# it is what people call any automation, including the harmless kind.
+$script:macroCheatNames = @(
+    'autoclick', 'autoclicker', 'auto_click', 'auto-click',
+    'clicker', 'dragclick', 'drag_click', 'butterflyclick',
+    'butterfly_click', 'jitterclick', 'jitter_click', 'blockhit',
+    'block_hit', 'autotool', 'aimassist', 'aim_assist',
+    'triggerbot', 'autocrystal', 'auto_crystal', 'killaura',
+    'autoaim', 'auto_aim', 'autobridge', 'auto_bridge',
+    'bhop', 'autosprint', 'autototem', 'auto_totem',
+    'reachmacro', 'anchormacro', 'anchorbot', 'autoanchor',
+    'cpsmacro', 'clickermacro'
+)
+# Where a mouse or keyboard driver keeps the macros it runs. Presence is NOT a
+# finding - this hardware is owned by millions. What is worth recording is that a
+# macro profile exists and when it last changed, plus the scripts themselves where
+# the driver stores them as plain files.
+$script:macroDriverPaths = @(
+    @('Logitech G HUB', '%LOCALAPPDATA%\LGHUB\scripts', 'Lua macro scripts, one per profile')
+    @('Logitech G HUB', '%LOCALAPPDATA%\LGHUB\settings.db', 'profile database - can hold macros')
+    @('Logitech LGS', '%LOCALAPPDATA%\Logitech\Logitech Gaming Software\profiles', 'profile XML with macros')
+    @('Razer Synapse 3', '%PROGRAMDATA%\Razer\Synapse3\Accounts', 'device profiles with macros')
+    @('Razer Synapse 2', '%APPDATA%\Razer\Synapse\Accounts', 'device profiles with macros')
+    @('Corsair iCUE', '%APPDATA%\Corsair\CUE4', 'profile database - can hold macros')
+    @('SteelSeries GG', '%APPDATA%\SteelSeries\SteelSeries Engine 3', 'device profiles with macros')
+    @('Bloody / A4Tech', '%PROGRAMDATA%\A4TECH', 'onboard macro profiles')
+    @('Bloody / A4Tech', '%PROGRAMDATA%\Bloody7', 'onboard macro profiles')
+    @('Glorious Core', '%APPDATA%\GloriousCore', 'device profiles with macros')
+)
+$script:macroExtList = @('.ahk', '.ahk2', '.au3', '.lua', '.vbs')

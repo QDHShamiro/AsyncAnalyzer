@@ -63,7 +63,7 @@ Write-Host ""
 # escalated on its own if the mod pass turned anything up.
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {
-    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running"
+    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running. Running processes, stray jars, autostart entries and CLICK MACROS (.ahk/.au3/.lua/.vbs) were therefore not checked"
 }
 if ($doDeep -or $script:_DevMode) {
     Run-RecentActivity

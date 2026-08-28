@@ -253,6 +253,39 @@ gone **while Minecraft is still open**, the overall verdict goes to at least **L
 the classic wipe-before-the-check pattern. If the game isn't running, the same deletions
 stay **Clean**; people update mods all the time.
 
+### 🖱 Autoclicker — the half that is not a mod
+
+An autoclicker is never in the mods folder. It is an AutoHotkey script on the desktop, an
+AutoIt binary, or — the case people assume a screenshare cannot see — a **Lua script running
+inside the mouse driver**, where the clicks are produced below the game entirely. So the
+deep scan reads `.ahk`, `.ahk2`, `.au3`, `.lua` and `.vbs` files in Downloads, Desktop,
+Documents, Temp *and* the script folders that G HUB, Synapse, iCUE, SteelSeries, Glorious
+and Bloody run code out of.
+
+Clicking the mouse is not a cheat, so there are three levels and the difference between
+them is **evidence, not confidence**:
+
+| what was found | verdict |
+|---|---|
+| repeats mouse input in a loop **and** names Minecraft, the launcher or `javaw` | 🔴 **Confirmed** — an autoclicker aimed at this game |
+| repeats mouse input in a loop and the **file** is named after the technique (`blockhit`, `butterflyclick`, `autocrystal`) | 🟠 **Likely** — the file says what it is; it does not prove where it was used |
+| repeats mouse input in a loop, nothing ties it to the game | ⚪ reported as *a click macro exists*, **never** an accusation |
+
+That last row is the one that keeps this honest. A recoil script for a shooter is a real
+click loop in a real mouse driver and it is **not** a Minecraft cheat — it is in the test
+corpus for exactly that reason, next to an AutoHotkey text expander, a window-tiling
+script, a G HUB lighting profile, and a ComputerCraft turtle program (Minecraft's own Lua,
+which names the game constantly and is not a macro at all). None of them may ever come
+back as a cheat, and `ml/test_macro.py` fails the build if one does.
+
+**What it cannot see, stated on every scan.** A macro burned into a mouse's **onboard
+memory** — Bloody and A4Tech devices, and the onboard profiles of Razer and Logitech
+hardware — runs on the device itself and leaves *nothing* on the PC. No PC scan can detect
+it, so it is listed in the report's coverage box every time rather than only when something
+turns up. What the tool *can* show you is that a driver macro store exists and **when it
+was last changed** — a profile edited ten minutes before the screenshare is worth a
+question.
+
 It weighs the evidence the way a screenshare admin would: a **confirmed cheat jar**,
 an **injected JVM** or a **running cheat process** is proof (→ Likely/Confirmed);
 **cheat jars stashed outside the mods folder** are worth a look (→ Review); and

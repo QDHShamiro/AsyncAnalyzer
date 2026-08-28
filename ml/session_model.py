@@ -139,6 +139,17 @@ def verdict(raw, weights=None, intercept=None):
     # classic "he wiped it right before the screenshare" pattern.
     if raw.get("deleted_jars", 0) > 0 and raw.get("mc_running"):
         score = max(score, 60)
+    # An autoclicker is not a mod and never appears in the mods folder. A script
+    # that repeats mouse input IN A LOOP and names the Minecraft window, the
+    # launcher or javaw has no second reading. These reach the verdict as hard
+    # rules rather than as features: the 15 above are trained and versioned, and
+    # one cannot be bolted on without retraining the model.
+    if raw.get("macro_cheat", 0) > 0:
+        score = max(score, 85)
+    # One step weaker on purpose: the FILE is named after the technique, which says
+    # what it is without proving where it was used.
+    if raw.get("macro_named", 0) > 0:
+        score = max(score, 60)
 
     return {"score": score, "band": band(score), "probability": round(p * 100)}
 
@@ -147,7 +158,8 @@ def label_for(raw):
     """Auto-label a finished scan. Returns 1, 0 or None (ambiguous -> no learning).
     Only unambiguous scans teach the model — that is what keeps it from drifting."""
     if (raw.get("hard_confirmed") or raw.get("jvm_inject", 0) > 0
-            or raw.get("cheat_procs", 0) > 0 or raw.get("mem_client", 0) > 0):
+            or raw.get("cheat_procs", 0) > 0 or raw.get("mem_client", 0) > 0
+            or raw.get("macro_cheat", 0) > 0):
         return 1
     if (
         raw.get("total_mods", 0) > 0
@@ -158,6 +170,8 @@ def label_for(raw):
         and raw.get("stray_jars", 0) == 0
         and raw.get("cheat_folders", 0) == 0
         and raw.get("deleted_jars", 0) == 0
+        and raw.get("macro_cheat", 0) == 0
+        and raw.get("macro_named", 0) == 0
         and raw.get("verified", 0) >= 0.6 * raw.get("total_mods", 0)
     ):
         return 0
