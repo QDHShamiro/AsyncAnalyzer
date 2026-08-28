@@ -199,6 +199,40 @@ check("the authenticity panel is placed in the page",
 check("it does not overclaim - the uploaded copy is named as the trusted one",
       "it is the one to trust if the two disagree" in REPORT)
 
+# --- the block a moderator reads during the call -----------------------------
+# The report is thorough, which is the same thing as long. "Look at these first"
+# names the actual items needing a person, strongest first - and it is only
+# useful if it is ABOVE the working, and if it is rendered at all.
+check("the action list is built and placed in the page",
+      "$todoBox" in REPORT and REPORT.count("$todoBox") >= 2)
+_i_todo = REPORT.find("<h2>Look at these first")
+_i_rests = REPORT.find("<h2>What this verdict rests on")
+_i_mods = REPORT.find("<h2>Mods &mdash; flagged")
+_i_rec = REPORT.find("<h2>Scan record")
+check("it comes before the reasoning and the mod cards",
+      0 < _i_todo < _i_rests < _i_mods, f"todo={_i_todo} rests={_i_rests} mods={_i_mods}")
+# Provenance is read after the result, or when the result is disputed - not
+# third, above the files it is about.
+check("the scan record sits below the findings, not above them",
+      _i_rec > _i_mods, f"record={_i_rec} mods={_i_mods}")
+# Priority order, as a table: a Confirmed mod outranks a system FAIL, which
+# outranks a Likely mod, which outranks a WARN, which outranks Review, which
+# outranks a server-rule question. Read out of the source so the two cannot drift.
+_prios = dict(re.findall(r'"(Confirmed|Likely|ServerRule)"\s*\{\s*(\d+)\s*\}', REPORT))
+_fail_warn = re.search(r'\$\(if \(\$f\.Level -eq "FAIL"\) \{ (\d+) \} else \{ (\d+) \}\)', REPORT)
+_ok = (_prios.get("Confirmed") and _fail_warn and
+       int(_prios["Confirmed"]) > int(_fail_warn.group(1)) > int(_prios["Likely"])
+       > int(_fail_warn.group(2)) > int(_prios["ServerRule"]))
+check("strongest first: Confirmed > FAIL > Likely > WARN > ServerRule", bool(_ok),
+      f"{_prios} fail/warn={_fail_warn.groups() if _fail_warn else None}")
+# A clean scan must say so in this block too, or the strongest signal in the
+# whole report - that there is nothing to act on - is the one thing missing.
+check("a clean scan is told plainly here as well",
+      "Nothing here needs a person." in REPORT)
+# Bounded: a pack with fifty flagged jars must not turn this into the report.
+check("the list is capped and says how many are left",
+      "$shown -ge 8" in REPORT and "more below, in full" in REPORT)
+
 print("=== report checks ===")
 failed = 0
 for name, ok, detail in results:

@@ -3149,6 +3149,61 @@ function New-HtmlReport([string]$OutPath = "") {
         "<details><summary>Verified mods ($($verified.Count)) &mdash; hash matched a real release on Modrinth or CurseForge</summary><table><thead><tr><th>Mod</th><th>File</th><th>Status</th></tr></thead><tbody>$verRows</tbody></table></details>"
     } else { "" }
 
+    # ---- look at these first ------------------------------------------------
+    # A moderator reads this during a call, with somebody waiting. The report is
+    # thorough, which is the same thing as long: the verdict is at the top and
+    # the specific files it is about are several screens down. This block closes
+    # that gap - the actual items needing a person, strongest first, each with
+    # where it is and one line of why. Nothing new is computed here; it is the
+    # same findings, ordered for someone who has ninety seconds.
+    $todo = [System.Collections.Generic.List[object]]::new()
+    foreach ($m in @($flaggedMods) + @($reviewMods)) {
+        $prio = switch ($m.Band) {
+            "Confirmed" { 100 }
+            "Likely"    { 70 }
+            "ServerRule" { 30 }
+            default     { 40 }
+        }
+        [void]$todo.Add([PSCustomObject]@{
+            Prio = $prio
+            What = "$($m.FileName)"
+            Where = "$($m.FilePath)"
+            Band = $m.Band
+            Score = $m.Score
+            Colour = $(switch ($m.Band) { "Confirmed" { "#ff5f56" } "Likely" { "#ff9f43" } "ServerRule" { "#9aa8ba" } default { "#ffcf4d" } })
+            Why = $(if (@($m.Reasons).Count -gt 0) { @($m.Reasons)[0] } else { "" })
+        })
+    }
+    foreach ($f in @($script:Findings | Where-Object { $_.Level -eq "FAIL" -or $_.Level -eq "WARN" })) {
+        [void]$todo.Add([PSCustomObject]@{
+            Prio = $(if ($f.Level -eq "FAIL") { 90 } else { 50 })
+            What = $f.Title
+            Where = $f.Area
+            Band = $(if ($f.Level -eq "FAIL") { "Found" } else { "Check" })
+            Score = -1
+            Colour = (Get-LevelStyle $f.Level).c
+            Why = $(if (@($f.Items).Count -gt 0) { [string](@($f.Items)[0]) } else { $f.Why })
+        })
+    }
+    $todoRows = ""
+    $shown = 0
+    foreach ($t in @($todo | Sort-Object -Property @{ e = 'Prio'; Descending = $true }, @{ e = 'Score'; Descending = $true })) {
+        if ($shown -ge 8) { break }
+        $shown++
+        $badge = if ($t.Score -ge 0) { "$($t.Band) $($t.Score)/100" } else { $t.Band }
+        $why = [string]$t.Why
+        if ($why.Length -gt 220) { $why = $why.Substring(0, 217) + "..." }
+        $todoRows += "<li style='--vc:$($t.Colour);'><div class='tl'><b>$(Enc $t.What)</b><span class='tb'>$(Enc $badge)</span></div>" +
+                     "<div class='tw'>$(Enc $t.Where)</div>" +
+                     $(if ($why) { "<div class='ty'>$(Enc $why)</div>" } else { "" }) + "</li>"
+    }
+    $todoBox = if ($todo.Count -eq 0) {
+        "<div class='panel clear'><b class='goodfg'>Nothing here needs a person.</b> No mod was flagged or held for review, and no check outside the mods folder found anything. The sections below are the working, in full, so the result can be checked rather than taken on trust.</div>"
+    } else {
+        $more = if ($todo.Count -gt $shown) { "<p class='note'>$($todo.Count - $shown) more below, in full.</p>" } else { "" }
+        "<ol class='todo'>$todoRows</ol>$more"
+    }
+
     # ---- everything else that was found, grouped by area --------------------
     # INFO is not a result - it is a check that could not run, and it is already in
     # the coverage box as a gap. Repeating it here as a "finding" would pad the list
@@ -3279,6 +3334,18 @@ h2 .count{color:var(--ink);margin-left:.5em;}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;}
 .panel.gap{border-color:var(--warn);border-color:color-mix(in oklab,var(--warn) 42%,var(--line));}
 .panel.clear{color:var(--ink2);}
+ol.todo{list-style:none;counter-reset:t;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+ol.todo li{counter-increment:t;position:relative;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--vc,var(--warn));border-radius:8px;padding:12px 16px 12px 46px;}
+ol.todo li::before{content:counter(t);position:absolute;left:14px;top:12px;font-weight:700;
+  font-variant-numeric:tabular-nums;color:var(--ink3);}
+.tl{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.tb{font-size:.72rem;font-weight:600;letter-spacing:.04em;color:var(--vc,var(--ink3));
+  border:1px solid color-mix(in oklab,var(--vc,var(--line)) 45%,var(--line));
+  border-radius:999px;padding:1px 8px;white-space:nowrap;}
+.tw{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.76rem;color:var(--ink3);
+  margin-top:3px;overflow-wrap:anywhere;}
+.ty{color:var(--ink2);margin-top:6px;font-size:.9rem;}
 ul.plain{list-style:none;display:flex;flex-direction:column;gap:7px;}
 ul.plain li{padding-left:16px;position:relative;font-size:.92em;}
 ul.plain li:before{content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.45;}
@@ -3395,6 +3462,11 @@ footer a:hover{text-decoration:underline;}
 <div class="wrap">
 
 <section>
+  <h2>Look at these first<span class="count">$($todo.Count)</span></h2>
+  $todoBox
+</section>
+
+<section>
   <h2>What this verdict rests on<span class="count">$(@($sv.Reasons).Count)</span></h2>
   <ol class="verdict-reasons" style="--vc:$($svStyle.c);">$svReasons</ol>
 </section>
@@ -3405,12 +3477,6 @@ footer a:hover{text-decoration:underline;}
     <div class="panel"><div class="eyebrow goodfg">Checked</div><ul class="plain">$coverChecked</ul></div>
     $gapBox
   </div>
-</section>
-
-<section>
-  <h2>Scan record</h2>
-  <div class="rec-grid">$recordRows</div>
-  $authBox
 </section>
 
 <section>
@@ -3436,6 +3502,12 @@ footer a:hover{text-decoration:underline;}
     <button class="btn" onclick="cp(this)">Copy summary</button>
   </div>
   <div class="tscroll"><table id="ft"><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allRows</tbody></table></div>
+</section>
+
+<section>
+  <h2>Scan record</h2>
+  <div class="rec-grid">$recordRows</div>
+  $authBox
 </section>
 
 <pre id="plain">$(Enc $plain)</pre>
