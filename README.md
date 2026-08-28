@@ -157,6 +157,16 @@ the **constant pool** of each class — the symbol table. To call a Minecraft me
 to name it there. You can obfuscate your own class names; you cannot obfuscate the API you
 call.
 
+**There was one way around that, and it is closed.** Reach the API *reflectively* —
+`Class.forName("net.minecraft…")` plus `getDeclaredMethod("setYRot")` — and every name moves
+out of the symbol table into a plain string. Measured before the fix: an aim cheat rewritten
+that way scored **Clean, 3/100**. One refactor, all twelve rules blind. String constants are
+now checked for the same API names — but only where the class actually reflects, and only for
+the handful of APIs a cheat needs. A compatibility shim that reflects on
+`Minecraft.getInstance()` to see whether another mod is installed stays clean; one that
+reflectively assembles a movement packet does not. The report also says when an API was
+hidden this way, because no ordinary mod has a reason to.
+
 That gives behaviour instead of text:
 
 | behaviour | meaning | verdict |
