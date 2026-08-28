@@ -1,19 +1,30 @@
 $script:bcPreFilter = [regex]::new(
     ('ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828|setYRot|setXRot|setYaw|setPitch|' +
      'method_36456|method_36457|MultiPlayerGameMode|ServerboundInteractPacket|' +
-     'PlayerInteractEntityC2SPacket|class_2824|ClientPacketListener|ClientPlayNetworkHandler|' +
-     'class_634|entitiesForRendering|getEntities|method_18112|getEntityList|VertexConsumer|' +
-     'RenderSystem|BufferBuilder|MatrixStack|PoseStack|Tessellator|class_4587|KeyMapping|' +
-     'KeyBinding|glfwGetKey|isPressed|client/input|class_304|KeyboardHandler|MouseHandler|' +
-     'net/minecraft/network/Connection|class_2535|java/lang/reflect|getDeclaredMethod|' +
-     'setAccessible|forName|MethodHandles|getDeclaredField|defineClass|URLClassLoader|' +
-     'defineAnonymousClass|defineHiddenClass|javax/crypto|Cipher|SecretKeySpec|IvParameterSpec|' +
-     'getRuntime|ProcessBuilder|java/net/Socket|HttpURLConnection|openConnection|java/net/http|' +
-     'openStream|sun/misc/Unsafe|jdk/internal/misc/Unsafe|java/lang/instrument|Instrumentation|' +
-     'premain|agentmain|retransformClasses|' +
-     'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798|' +
+     'PlayerInteractEntityC2SPacket|class_2824|ClientPacketListener|ClientPlayNetworkHandler|class_634|' +
+     'net/minecraft/network/Connection|class_2535|KeyboardHandler|MouseHandler|entitiesForRendering|' +
+     'getEntities|method_18112|getEntityList|VertexConsumer|RenderSystem|BufferBuilder|MatrixStack|' +
+     'PoseStack|Tessellator|class_4587|KeyMapping|KeyBinding|glfwGetKey|isPressed|client/input|class_304|' +
+     'java/lang/reflect|getDeclaredMethod|setAccessible|forName|MethodHandles|getDeclaredField|defineClass|' +
+     'URLClassLoader|defineAnonymousClass|defineHiddenClass|javax/crypto|Cipher|SecretKeySpec|' +
+     'IvParameterSpec|getRuntime|ProcessBuilder|java/net/Socket|HttpURLConnection|openConnection|' +
+     'java/net/http|openStream|sun/misc/Unsafe|jdk/internal/misc/Unsafe|java/lang/instrument|' +
+     'Instrumentation|premain|agentmain|retransformClasses|ServerboundUseItemOnPacket|' +
+     'PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|' +
+     'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|' +
+     'method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|' +
+     'ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798|' +
      'getProtectionDomain|getCodeSource|ProtectionDomain|CodeSource|deleteOnExit|deleteIfExists|' +
-     'org/spongepowered/asm/mixin'),
+     'createTempFile|createTempDirectory|loadLibrary|tmpdir|java/util/jar|java/util/zip|JarFile|ZipFile|' +
+     'JarOutputStream|ZipOutputStream|JarInputStream|ZipInputStream|JarEntry|ZipEntry|' +
+     'org/spongepowered/asm/mixin|swingHand|method_6104|getLoadedEntityList|IClassTransformer|' +
+     'IFMLLoadingPlugin|ITransformer|net/minecraftforge/coremod|cpw/mods/modlauncher|' +
+     'net/minecraft/launchwrapper|LaunchClassLoader|C03PacketPlayer|CPacketPlayer|rotationYaw|' +
+     'rotationPitch|C02PacketUseEntity|CPacketUseEntity|PlayerControllerMP|swingItem|attackEntity|' +
+     'NetHandlerPlayClient|NetworkManager|loadedEntityList|playerEntities|GlStateManager|WorldRenderer|' +
+     'isKeyDown|GameSettings|C08PacketPlayerBlockPlacement|CPacketPlayerTryUseItemOnBlock|' +
+     'onPlayerRightClick|C07PacketPlayerDigging|CPacketPlayerDigging|onPlayerDamageBlock|clickBlock|' +
+     'C0EPacketClickWindow|CPacketClickWindow|windowClick|InventoryPlayer|motionX|motionY|motionZ'),
     [System.Text.RegularExpressions.RegexOptions]::Compiled)
 
 function Read-ClassConstantPool([byte[]]$b) {
@@ -204,6 +215,23 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
                             $hit[$mk] = $true
                             $hit['mixintarget'] = $true
                         }
+                    }
+                }
+                foreach ($ak in $script:bcMixinArea.Keys) {
+                    if (-not $f.MixinAreas.Contains($ak) -and $sblob -match $script:bcMixinArea[$ak]) {
+                        [void]$f.MixinAreas.Add($ak)
+                    }
+                }
+            }
+            # A class transformer decides what to rewrite by COMPARING the class name
+            # it is handed against string constants. Same shape as a mixin's
+            # annotation and reflection's getDeclaredMethod: third door, same key.
+            if ($hit['transformer']) {
+                if ($null -eq $sblob) { $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n" }
+                foreach ($mk in $script:bcMixinApi.Keys) {
+                    if (-not $hit[$mk] -and $sblob -match $script:bcMixinApi[$mk]) {
+                        $hit[$mk] = $true
+                        $hit['coretarget'] = $true
                     }
                 }
                 foreach ($ak in $script:bcMixinArea.Keys) {

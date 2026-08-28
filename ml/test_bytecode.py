@@ -43,9 +43,9 @@ def build(tmp):
     os.makedirs(jars, exist_ok=True)
     # the mc/ package is the game's own API - it lives in Minecraft, never inside
     # a mod jar. Bundling it would make every jar look like it touches packets.
-    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot"]),
+    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot", "CoreModAura"]),
                         ("clean", ["Minimap", "ConfigBinder", "Keybinds",
-                                   "MixinRender", "MixinFreelook"])):
+                                   "MixinRender", "MixinFreelook", "CoreModPerf"])):
         for nm in names:
             jp = os.path.join(jars, "%s_%s.jar" % (kind, nm))
             subprocess.run(["jar", "cf", jp] + sorted(glob.glob(
@@ -228,6 +228,40 @@ def parity_test():
     passed += ok
     failed += (not ok)
     print("  %s  derived signals match: %s" % ("PASS" if ok else "FAIL", sorted(py_der)))
+
+    # The pre-filter decides which classes get parsed AT ALL. A token missing from
+    # one side means that class is never opened there, so the rule below it silently
+    # stops firing - no error, no failing test, just a cheat that is not detected.
+    pf_py = {t.decode() for t in re.findall(
+        rb'b"([^"]+)"',
+        open(os.path.join(HERE, "bytecode.py"), "rb").read()
+        .split(b"_PREFILTER = re.compile")[1].split(b"]))")[0])} - {"|"}
+    ps_bc = open(os.path.join(root, "src", "40-bytecode.ps1"), encoding="utf-8").read()
+    m = re.search(r"\$script:bcPreFilter = \[regex\]::new\(\n\s*\((.*?)\),\n", ps_bc, re.S)
+    pf_ps = set("".join(re.findall(r"'([^']*)'", m.group(1))).split("|")) - {""} if m else set()
+    ok = pf_py == pf_ps
+    passed += ok
+    failed += (not ok)
+    print("  %s  pre-filter tokens match (%d)%s" % (
+        "PASS" if ok else "FAIL", len(pf_py),
+        "" if ok else " -> ps-only=%s py-only=%s" % (
+            sorted(pf_ps - pf_py), sorted(pf_py - pf_ps))))
+
+    # Every token a behaviour pattern can match must be reachable through the
+    # pre-filter, or the pattern is dead code on a jar that never gets parsed.
+    import itertools
+    lit = re.compile(r"[A-Za-z_][A-Za-z0-9_/]{3,}")
+    unreachable = []
+    for k, pats in bytecode.BEHAVIOUR.items():
+        for pat in pats:
+            words = lit.findall(pat)
+            if words and not any(any(w in t or t in w for t in pf_py) for w in words):
+                unreachable.append("%s: %s" % (k, pat))
+    passed += (not unreachable)
+    failed += bool(unreachable)
+    print("  %s  every behaviour pattern is reachable through the pre-filter%s" % (
+        "PASS" if not unreachable else "FAIL",
+        "" if not unreachable else " -> " + "; ".join(unreachable)))
 
     # An aim cheat that reaches Minecraft reflectively used to score Clean at
     # 3/100 - every behaviour rule was evadable with one refactor. Pin the close.

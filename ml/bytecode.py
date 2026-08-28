@@ -95,26 +95,33 @@ def parse_constant_pool(data):
 # --- behaviour categories, each grounded in what real cheat code actually calls ---
 BEHAVIOUR = {
     # the aim / killaura fingerprint: rewriting your own outgoing movement packet
-    "bc_movepacket": [r"ServerboundMovePlayerPacket", r"PlayerMoveC2SPacket", r"class_2828"],
+    "bc_movepacket": [r"ServerboundMovePlayerPacket", r"PlayerMoveC2SPacket", r"class_2828",
+                      r"C03PacketPlayer", r"CPacketPlayer"],
     "bc_rotation":   [r"\.setYRot", r"\.setXRot", r"\.setYaw", r"\.setPitch",
-                      r"\.method_36456", r"\.method_36457"],
+                      r"\.method_36456", r"\.method_36457",
+                      r"\.rotationYaw\b", r"\.rotationPitch\b", r"\.rotationYawHead\b"],
     "bc_attack":     [r"MultiPlayerGameMode\.attack", r"ServerboundInteractPacket",
                       r"PlayerInteractEntityC2SPacket", r"class_2824",
                       # A bare "\.swing" matched javax/swing and any field called
                       # swingGui - rhino's debugger UI tripped it. Qualify it to the
                       # actual Minecraft method so a Swing app cannot look like combat.
                       r"(?:LocalPlayer|Player|LivingEntity)\.swing\b", r"\.swingHand\b",
-                      r"\.method_6104\b"],
+                      r"\.method_6104\b",
+                      r"C02PacketUseEntity", r"CPacketUseEntity", r"PlayerControllerMP", r"\.swingItem\b", r"\.attackEntity\b"],
     # Both Wurst and Meteor hook the network layer itself, not just the listener.
     # Qualified on purpose - a bare "Connection" is an everyday identifier.
     "bc_pktlisten":  [r"ClientPacketListener", r"ClientPlayNetworkHandler", r"class_634",
-                      r"net/minecraft/network/Connection", r"class_2535"],
-    "bc_entityscan": [r"entitiesForRendering", r"getEntities", r"method_18112", r"\.getEntityList"],
+                      r"net/minecraft/network/Connection", r"class_2535",
+                      r"NetHandlerPlayClient", r"net/minecraft/network/NetworkManager"],
+    "bc_entityscan": [r"entitiesForRendering", r"getEntities", r"method_18112", r"\.getEntityList",
+                      r"\.loadedEntityList\b", r"\.getLoadedEntityList\b", r"\.playerEntities\b"],
     "bc_render":     [r"VertexConsumer", r"RenderSystem", r"BufferBuilder", r"MatrixStack",
-                      r"PoseStack", r"Tessellator", r"class_4587"],
+                      r"PoseStack", r"Tessellator", r"class_4587",
+                      r"GlStateManager", r"WorldRenderer"],
     "bc_input":      [r"KeyMapping", r"KeyBinding", r"GLFW\.glfwGetKey", r"\.isPressed",
                       r"client/input", r"class_304",
-                      r"client/KeyboardHandler", r"client/MouseHandler"],
+                      r"client/KeyboardHandler", r"client/MouseHandler",
+                      r"Keyboard\.isKeyDown", r"GameSettings\."],
     # malware / loader side
     "bc_reflect":    [r"java/lang/reflect", r"\.getDeclaredMethod", r"\.setAccessible",
                       r"Class\.forName", r"MethodHandles", r"\.getDeclaredField"],
@@ -130,13 +137,17 @@ BEHAVIOUR = {
     # place if a real Maven library cannot match it by accident - these name packets
     # and interaction-manager methods that exist nowhere outside the game.
     "bc_blockplace": [r"ServerboundUseItemOnPacket", r"PlayerInteractBlockC2SPacket",
-                      r"class_2885", r"\.useItemOn", r"\.interactBlock", r"\.method_2896"],
+                      r"class_2885", r"\.useItemOn", r"\.interactBlock", r"\.method_2896",
+                      r"C08PacketPlayerBlockPlacement", r"CPacketPlayerTryUseItemOnBlock", r"\.onPlayerRightClick\b"],
     "bc_blockbreak": [r"ServerboundPlayerActionPacket", r"PlayerActionC2SPacket",
-                      r"class_2846", r"\.startDestroyBlock", r"\.destroyBlock", r"\.method_2910"],
+                      r"class_2846", r"\.startDestroyBlock", r"\.destroyBlock", r"\.method_2910",
+                      r"C07PacketPlayerDigging", r"CPacketPlayerDigging", r"\.onPlayerDamageBlock\b", r"\.clickBlock\b"],
     "bc_container":  [r"ServerboundContainerClickPacket", r"ClickSlotC2SPacket",
-                      r"class_2813", r"AbstractContainerMenu", r"ScreenHandler", r"class_1703"],
+                      r"class_2813", r"AbstractContainerMenu", r"ScreenHandler", r"class_1703",
+                      r"C0EPacketClickWindow", r"CPacketClickWindow", r"\.windowClick\b", r"InventoryPlayer"],
     "bc_motion":     [r"\.setDeltaMovement", r"\.getDeltaMovement", r"\.setVelocity",
-                      r"\.method_18800", r"\.method_18798"],
+                      r"\.method_18800", r"\.method_18798",
+                      r"\.motionX\b", r"\.motionY\b", r"\.motionZ\b"],
     # A jar working out where its own file is. Ordinary code has no reason to -
     # it is how something finds itself in order to delete itself.
     "bc_selfpath":   [r"\.getProtectionDomain", r"\.getCodeSource", r"ProtectionDomain",
@@ -159,6 +170,13 @@ BEHAVIOUR = {
     # Neutral on its own: Sodium, Lithium and the Fabric API itself are nothing
     # but mixins. It matters because of what it does to the evidence, below.
     "bc_mixin":      [r"org/spongepowered/asm/mixin"],
+    # The third way into the game's code, next to Mixin and a Java agent: a Forge
+    # coremod or a LaunchWrapper tweaker installs a CLASS TRANSFORMER that runs
+    # before the game and can rewrite any class on the way in. Neutral on its own -
+    # OptiFine is a tweaker - and, like a mixin, it names its targets as strings.
+    "bc_transformer": [r"IClassTransformer", r"IFMLLoadingPlugin", r"ITransformer",
+                       r"net/minecraftforge/coremod", r"cpw/mods/modlauncher",
+                       r"net/minecraft/launchwrapper", r"LaunchClassLoader"],
 }
 
 # Derived per-class signals. Not regexes: they are combinations that only mean
@@ -179,6 +197,9 @@ DERIVED = {
     # set when a behaviour was found through a mixin's declared target rather than
     # through a call - see _MIXIN_API
     "bc_mixintarget": lambda hits: False,   # set directly, not derived from others
+    # same, for a class transformer: the game class it rewrites is a string it
+    # compares against, never a call
+    "bc_coretarget": lambda hits: False,    # set directly, not derived from others
 }
 _COMPILED = {k: re.compile("|".join(v)) for k, v in BEHAVIOUR.items()}
 
@@ -215,19 +236,27 @@ _REFLECTIVE_NAMES = {
 # Minecraft on its own - a packet class, an intermediary name, a method that
 # exists nowhere else.
 _REFLECTIVE_API = {
-    "bc_movepacket": r"ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828",
-    "bc_rotation":   r"\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b",
+    "bc_movepacket": r"ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828"
+                     r"|C03PacketPlayer|CPacketPlayer",
+    "bc_rotation":   r"\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b"
+                     r"|\brotationYaw\b|\brotationPitch\b",
     "bc_attack":     r"ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824"
-                     r"|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b",
+                     r"|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b"
+                     r"|C02PacketUseEntity|CPacketUseEntity|PlayerControllerMP|\bswingItem\b",
     "bc_motion":     r"\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b"
-                     r"|\bmethod_18798\b",
+                     r"|\bmethod_18798\b"
+                     r"|\bmotionX\b|\bmotionY\b|\bmotionZ\b",
     "bc_blockplace": r"ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885"
-                     r"|\bmethod_2896\b",
+                     r"|\bmethod_2896\b"
+                     r"|C08PacketPlayerBlockPlacement|CPacketPlayerTryUseItemOnBlock",
     "bc_blockbreak": r"ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846"
-                     r"|\bmethod_2910\b",
+                     r"|\bmethod_2910\b"
+                     r"|C07PacketPlayerDigging|CPacketPlayerDigging",
     "bc_container":  r"ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813"
-                     r"|AbstractContainerMenu",
-    "bc_pktlisten":  r"ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535",
+                     r"|AbstractContainerMenu"
+                     r"|C0EPacketClickWindow|CPacketClickWindow",
+    "bc_pktlisten":  r"ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535"
+                     r"|NetHandlerPlayClient",
 }
 _REFLECTIVE_API = {k: re.compile(v) for k, v in _REFLECTIVE_API.items()}
 
@@ -286,19 +315,24 @@ _MIXIN_PACKET_API = {
 _MIXIN_AREA = [
     ("player movement", re.compile(
         r"LocalPlayer|ClientPlayerEntity|class_746|LivingEntity|class_1309"
-        r"|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744")),
+        r"|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744"
+        r"|EntityPlayerSP|EntityLivingBase|\bmotionX\b|\brotationYaw\b")),
     ("network handler", re.compile(
         r"ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535"
-        r"|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket")),
+        r"|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket"
+        r"|NetHandlerPlayClient|C0[0-9A-F]Packet|CPacketPlayer")),
     ("world / blocks", re.compile(
-        r"ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk")),
+        r"ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk"
+        r"|WorldClient|RenderChunk|ChunkRenderDispatcher")),
     ("rendering", re.compile(
         r"LevelRenderer|WorldRenderer|GameRenderer|EntityRenderer|class_761|class_757"
-        r"|RenderSystem|GuiGraphics|class_332")),
+        r"|RenderSystem|GuiGraphics|class_332|RenderGlobal|GlStateManager|GuiIngame")),
     ("inventory / containers", re.compile(
-        r"AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661")),
+        r"AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661"
+        r"|InventoryPlayer|GuiContainer")),
     ("menus / screens", re.compile(
-        r"net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen")),
+        r"net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen"
+        r"|GuiScreen|GuiMainMenu|GuiOptions")),
 ]
 
 _WORDY = re.compile(rb"^[\x20-\x7e]{4,}$")
@@ -346,6 +380,26 @@ _PREFILTER = re.compile(b"|".join(
         b"ZipFile", b"JarOutputStream", b"ZipOutputStream", b"JarInputStream",
         b"ZipInputStream", b"JarEntry", b"ZipEntry",
         b"org/spongepowered/asm/mixin",
+        # Found by the reachability check below, not by reading: these three
+        # were named in a behaviour pattern and missing here, so a class whose
+        # only Minecraft reference was one of them was never parsed at all and
+        # the rule above it silently did nothing.
+        b"swingHand", b"method_6104", b"getLoadedEntityList",
+        b"IClassTransformer", b"IFMLLoadingPlugin", b"ITransformer",
+        b"net/minecraftforge/coremod", b"cpw/mods/modlauncher",
+        b"net/minecraft/launchwrapper", b"LaunchClassLoader",
+        # 1.7.10 - 1.12.2 MCP names. The tables above only knew 1.13+ Mojang,
+        # Yarn and intermediary names, so a 1.8.9 killaura - which is most of
+        # Minecraft PvP cheating - was invisible to all twelve rules.
+        b"C03PacketPlayer", b"CPacketPlayer", b"rotationYaw", b"rotationPitch",
+        b"C02PacketUseEntity", b"CPacketUseEntity", b"PlayerControllerMP",
+        b"swingItem", b"attackEntity", b"NetHandlerPlayClient", b"NetworkManager",
+        b"loadedEntityList", b"playerEntities", b"GlStateManager", b"WorldRenderer",
+        b"isKeyDown", b"GameSettings", b"C08PacketPlayerBlockPlacement",
+        b"CPacketPlayerTryUseItemOnBlock", b"onPlayerRightClick",
+        b"C07PacketPlayerDigging", b"CPacketPlayerDigging", b"onPlayerDamageBlock",
+        b"clickBlock", b"C0EPacketClickWindow", b"CPacketClickWindow",
+        b"windowClick", b"InventoryPlayer", b"motionX", b"motionY", b"motionZ",
     ]))
 
 
@@ -451,6 +505,20 @@ def extract_jar(path, max_classes=0):
                         if k not in hit_here and rx.search(sblob):
                             hit_here.add(k)
                             hit_here.add("bc_mixintarget")
+                for area, rx in _MIXIN_AREA:
+                    if rx.search(sblob):
+                        mixin_areas.add(area)
+            # A class transformer decides what to rewrite by COMPARING the class name
+            # it is handed against string constants. Same shape as a mixin's
+            # annotation and reflection's getDeclaredMethod, third door, same key.
+            if "bc_transformer" in hit_here:
+                if sblob is None:
+                    sblob = "\n".join(
+                        x.decode("utf-8", "ignore") for x in strings if len(x) < 200)
+                for k, rx in _MIXIN_API.items():
+                    if k not in hit_here and rx.search(sblob):
+                        hit_here.add(k)
+                        hit_here.add("bc_coretarget")
                 for area, rx in _MIXIN_AREA:
                     if rx.search(sblob):
                         mixin_areas.add(area)

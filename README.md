@@ -167,6 +167,17 @@ the handful of APIs a cheat needs. A compatibility shim that reflects on
 reflectively assembles a movement packet does not. The report also says when an API was
 hidden this way, because no ordinary mod has a reason to.
 
+**1.8.9 was a hole of a different kind, and it was the biggest one.** The behaviour tables
+were written against 1.13+ Mojang, Yarn and intermediary names. **1.8.9 is where most
+Minecraft PvP cheating happens** — it's what Lunar and Badlion players run — and a 1.8.9
+killaura calls *none* of those names. It sends a `C03PacketPlayer`, writes `rotationYaw`,
+and asks `PlayerControllerMP` to attack. Against the tables as they were, that class matched
+nothing at all: **every one of the twelve rules was blind to it.** The MCP names for 1.7.10
+through 1.12.2 are in now, measured at **zero new signals across all 179 real libraries** —
+they are Minecraft-specific enough that no general Java library touches them — and the
+corpus carries a compiled 1.8.9 aura, a 1.8.9 flight, a 1.8.9 minimap and a 1.8.9 sprint mod
+so the line is drawn in that dialect too.
+
 **Mixins were the second way around it, and that is closed too.** A Mixin is not a mod
 calling Minecraft — the loader compiles it *into* a Minecraft class, and it names its target
 in an **annotation** (`@Mixin(targets = "net.minecraft…")`, `@Inject(method = "aiStep")`)
@@ -186,6 +197,15 @@ a camera mixes into the *player* and a cheat into the *packet that reports your 
 `*.mixins.json` is read as well: a jar that declares mixins whose classes could not be parsed
 is listed as a **gap in coverage**, not reported as clean.
 
+**And the third door: class transformers.** A Forge **coremod** or a LaunchWrapper
+**tweaker** is handed every class name the game loads and decides what to rewrite by
+*comparing that name against string constants*. It calls nothing, so the symbol table sees
+an empty class — the same shape as reflection and Mixin, one more door. Those strings are
+read now. Installing a transformer is never the finding (OptiFine is a tweaker, half of
+Forge is coremods); it is recorded as **scope**, and what it rewrites is what's read.
+`META-INF/coremods.json` and `accesstransformer.cfg` are read the same way — as scope,
+listed, never scored.
+
 That gives behaviour instead of text:
 
 | behaviour | meaning | verdict |
@@ -195,6 +215,8 @@ That gives behaviour instead of text:
 | ships Java-agent hooks | can rewrite game code while it runs | 🟠 **Likely** |
 | mixes into the outgoing move packet **and** names its rotation fields | silent rotations — rewriting what the server is told you are aiming at | 🔴 **Confirmed** |
 | mixes into the player or the renderer | how every ordinary Fabric mod is built | ⚪ recorded as scope, **never** a finding |
+| a class transformer that rewrites the player to spoof the rotation it reports | a coremod cheat — the target is a string it compares against, never a call | 🔴 **Confirmed** |
+| a class transformer, an access transformer, a coremod script | how half of Forge works | ⚪ recorded as scope, **never** a finding |
 | renders **and** sweeps every entity | ESP… **or** a mob-radar minimap | 🟡 **Review**, never an accusation |
 
 That last row is the honest part. **ESP and a mob radar genuinely do the same thing** — the

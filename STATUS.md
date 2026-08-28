@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -109,7 +109,25 @@ Proven: `ml/test_session.py` 27/27; live backend test learned a novel whole-scan
 - **`$script:ScanGaps`** records everything that could not be checked (no admin, game closed, idle installs skipped, memory budget hit, unreadable folder) and prints it with the verdict.
 - Mirrored + pinned in `ml/test_autoscan.py` (16 cases), including that escalation changes only search breadth.
 
-## Bypassing the symbol table — the two holes, both closed
+## 1.8.9 / 1.12 names — the biggest gap there was
+The behaviour tables only ever knew 1.13+ Mojang, Yarn and intermediary names.
+**1.8.9 is where most Minecraft PvP cheating happens** (Lunar, Badlion), and a
+1.8.9 killaura calls none of them: `C03PacketPlayer`, `rotationYaw`,
+`PlayerControllerMP.attackEntity`. All twelve rules were blind to it.
+- MCP names for 1.7.10-1.12.2 added to `BEHAVIOUR`, `_REFLECTIVE_API`, `_MIXIN_API`
+  and `_PREFILTER`; the PowerShell tables are regenerated FROM `ml/bytecode.py` so
+  they cannot drift, and parity is machine-checked.
+- **Measured before shipping**: 0 of 179 real libraries gained even a single
+  signal, let alone tripped a rule. These names are Minecraft-specific enough that
+  no general Java library touches them.
+- Corpus: `mc/MC18.java` stub plus a compiled 1.8.9 aura, flight, minimap and
+  sprint mod, with their own benchmark section and gate.
+- The new **pre-filter reachability check** in `test_bytecode.py` immediately found
+  three patterns (`swingHand`, `method_6104`, `getLoadedEntityList`) named in a
+  behaviour rule but missing from the pre-filter — so a class whose only Minecraft
+  reference was one of them was never parsed and the rule silently did nothing.
+
+## Bypassing the symbol table — the three holes, all closed
 The behaviour rules read each class's **constant pool symbol table**: to call a
 Minecraft method you must name it there. Twice now that turned out to be avoidable,
 and both times the fix was the same shape — read the vocabulary out of the string
@@ -131,7 +149,15 @@ constants too, under a gate narrow enough that ordinary code cannot trip it.
    `*.mixins.json` is read as well: a jar declaring mixins the reader could not parse is
    recorded as a **coverage gap**, not reported clean.
 
-Measured after both: **0 false flags on 179 real libraries**, all mixin cheat variants
+3. **Class transformers** (`bc_transformer` -> `bc_coretarget`). A Forge coremod or
+   a LaunchWrapper tweaker is handed every class name the game loads and decides
+   what to rewrite by COMPARING it against string constants. Calls nothing. Gate:
+   the class must implement the transformer API. Never the finding — OptiFine is a
+   tweaker — so it is scope, and what it rewrites is what is read. `MANIFEST.MF`
+   (`FMLCorePlugin`, `TweakClass`), `META-INF/coremods.json` and
+   `accesstransformer.cfg` are read as scope too.
+
+Measured after all three: **0 false flags on 179 real libraries**, all mixin cheat variants
 caught, all 11 legit mixin variants clean. Parity between `ml/bytecode.py` and the four
 PowerShell tables is machine-checked in `test_bytecode.py` — a silent drift there
 reopens the hole.
@@ -235,7 +261,7 @@ silently), and that the PS feature ORDER equals the Python one.
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **74/74**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **78/78**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

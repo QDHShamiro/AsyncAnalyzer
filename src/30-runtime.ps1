@@ -610,18 +610,18 @@ function Invoke-MlModel($raw) {
 # this stays affordable even over a large mods folder.
 # ---------------------------------------------------------------------------
 $script:bcBehaviour = [ordered]@{
-    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
-    'rotation'   = '\.setYRot|\.setXRot|\.setYaw|\.setPitch|\.method_36456|\.method_36457'
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828|C03PacketPlayer|CPacketPlayer'
+    'rotation'   = '\.setYRot|\.setXRot|\.setYaw|\.setPitch|\.method_36456|\.method_36457|\.rotationYaw\b|\.rotationPitch\b|\.rotationYawHead\b'
     # A bare '\.swing' matched javax/swing and any field called swingGui - rhino's
     # debugger UI tripped it. Qualified to the actual Minecraft method, so a Swing
     # application in a mods folder cannot look like combat code.
-    'attack'     = 'MultiPlayerGameMode\.attack|ServerboundInteractPacket|PlayerInteractEntityC2SPacket|(?:LocalPlayer|Player|LivingEntity)\.swing\b|\.swingHand\b|\.method_6104\b|class_2824'
+    'attack'     = 'MultiPlayerGameMode\.attack|ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|(?:LocalPlayer|Player|LivingEntity)\.swing\b|\.swingHand\b|\.method_6104\b|C02PacketUseEntity|CPacketUseEntity|PlayerControllerMP|\.swingItem\b|\.attackEntity\b'
     # Both Wurst and Meteor hook the network layer itself, not just the listener.
     # Qualified on purpose - a bare 'Connection' is an everyday identifier.
-    'pktlisten'  = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|net/minecraft/network/Connection|class_2535'
-    'entityscan' = 'entitiesForRendering|getEntities|method_18112|\.getEntityList'
-    'render'     = 'VertexConsumer|RenderSystem|BufferBuilder|MatrixStack|PoseStack|Tessellator|class_4587'
-    'input'      = 'KeyMapping|KeyBinding|GLFW\.glfwGetKey|\.isPressed|client/input|class_304|client/KeyboardHandler|client/MouseHandler'
+    'pktlisten'  = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|net/minecraft/network/Connection|class_2535|NetHandlerPlayClient|net/minecraft/network/NetworkManager'
+    'entityscan' = 'entitiesForRendering|getEntities|method_18112|\.getEntityList|\.loadedEntityList\b|\.getLoadedEntityList\b|\.playerEntities\b'
+    'render'     = 'VertexConsumer|RenderSystem|BufferBuilder|MatrixStack|PoseStack|Tessellator|class_4587|GlStateManager|WorldRenderer'
+    'input'      = 'KeyMapping|KeyBinding|GLFW\.glfwGetKey|\.isPressed|client/input|class_304|client/KeyboardHandler|client/MouseHandler|Keyboard\.isKeyDown|GameSettings\.'
     'reflect'    = 'java/lang/reflect|\.getDeclaredMethod|\.setAccessible|Class\.forName|MethodHandles|\.getDeclaredField'
     'classload'  = '\.defineClass|URLClassLoader|defineAnonymousClass|\.defineHiddenClass'
     'crypto'     = 'javax/crypto|Cipher\.|SecretKeySpec|IvParameterSpec'
@@ -632,10 +632,10 @@ $script:bcBehaviour = [ordered]@{
     # Minecraft-specific API names on purpose. A behaviour category only earns its
     # place if a real Maven library cannot match it by accident - these name packets
     # and interaction-manager methods that exist nowhere outside the game.
-    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\.useItemOn|\.interactBlock|\.method_2896'
-    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\.startDestroyBlock|\.destroyBlock|\.method_2910'
-    'container'  = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703'
-    'motion'     = '\.setDeltaMovement|\.getDeltaMovement|\.setVelocity|\.method_18800|\.method_18798'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\.useItemOn|\.interactBlock|\.method_2896|C08PacketPlayerBlockPlacement|CPacketPlayerTryUseItemOnBlock|\.onPlayerRightClick\b'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\.startDestroyBlock|\.destroyBlock|\.method_2910|C07PacketPlayerDigging|CPacketPlayerDigging|\.onPlayerDamageBlock\b|\.clickBlock\b'
+    'container'  = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|C0EPacketClickWindow|CPacketClickWindow|\.windowClick\b|InventoryPlayer'
+    'motion'     = '\.setDeltaMovement|\.getDeltaMovement|\.setVelocity|\.method_18800|\.method_18798|\.motionX\b|\.motionY\b|\.motionZ\b'
     # A jar working out where its own file is. Ordinary code has no reason to - it
     # is how something finds itself in order to delete itself.
     'selfpath'   = '\.getProtectionDomain|\.getCodeSource|ProtectionDomain|CodeSource'
@@ -652,13 +652,18 @@ $script:bcBehaviour = [ordered]@{
     # Neutral on its own: Sodium, Lithium and the Fabric API itself are nothing but
     # mixins. It matters for what it does to the evidence, below.
     'mixin'      = 'org/spongepowered/asm/mixin'
+    # The third way into the game's code, next to Mixin and a Java agent: a Forge
+    # coremod or a LaunchWrapper tweaker installs a CLASS TRANSFORMER that runs
+    # before the game and can rewrite any class on the way in. Neutral on its own -
+    # OptiFine is a tweaker - and, like a mixin, it names its targets as strings.
+    'transformer' = 'IClassTransformer|IFMLLoadingPlugin|ITransformer|net/minecraftforge/coremod|cpw/mods/modlauncher|net/minecraft/launchwrapper|LaunchClassLoader'
 }
 # Derived per-class signals. Not patterns: combinations that only mean something
 # when ONE class does all of it. Jar-level ratios cannot express that - in a large
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget')
+$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget', 'coretarget')
 
 # --- reflective use of the same API ------------------------------------------
 #
@@ -676,14 +681,14 @@ $script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget')
 # cheat needs: a mod calling Class.forName to see whether another mod is present
 # is ordinary, one reflectively assembling a movement packet is not.
 $script:bcReflectiveApi = [ordered]@{
-    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
-    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b'
-    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b'
-    'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b'
-    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b'
-    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
-    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
-    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828|C03PacketPlayer|CPacketPlayer'
+    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b|\brotationYaw\b|\brotationPitch\b'
+    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b|C02PacketUseEntity|CPacketUseEntity|PlayerControllerMP|\bswingItem\b'
+    'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b|\bmotionX\b|\bmotionY\b|\bmotionZ\b'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b|C08PacketPlayerBlockPlacement|CPacketPlayerTryUseItemOnBlock'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b|C07PacketPlayerDigging|CPacketPlayerDigging'
+    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|C0EPacketClickWindow|CPacketClickWindow'
+    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535|NetHandlerPlayClient'
 }
 
 # --- what a mixin names, and why the symbol table does not see it -------------
@@ -709,14 +714,14 @@ $script:bcReflectiveApi = [ordered]@{
 # the movement path a mixin names at its injection point. NOT treated as hiding
 # anything: naming your target in an annotation is how mixins are written.
 $script:bcMixinApi = [ordered]@{
-    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
-    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b'
-    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b'
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828|C03PacketPlayer|CPacketPlayer'
+    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b|\brotationYaw\b|\brotationPitch\b'
+    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b|C02PacketUseEntity|CPacketUseEntity|PlayerControllerMP|\bswingItem\b'
     'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b|\bdeltaMovement\b|\baiStep\b|\bmethod_6091\b'
-    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b'
-    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
-    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
-    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b|C08PacketPlayerBlockPlacement|CPacketPlayerTryUseItemOnBlock'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b|C07PacketPlayerDigging|CPacketPlayerDigging'
+    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|C0EPacketClickWindow|CPacketClickWindow'
+    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535|NetHandlerPlayClient'
 }
 # Shadowed rotation FIELD names - and only for a mixin that targets an outgoing
 # movement packet.
@@ -736,12 +741,12 @@ $script:bcMixinPacketApi = @{
 # the player's movement" and "rewrites the options screen" are different mods and
 # the score alone does not say which one is on the screen.
 $script:bcMixinArea = [ordered]@{
-    'player movement' = 'LocalPlayer|ClientPlayerEntity|class_746|LivingEntity|class_1309|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744'
-    'network handler' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket'
-    'world / blocks'  = 'ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk'
-    'rendering'       = 'LevelRenderer|WorldRenderer|GameRenderer|EntityRenderer|class_761|class_757|RenderSystem|GuiGraphics|class_332'
-    'inventory / containers' = 'AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661'
-    'menus / screens' = 'net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen'
+    'player movement' = 'LocalPlayer|ClientPlayerEntity|class_746|LivingEntity|class_1309|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744|EntityPlayerSP|EntityLivingBase|\bmotionX\b|\brotationYaw\b'
+    'network handler' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket|NetHandlerPlayClient|C0[0-9A-F]Packet|CPacketPlayer'
+    'world / blocks'  = 'ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk|WorldClient|RenderChunk|ChunkRenderDispatcher'
+    'rendering'       = 'LevelRenderer|WorldRenderer|GameRenderer|EntityRenderer|class_761|class_757|RenderSystem|GuiGraphics|class_332|RenderGlobal|GlStateManager|GuiIngame'
+    'inventory / containers' = 'AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661|InventoryPlayer|GuiContainer'
+    'menus / screens' = 'net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen|GuiScreen|GuiMainMenu|GuiOptions'
 }
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are

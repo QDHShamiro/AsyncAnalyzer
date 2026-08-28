@@ -100,9 +100,10 @@ def build_corpus(tmp):
         return None
     made = {}
     for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "Pathing", "Timer",
-                                   "MixinSilentRot"]),
+                                   "MixinSilentRot", "Legacy18Aura", "Legacy18Fly", "CoreModAura"]),
                         ("clean", ["Minimap", "ConfigBinder", "Keybinds", "AutoWalk",
-                                   "MixinRender", "MixinFreelook"])):
+                                   "MixinRender", "MixinFreelook",
+                                   "Legacy18Minimap", "Legacy18Sprint", "CoreModPerf"])):
         for nm in names:
             cls = sorted(glob.glob(os.path.join(out, kind, nm + "*.class")))
             if not cls:
@@ -196,6 +197,43 @@ def main():
                                            "flagged" if hit else "clean"))
         out()
 
+        # ----------------------------------------------------- 1.8.9 / MCP names ---
+        out("## 1.8.9 and 1.12 — the names the rules did not know")
+        out()
+        out("The behaviour tables were written against 1.13+ Mojang, Yarn and intermediary")
+        out("names. **1.8.9 is where most Minecraft PvP cheating happens** — it is what Lunar")
+        out("and Badlion players run — and a 1.8.9 killaura calls none of those names. It")
+        out("sends a `C03PacketPlayer`, writes `rotationYaw`, and asks `PlayerControllerMP` to")
+        out("attack. Against the tables as they were, that class matched *nothing at all*.")
+        out()
+        out("| jar | version dialect | rules tripped | expected |")
+        out("|---|---|---|:--:|")
+        L18 = [("cheat", "Legacy18Aura", "1.8.9 MCP", True),
+               ("cheat", "Legacy18Fly", "1.8.9 MCP", True),
+               ("clean", "Legacy18Minimap", "1.8.9 MCP", False),
+               ("clean", "Legacy18Sprint", "1.8.9 MCP", False)]
+        for kind, nm, dial, want in L18:
+            jp = corpus.get((kind, nm))
+            if not jp:
+                failures.append("legacy corpus jar missing: %s" % nm)
+                continue
+            r = bytecode.extract_jar(jp)
+            tr = rules(r)
+            # the radar/ESP ambiguity is a server-rule finding in both dialects, so it
+            # is excluded here exactly as it is in the 1.13+ table above
+            hit = [k for k in CHEAT_RULES if tr[k] and k != "esp"]
+            if bool(hit) != want:
+                failures.append("legacy case %s: expected %s, got %s" % (
+                    nm, "flagged" if want else "clean", "+".join(hit) or "clean"))
+            out("| %s (%s) | %s | %s | %s |" % (
+                nm, kind, dial, "+".join(hit) if hit else "—",
+                "flagged" if want else "clean"))
+        out()
+        out("`Legacy18Sprint` is the negative that matters: a 1.8.9 sprint mod reads the key")
+        out("and moves the player through the game's own fields, and never touches the")
+        out("movement packet. Same line as in 1.13+, drawn in 1.8's names.")
+        out()
+
         # ------------------------------------------------------------- mixins ---
         out("## Mixins — code compiled INTO the game")
         out()
@@ -232,6 +270,38 @@ def main():
         out("`MixinFreelook` is the negative this exists for: a freelook mod shadows exactly")
         out("the rotation fields the cheat does. The difference read here is the **target** —")
         out("a camera mixes into the player, never into the packet that reports your aim.")
+        out()
+
+        # ------------------------------------------------- coremods / transformers ---
+        out("### Coremods — the third door")
+        out()
+        out("Reflection hides the API in a string. A Mixin hides its target in an annotation.")
+        out("A **class transformer** — a Forge coremod or a LaunchWrapper tweaker — is handed")
+        out("every class name the game loads and decides what to rewrite by *comparing that")
+        out("name against string constants*. Third door, same key: it calls nothing, so the")
+        out("symbol table sees an empty class.")
+        out()
+        out("| jar | what it rewrites | rules tripped | expected |")
+        out("|---|---|---|:--:|")
+        CM = [("cheat", "CoreModAura", "the player, to spoof the rotation it reports", True),
+              ("clean", "CoreModPerf", "the chunk renderer and the HUD", False)]
+        for kind, nm, what, want in CM:
+            jp = corpus.get((kind, nm))
+            if not jp:
+                failures.append("coremod corpus jar missing: %s" % nm)
+                continue
+            r = bytecode.extract_jar(jp)
+            tr = rules(r)
+            hit = [k for k in CHEAT_RULES if tr[k] and k != "esp"]
+            if bool(hit) != want:
+                failures.append("coremod case %s: expected %s, got %s" % (
+                    nm, "flagged" if want else "clean", "+".join(hit) or "clean"))
+            out("| %s (%s) | %s | %s | %s |" % (
+                nm, kind, what, "+".join(hit) if hit else "—",
+                "flagged" if want else "clean"))
+        out()
+        out("Installing a transformer is never the finding — OptiFine is a tweaker and half of")
+        out("Forge is coremods. It is recorded as *scope*, and what it rewrites is read.")
         out()
 
         out("## Hiding depth")

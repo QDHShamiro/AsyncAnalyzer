@@ -17,6 +17,7 @@ function Get-JarFeatures([string]$FilePath) {
         PayloadKinds  = [System.Collections.Generic.List[string]]::new()
         BlankMeta = $false; NativeJna = $false
         MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
+        CoreMod = $false; CoreModClass = ""; TweakClass = ""; CoreModJs = 0; AccessWidened = 0
     }
     $reflectionPatterns = @('Class\.forName','getMethod','getDeclaredMethod','getDeclaredField','setAccessible','java/lang/reflect','MethodHandle','sun/misc/Unsafe','defineClass','ByteBuddy','javassist','ASM\d')
     $zip = $null
@@ -129,6 +130,29 @@ function Get-JarFeatures([string]$FilePath) {
                             $f.AgentClass = $matches[2]
                         }
                         if ($txt -match '(?im)^Can-(Retransform|Redefine)-Classes\s*:\s*true') { $f.AgentRetransform = $true }
+                        # The third way into the game's code, next to Mixin and a Java
+                        # agent: a Forge coremod, or a LaunchWrapper tweaker. Both install
+                        # a class transformer before the game starts, which is the same
+                        # power - it can rewrite any class on the way in.
+                        if ($txt -match '(?im)^(FMLCorePlugin|FMLCorePluginContainsFMLMod|MixinConfigs)\s*:\s*(\S+)') {
+                            if ($matches[1] -ne 'MixinConfigs') { $f.CoreMod = $true; $f.CoreModClass = $matches[2] }
+                        }
+                        if ($txt -match '(?im)^TweakClass\s*:\s*(\S+)') {
+                            $f.CoreMod = $true
+                            $f.TweakClass = $matches[1]
+                        }
+                    } elseif ($n -match '^META-INF/coremods\.json$') {
+                        # Forge 1.16+ JS coremods: the file lists script paths, and each
+                        # script names the game classes it rewrites.
+                        $f.CoreModJs = ([regex]::Matches($txt, '"[^"]+\.js"')).Count
+                        if ($f.CoreModJs -gt 0) { $f.CoreMod = $true }
+                    } elseif ($n -match 'accesstransformer\.cfg$|_at\.cfg$') {
+                        # An access transformer makes private game members public. Normal
+                        # Forge practice - counted as scope, never scored.
+                        foreach ($ln in ($txt -split "`n")) {
+                            $t = $ln.Trim()
+                            if ($t -ne "" -and -not $t.StartsWith('#') -and $t -match '^(public|protected|private|default)') { $f.AccessWidened++ }
+                        }
                     }
                 } catch {}
             }
@@ -351,6 +375,22 @@ function Get-ModVerdict($ctx) {
         # A mixin names its target in an annotation, so the target is a string and
         # never a symbol. Where that is the only way a behaviour above was found,
         # say so: it explains why the finding is there at all.
+        # A coremod or a LaunchWrapper tweaker installs a class transformer before the
+        # game starts. That is the same power a Java agent has - it can rewrite any
+        # class on the way in - and unlike an agent it is ordinary Forge practice, so
+        # it is recorded as scope rather than scored. OptiFine is a tweaker.
+        if ($ft.CoreMod) {
+            $what = if ($ft.TweakClass) { "a LaunchWrapper tweaker ($($ft.TweakClass))" }
+                    elseif ($ft.CoreModClass) { "a Forge coremod ($($ft.CoreModClass))" }
+                    else { "$($ft.CoreModJs) JavaScript coremod script(s)" }
+            [void]$reasons.Add("Scope: installs $what $([char]0x2014) a class transformer that runs before the game and can rewrite any class on the way in. Ordinary for a Forge mod; recorded so it is visible what it can touch")
+        }
+        if ($ft.AccessWidened -gt 0) {
+            [void]$reasons.Add("Scope: an access transformer makes $($ft.AccessWidened) private game member(s) public. Normal Forge practice $([char]0x2014) listed, not scored")
+        }
+        if ($bc.coretargetRatio -gt 0) {
+            [void]$reasons.Add("Behaviour: the game class it rewrites is named only as a string its class transformer compares against, so it never appears in the class symbol table $([char]0x2014) read out of that comparison instead")
+        }
         if ($bc.mixintargetRatio -gt 0) {
             [void]$reasons.Add("Behaviour: the game class it rewrites is named only in its Mixin annotation, so it never appears in the class symbol table $([char]0x2014) read out of the annotation instead")
         }
@@ -550,6 +590,7 @@ function New-TestFeatures($over) {
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0
         LoaderIds = @(); BlankMeta = $false; NativeJna = $false; PayloadKinds = @()
         MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
+        CoreMod = $false; CoreModClass = ""; TweakClass = ""; CoreModJs = 0; AccessWidened = 0
     }
     if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
     return $f
@@ -586,6 +627,13 @@ function Invoke-SelfTest {
         # rule, same band - the mixin only changes where the evidence was read from.
         @{ Label = "Silent rotations via a packet mixin"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
         @{ Label = "Mixin that moves the player (jetpack)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0 }) } }
+        # A class transformer is how half of Forge works and OptiFine is a tweaker,
+        # so installing one must never move the band on its own.
+        @{ Label = "Forge coremod, rewrites the renderer"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; renderRatio = 1.0 }) } }
+        @{ Label = "Coremod that spoofs the reported aim"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; coretargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        # 1.8.9 in its own names: same rules, same bands, MCP vocabulary.
+        @{ Label = "1.8.9 killaura (MCP names)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0; entityscanRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "1.8.9 sprint mod (MCP names)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
         @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
