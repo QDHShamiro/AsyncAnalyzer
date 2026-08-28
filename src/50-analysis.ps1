@@ -403,8 +403,25 @@ function Get-ModVerdict($ctx) {
         # nothing was ever printed, which the dead-end audit found. A reason line
         # without a score cannot cause a false flag - it does not move the band - and
         # a jar that finds its own file and deletes it is worth a moderator seeing.
+        # A mod that removes itself after it has run. There is no innocent
+        # version of the shape: the class asks the JVM where its OWN jar is
+        # (getProtectionDomain -> getCodeSource) and deletes that exact file.
+        #
+        # This was measured and reported but never SCORED, because the two
+        # halves - find a path, delete a file - also appear in libraries that
+        # unpack a native library to temp and clean up. That exclusion is what
+        # the rule already applies, and there is now a test on both sides of it:
+        # cheat/SelfWipe.java is caught, clean/NativeUnpack.java is not, and the
+        # rule fires on 0 of 179 real libraries.
+        #
+        # Likely rather than Confirmed: the comment this replaces recorded that
+        # an earlier form of the rule hit a real library in CI twice, and that
+        # observation cannot be reproduced here to be ruled out. Likely is
+        # enough to put it on the report's first page, and leaves room for the
+        # one case where a library does something genuinely unusual.
         if ($bc.selfwipeRatio -gt 0) {
-            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes a file $([char]0x2014) the shape of a mod that removes itself after running. NOT scored: this pattern also flagged real bytecode libraries twice, so it is written down for you rather than counted against the file" + (Get-BcWitness $bc @('selfwipe')))
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
+            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes it $([char]0x2014) a mod that removes itself after running. Nothing legitimate uninstalls itself; a cheat that wants the mods folder empty by the time somebody looks does" + (Get-BcWitness $bc @('selfwipe')))
         }
         if ($bc.hiddenapiRatio -gt 0) {
             [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses" + (Get-BcWitness $bc @('hiddenapi')))
@@ -731,7 +748,17 @@ function Invoke-SelfTest {
         @{ Label = "Baritone by filename, no packages read"; Bands = @("Likely", "Confirmed"); Over = @{ FilenameClient = $true; FilenameToken = "baritone"; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ inputRatio = 1.0 }) } }
         @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Self-deleting jar is measured, not accused"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        # This case used to expect Clean, and said "measured, not accused". It was
+        # right to be careful and wrong to stop there: the rule was never given a
+        # positive example to be judged against. It has one now
+        # (ml/corpus_src/cheat/SelfWipe.java) and so does its lookalike
+        # (clean/NativeUnpack.java, the library that unpacks a native to temp and
+        # cleans up - the only legitimate shape sharing both halves). Measured:
+        # caught on the first, not on the second, 0 of 179 real libraries.
+        @{ Label = "A jar that deletes its own file is flagged"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        # ...and the library that unpacks a native library is not. The derived
+        # signal excludes it, so selfwipeRatio stays 0 even though both halves fire.
+        @{ Label = "A library unpacking a native is not"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 0.0; filedeleteRatio = 1.0; nativetempRatio = 1.0 }) } }
         # A transformer that only its bytecode declares - no FMLCorePlugin in the
         # manifest - must still be recorded as scope, and must still not be flagged.
         @{ Label = "Transformer the manifest does not declare"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; inputRatio = 1.0 }) } }

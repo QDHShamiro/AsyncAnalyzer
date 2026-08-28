@@ -107,6 +107,14 @@ def verdict(raw):
         if (bc.get("bc_rotation_ratio", 0) > 0 and bc.get("bc_render_ratio", 0) > 0
                 and bc.get("bc_movepacket_ratio", 0) == 0):
             score = max(score, 60)          # freecam
+        # A mod that finds its OWN jar and deletes it. Measured: 0 of 179 real
+        # libraries, caught on cheat/SelfWipe.java, and NOT caught on
+        # clean/NativeUnpack.java - the library that unpacks a native to temp
+        # and cleans up, which is the only shape that shares the two halves.
+        # Likely rather than Confirmed: an earlier form of this rule hit a real
+        # library in CI twice, and that cannot be reproduced here to rule out.
+        if bc.get("bc_selfwipe_ratio", 0) > 0:
+            score = max(score, 60)
         # Recognised for certain; legality is a server rule, not a technical fact.
         # These are scored into Review and the band is renamed, never raised.
         if (bc.get("bc_render_ratio", 0) > 0 and bc.get("bc_entityscan_ratio", 0) > 0
