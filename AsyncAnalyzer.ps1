@@ -30,7 +30,12 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 }
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$null = chcp 65001
+# chcp is a Windows program, and this tool only ever runs on Windows - but it is
+# also PARSED and SELF-TESTED elsewhere, and a missing external command becomes a
+# TERMINATING error under $ErrorActionPreference = 'Stop', which is what GitHub
+# Actions sets for pwsh by default. The script then died here, on line 33, before
+# one check had run - and the CI self-test could never have passed.
+if (Get-Command chcp -ErrorAction SilentlyContinue) { $null = chcp 65001 }
 $ModPath = ""
 
 $script:Version      = "4.0.0"
@@ -957,6 +962,35 @@ $script:textExt = @('json', 'txt', 'properties', 'cfg', 'toml', 'lang', 'mcmeta'
 
 function Add-ScanGap([string]$What) {
     if (-not $script:ScanGaps.Contains($What)) { [void]$script:ScanGaps.Add($What) }
+}
+
+function Get-WmiOrCim([string]$Class, [string]$Filter = "") {
+    <#
+        Win32_* without caring which PowerShell this is.
+
+        Get-WmiObject was REMOVED in PowerShell 7. On a PC where pwsh is the
+        default shell the call does not fail, it does not exist - a
+        CommandNotFoundException, which -ErrorAction cannot suppress because the
+        cmdlet was never reached. Run-JVMScan then saw no java processes and
+        returned an empty result, so the injected-client check quietly found
+        nothing while the report said it had run. That is the exact failure this
+        tool is built to not have.
+
+        Get-CimInstance is present in both, so it goes first; Get-WmiObject stays
+        as the fallback for a host where CIM is unavailable. Returns nothing if
+        neither works - and the caller says so, rather than reading it as clean.
+    #>
+    foreach ($cmd in @('Get-CimInstance', 'Get-WmiObject')) {
+        if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $args = @{ ClassName = $Class; ErrorAction = 'Stop' }
+            if ($cmd -eq 'Get-WmiObject') { $args = @{ Class = $Class; ErrorAction = 'Stop' } }
+            if ($Filter) { $args['Filter'] = $Filter }
+            $res = @(& $cmd @args)
+            if ($res.Count -gt 0) { return $res }
+        } catch { continue }
+    }
+    return @()
 }
 
 function Test-IsAdmin {
@@ -5755,8 +5789,18 @@ function Test-ScannedDir([string]$Dir) {
 function Run-JVMScan {
     $r = New-JvmScanResult
 
-    $javaProcs = Get-WmiObject Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" -ErrorAction SilentlyContinue
-    if (-not $javaProcs) { return $r }
+    $javaProcs = @(Get-WmiOrCim 'Win32_Process' "Name='java.exe' OR Name='javaw.exe'")
+    if ($javaProcs.Count -eq 0) {
+        # No java process is the ordinary case when the game is not open, and it is
+        # not a gap. Not being able to ASK is: without a process list there is
+        # nothing to check for an injected agent, and an empty result would read as
+        # "checked, found nothing".
+        if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) -and
+            -not (Get-Command Get-WmiObject   -ErrorAction SilentlyContinue)) {
+            $r.Gaps.Add("The running processes could not be listed on this PowerShell, so no JVM could be checked for an injected agent.")
+        }
+        return $r
+    }
 
     foreach ($proc in $javaProcs) {
         $where = "$($proc.Name) (PID $($proc.ProcessId))"
@@ -6418,7 +6462,12 @@ function Run-ServiceCheck {
 
     $serviceIssues = @()
     $svcNames  = $serviceTable | ForEach-Object { $_.Name }
-    $allSvcs   = Get-Service -Name $svcNames -ErrorAction SilentlyContinue
+    # -ErrorAction handles errors the cmdlet raises; it cannot handle the cmdlet
+    # not existing, which is a CommandNotFoundException raised before it is called
+    # - fatal under $ErrorActionPreference = 'Stop'.
+    $allSvcs = @()
+    try { $allSvcs = @(Get-Service -Name $svcNames -ErrorAction SilentlyContinue) }
+    catch { Add-ScanGap "The Windows services could not be listed, so it was not checked whether Defender or the firewall service had been stopped" }
     $svcLookup = @{}
     foreach ($s in $allSvcs) { $svcLookup[$s.Name] = $s.Status.ToString() }
 
@@ -7168,7 +7217,7 @@ function Run-BamScan {
         return
     }
 
-    $oldestLogon = Get-CimInstance -ClassName Win32_LogonSession -ErrorAction SilentlyContinue |
+    $oldestLogon = Get-WmiOrCim 'Win32_LogonSession' |
         Where-Object { $_.LogonType -eq 2 -or $_.LogonType -eq 10 } |
         Sort-Object -Property StartTime |
         Select-Object -First 1
@@ -7185,7 +7234,7 @@ function Run-BamScan {
     $bamPInvoke.SetCustomAttribute($bamAttr)
     $bamKernel32 = $bamTypeBuilder.CreateType()
     $bamSb = New-Object System.Text.StringBuilder(65536)
-    $bamMappings = Get-WmiObject Win32_Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter } | ForEach-Object {
+    $bamMappings = Get-WmiOrCim 'Win32_Volume' | Where-Object { $_.DriveLetter } | ForEach-Object {
         if ($bamKernel32::QueryDosDevice($_.DriveLetter, $bamSb, 65536)) {
             @{ DriveLetter = $_.DriveLetter; DevicePath = $bamSb.ToString().ToLower() }
         }
@@ -7234,12 +7283,19 @@ function Run-BamScan {
     $existingPaths = $bamRaw | Where-Object { Test-Path $_.Path } | Select-Object -ExpandProperty Path
     $sigMap = @{}
     if ($existingPaths.Count -gt 0) {
-        Get-AuthenticodeSignature -LiteralPath $existingPaths | ForEach-Object {
-            $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
-                if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
-                elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
-                else { "Signed" }
-            } else { "Not signed" }
+        # -ErrorAction cannot save a cmdlet that is not there to be called, and
+        # under $ErrorActionPreference = 'Stop' an unguarded call ends the whole
+        # scan rather than this one lookup.
+        try {
+            Get-AuthenticodeSignature -LiteralPath $existingPaths -ErrorAction Stop | ForEach-Object {
+                $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
+                    if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
+                    elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
+                    else { "Signed" }
+                } else { "Not signed" }
+            }
+        } catch {
+            Add-ScanGap "The signatures of the programs in the BAM history could not be read, so a cheat executable there is listed without saying whether it was signed."
         }
     }
 

@@ -100,17 +100,14 @@ jobs:
       # which is where a real run found that 'aeiou' -contains $_ is always
       # False, so every legitimate mod outside a hand-written prefix list was
       # being floored to Review.
-      # *>&1, NOT 2>&1. Every line this tool prints goes through W, which is
-      # Write-Host, which writes to the INFORMATION stream - 2>&1 merges only the
-      # error stream, so $out came back holding 324 characters of nothing and the
-      # "did it pass?" test below was reading an empty string. A gate that cannot
-      # see what it is gating is worse than no gate, because it is believed.
+      # One script, run here and by hand, so the two cannot drift. It carries the
+      # two details that decide whether this proves anything: *>&1 (the tool prints
+      # through Write-Host, which 2>&1 cannot see) and the ErrorActionPreference
+      # this step already runs under. Both were wrong at once, and between them the
+      # step could only ever fail.
       - name: PowerShell self-test
         shell: pwsh
-        run: |
-          $out = & ./AsyncAnalyzer.ps1 -SelfTest *>&1 | Out-String
-          $out
-          if ($out -match 'self-test\(s\) FAILED' -or $out -notmatch 'All \d+ self-tests passed') { exit 1 }
+        run: pwsh -File scripts/selftest.ps1
 
       # Run it the way it is actually DELIVERED. The one-liner is
       # iex (irm ...), which evaluates in the caller's scope; -File creates a

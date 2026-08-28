@@ -301,7 +301,12 @@ function Run-ServiceCheck {
 
     $serviceIssues = @()
     $svcNames  = $serviceTable | ForEach-Object { $_.Name }
-    $allSvcs   = Get-Service -Name $svcNames -ErrorAction SilentlyContinue
+    # -ErrorAction handles errors the cmdlet raises; it cannot handle the cmdlet
+    # not existing, which is a CommandNotFoundException raised before it is called
+    # - fatal under $ErrorActionPreference = 'Stop'.
+    $allSvcs = @()
+    try { $allSvcs = @(Get-Service -Name $svcNames -ErrorAction SilentlyContinue) }
+    catch { Add-ScanGap "The Windows services could not be listed, so it was not checked whether Defender or the firewall service had been stopped" }
     $svcLookup = @{}
     foreach ($s in $allSvcs) { $svcLookup[$s.Name] = $s.Status.ToString() }
 

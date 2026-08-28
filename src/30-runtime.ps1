@@ -2,6 +2,35 @@ function Add-ScanGap([string]$What) {
     if (-not $script:ScanGaps.Contains($What)) { [void]$script:ScanGaps.Add($What) }
 }
 
+function Get-WmiOrCim([string]$Class, [string]$Filter = "") {
+    <#
+        Win32_* without caring which PowerShell this is.
+
+        Get-WmiObject was REMOVED in PowerShell 7. On a PC where pwsh is the
+        default shell the call does not fail, it does not exist - a
+        CommandNotFoundException, which -ErrorAction cannot suppress because the
+        cmdlet was never reached. Run-JVMScan then saw no java processes and
+        returned an empty result, so the injected-client check quietly found
+        nothing while the report said it had run. That is the exact failure this
+        tool is built to not have.
+
+        Get-CimInstance is present in both, so it goes first; Get-WmiObject stays
+        as the fallback for a host where CIM is unavailable. Returns nothing if
+        neither works - and the caller says so, rather than reading it as clean.
+    #>
+    foreach ($cmd in @('Get-CimInstance', 'Get-WmiObject')) {
+        if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $args = @{ ClassName = $Class; ErrorAction = 'Stop' }
+            if ($cmd -eq 'Get-WmiObject') { $args = @{ Class = $Class; ErrorAction = 'Stop' } }
+            if ($Filter) { $args['Filter'] = $Filter }
+            $res = @(& $cmd @args)
+            if ($res.Count -gt 0) { return $res }
+        } catch { continue }
+    }
+    return @()
+}
+
 function Test-IsAdmin {
     try {
         return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(

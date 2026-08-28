@@ -24,8 +24,13 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WF = (ROOT / ".github" / "workflows" / "benchmark.yml").read_text(encoding="utf-8")
+SELFTEST = (ROOT / "scripts" / "selftest.ps1").read_text(encoding="utf-8")
 CONSOLE = (ROOT / "src" / "70-console.ps1").read_text(encoding="utf-8")
 ANALYSIS = (ROOT / "src" / "50-analysis.ps1").read_text(encoding="utf-8")
+# The self-test capture lives in scripts/selftest.ps1 so the workflow and a run by
+# hand cannot drift; the delivery-path capture is still inline in the workflow.
+# Both are "somewhere a gate reads the tool's output", so both are checked.
+GATES = WF + "\n" + SELFTEST
 
 results = []
 
@@ -42,15 +47,27 @@ check("...and it writes to the host, so its output is NOT the error stream",
 
 # --- therefore every gate that reads the tool's output must merge all streams --
 # A pipeline that captures the script's output and then greps it.
-captures = re.findall(r"\$out\s*=\s*&[^\n]*?(\*>&1|\d>&1)[^\n]*\|\s*Out-String", WF)
-check("the workflow captures the tool's output somewhere", len(captures) >= 2,
+captures = re.findall(r"\$out\s*=\s*&[^\n]*?(\*>&1|\d>&1)[^\n]*\|\s*Out-String", GATES)
+check("the gates capture the tool's output in at least two places", len(captures) >= 2,
       str(captures))
 bad = [c for c in captures if c != "*>&1"]
 check("every capture merges ALL streams, not just errors", not bad,
       f"{bad} cannot see Write-Host output")
 
+# --- and it must run the way CI runs it, not more leniently -------------------
+# GitHub Actions sets $ErrorActionPreference = 'stop' for every pwsh step. Under
+# it a missing EXTERNAL command is fatal - `chcp`, eight lines in, killed the
+# script before one check had run, while the same run without Stop passed. Testing
+# it the lenient way here is exactly how that was missed.
+check("the self-test harness runs under the same ErrorActionPreference as CI",
+      "$ErrorActionPreference = 'stop'" in SELFTEST)
+check("...and the workflow uses that harness rather than its own copy",
+      "scripts/selftest.ps1" in WF)
+check("a self-test that dies partway through is a failure, not a pass",
+      "never reached its summary line" in SELFTEST)
+
 # --- and the string it greps for has to be one the tool really prints ---------
-sentinels = re.findall(r"\$out -(?:not)?match '([^']+)'", WF)
+sentinels = re.findall(r"\$out -(?:not)?match '([^']+)'", GATES)
 check("the self-test gate greps for something", bool(sentinels))
 # 'All \d+ self-tests passed' must correspond to a real Write in the source.
 want = [s for s in sentinels if "self-test" in s]

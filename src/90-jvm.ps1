@@ -105,8 +105,18 @@ function Test-ScannedDir([string]$Dir) {
 function Run-JVMScan {
     $r = New-JvmScanResult
 
-    $javaProcs = Get-WmiObject Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" -ErrorAction SilentlyContinue
-    if (-not $javaProcs) { return $r }
+    $javaProcs = @(Get-WmiOrCim 'Win32_Process' "Name='java.exe' OR Name='javaw.exe'")
+    if ($javaProcs.Count -eq 0) {
+        # No java process is the ordinary case when the game is not open, and it is
+        # not a gap. Not being able to ASK is: without a process list there is
+        # nothing to check for an injected agent, and an empty result would read as
+        # "checked, found nothing".
+        if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) -and
+            -not (Get-Command Get-WmiObject   -ErrorAction SilentlyContinue)) {
+            $r.Gaps.Add("The running processes could not be listed on this PowerShell, so no JVM could be checked for an injected agent.")
+        }
+        return $r
+    }
 
     foreach ($proc in $javaProcs) {
         $where = "$($proc.Name) (PID $($proc.ProcessId))"

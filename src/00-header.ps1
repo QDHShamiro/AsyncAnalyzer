@@ -30,7 +30,12 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 }
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$null = chcp 65001
+# chcp is a Windows program, and this tool only ever runs on Windows - but it is
+# also PARSED and SELF-TESTED elsewhere, and a missing external command becomes a
+# TERMINATING error under $ErrorActionPreference = 'Stop', which is what GitHub
+# Actions sets for pwsh by default. The script then died here, on line 33, before
+# one check had run - and the CI self-test could never have passed.
+if (Get-Command chcp -ErrorAction SilentlyContinue) { $null = chcp 65001 }
 $ModPath = ""
 
 $script:Version      = "4.0.0"
