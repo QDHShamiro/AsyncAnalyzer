@@ -1907,6 +1907,30 @@ function Get-BcWitness($Bc, [string[]]$Cats, [int]$Max = 2) {
     return " [$($parts -join '; ')]"
 }
 
+# Everything on the disk, not just the mods folder.
+#
+# The injected-client rule below says "this package is loaded and no jar on disk
+# contains it". That claim is only as good as the disk side: if the tool knows
+# the mods folder alone, every launcher library and the game's own code read as
+# injected. So the version jar and the whole libraries tree are walked too -
+# entry names only, no decompression, which is cheap enough for the few hundred
+# jars a Minecraft install carries.
+function Add-InstallPackages([string]$GameDir) {
+    if (-not $GameDir) { return 0 }
+    $n = 0
+    foreach ($sub in @('libraries', 'versions')) {
+        $d = [System.IO.Path]::Combine($GameDir, $sub)
+        if (-not [System.IO.Directory]::Exists($d)) { continue }
+        try {
+            foreach ($j in @([System.IO.Directory]::GetFiles($d, '*.jar', [System.IO.SearchOption]::AllDirectories) | Select-Object -First 1200)) {
+                Add-DiskPackages $j
+                $n++
+            }
+        } catch {}
+    }
+    return $n
+}
+
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
             StrReadableRatio = 0.0; StrEntropy = 0.0
@@ -4194,16 +4218,29 @@ function Get-ScanTargets {
             if ($r.Instance) { W " / $($r.Instance)" White -NoNewline }
             W "  ($($r.JarCount) mods)" DarkGray
         }
+        # An install that is NOT open is scanned too. It used to be reported as a
+        # gap and skipped, which is backwards: the profile somebody is not playing
+        # is exactly where a jar gets parked while the one they ARE playing is
+        # being watched. A second Modrinth profile called "Cheats test" sat right
+        # next to the running one and was listed as "not scanned".
         $idle = @($plain | Where-Object { -not $_.IsRunning })
-        if ($idle.Count -gt 0) {
-            Add-ScanGap "$($idle.Count) other Minecraft install(s) exist but were not open, so they were not scanned"
+        foreach ($i in $idle) {
+            if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
+            W "  $([char]0x2713) Also scanning (not open): " DarkGray -NoNewline
+            W "$($i.Launcher)" Cyan -NoNewline
+            if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
+            W "  ($($i.JarCount) mods)" DarkGray
         }
     } elseif ($plain.Count -gt 0) {
-        [void]$targets.Add($plain[0].Path)
-        W "  $([char]0x2713) Nothing open $([char]0x2014) checking the most likely install: $($plain[0].Launcher)" Yellow
-        if ($plain.Count -gt 1) {
-            Add-ScanGap "$($plain.Count) installs found and none was open $([char]0x2014) only the most likely one was scanned"
+        # Nothing open: scan every install that was found, not the best guess.
+        foreach ($i in $plain) {
+            if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
+            W "  $([char]0x2713) Nothing open $([char]0x2014) scanning: " Yellow -NoNewline
+            W "$($i.Launcher)" Cyan -NoNewline
+            if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
+            W "  ($($i.JarCount) mods)" DarkGray
         }
+        Add-ScanGap "No Minecraft was running, so nothing could be read out of a live game $([char]0x2014) an injected client leaves no file to find"
     }
 
     # An alternative client's mods/addons folder is always scanned, open or not. It
@@ -5310,6 +5347,43 @@ function Invoke-LateFolderScan {
 # list, and that sentence alone was enough to label the scan "Likely" - the more
 # RAM a legitimate modpack used, the more likely it was to be accused.
 # ---------------------------------------------------------------------------
+# An injected client that has no name.
+#
+# The memory scan looks for NAMES - the community client list. An obfuscated
+# loader has none: the real DoomsDay jar's classes are net/java/a, net/java/b,
+# net/java/d. Searching for names cannot see it, and that is the point of
+# obfuscating them.
+#
+# What it cannot hide is that it is LOADED. Every class the JVM holds came from
+# somewhere, and for a mod that somewhere is a jar. A package live in the game's
+# memory that belongs to no jar anywhere on this disk was not loaded from a file,
+# which is what "injected" means.
+#
+# The claim rests entirely on the disk side being complete - see
+# Add-InstallPackages - and it refuses to make any claim at all when that set is
+# too thin to trust. Mirrors injected_packages in ml/histscan.py.
+$script:jvmRuntimeRoots = @('java/', 'javax/', 'jdk/', 'sun/', 'com/sun/', 'oracle/',
+                            'netscape/', 'org/w3c/', 'org/xml/', 'org/ietf/', 'jrt/')
+# Generated at runtime by the JVM, by Mixin or by any bytecode library. They have
+# no file either, and they are not somebody's cheat.
+$script:jvmGenerated = '\$\$|\$Proxy|GeneratedConstructorAccessor|GeneratedMethodAccessor|Lambda\$|/ASM\$|\$\d+$'
+# A real Minecraft install yields thousands of package prefixes. Below this the
+# disk side is not trustworthy enough to call anything injected.
+$script:jvmMinDiskPackages = 200
+
+function Test-InjectedPackage([string]$Package) {
+    if ($script:DiskPackages.Count -lt $script:jvmMinDiskPackages) { return $false }
+    foreach ($r in $script:jvmRuntimeRoots) { if ($Package.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { return $false } }
+    if ($Package -match $script:jvmGenerated) { return $false }
+    # Any PREFIX being on disk means a jar could have supplied it: net/java/a is
+    # accounted for by "net/java" existing in some jar.
+    $parts = $Package.Split('/')
+    for ($i = 1; $i -le $parts.Count; $i++) {
+        if ($script:DiskPackages.Contains(($parts[0..($i-1)] -join '/'))) { return $false }
+    }
+    return $true
+}
+
 function New-JvmScanResult {
     return @{
         Findings = [System.Collections.Generic.List[string]]::new()
@@ -5493,6 +5567,17 @@ function Run-JVMScan {
                 # heap cannot turn this into the thing that runs out of memory.
                 $jarUrls = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
                 $jarUrlRegex = [regex]::new('(?i)file:/{1,3}[A-Za-z]:[/\\][^\s"''<>|*?\r\n]{0,300}?\.jar')
+                # Package paths, for the client that has no name. This regex is
+                # the expensive one - there is no cheap literal to gate it on the
+                # way "file:/" gates the URL scan - so it runs on a bounded
+                # number of chunks. Loaded code puts its package name in many
+                # places, so a sample still finds it; the cap is reported as a
+                # gap when it is reached.
+                $pkgRegex = [regex]::new('\b([a-z][a-z0-9_]{1,20}(?:/[A-Za-z0-9_$]{1,40}){2,6})\b')
+                $pkgHits = @{}
+                $pkgChunks = 0
+                $pkgChunkCap = 600
+                $pkgCapped = $false
                 # Coverage bookkeeping. The time budget stops the READING, not the
                 # walk: VirtualQueryEx costs nothing, so keep enumerating regions to
                 # the end of the address space and learn the real total. That turns
@@ -5533,6 +5618,19 @@ function Run-JVMScan {
                                         [void]$jarUrls.Add($um.Value)
                                     }
                                 }
+                                if ($pkgChunks -lt $pkgChunkCap) {
+                                    $pkgChunks++
+                                    foreach ($pm in $pkgRegex.Matches($str)) {
+                                        $pk = $pm.Groups[1].Value
+                                        # Keep three segments: a package, not a
+                                        # whole inner-class path. net/java/a is
+                                        # the unit that either has a jar or does not.
+                                        $seg = $pk.Split('/')
+                                        if ($seg.Count -gt 3) { $pk = ($seg[0..2] -join '/') }
+                                        if ($pkgHits.ContainsKey($pk)) { $pkgHits[$pk]++ }
+                                        elseif ($pkgHits.Count -lt 20000) { $pkgHits[$pk] = 1 }
+                                    }
+                                } else { $pkgCapped = $true }
                                 foreach ($mm in $memRegex.Matches($str)) {
                                     $term = $mm.Groups[1].Value
                                     $key  = $term.ToLower()
@@ -5626,6 +5724,32 @@ function Run-JVMScan {
                         # yourself with -Path" is advice nobody follows while a
                         # suspect is sitting on the other end of the call.
                         if (-not $script:LateScanDirs.Contains($ld)) { [void]$script:LateScanDirs.Add($ld) }
+                    }
+                }
+
+                # -------------------------------------------------------------
+                # Loaded, and belonging to no jar on this disk. This is the only
+                # check here that does not need to know the client's name.
+                # -------------------------------------------------------------
+                if ($script:DiskPackages.Count -lt $script:jvmMinDiskPackages) {
+                    $r.Gaps.Add("Only $($script:DiskPackages.Count) package(s) are known from the jars on disk $([char]0x2014) too few to tell an injected class from a library that simply was not scanned, so no such claim was made")
+                } else {
+                    $injected = [System.Collections.Generic.List[string]]::new()
+                    foreach ($pk in @($pkgHits.Keys | Sort-Object)) {
+                        # Three or more sightings: loaded code repeats its own
+                        # package name, a stray string does not.
+                        if ($pkgHits[$pk] -lt 3) { continue }
+                        if (-not (Test-InjectedPackage $pk)) { continue }
+                        if ($injected.Count -ge 12) { break }
+                        $injected.Add("$pk  ($($pkgHits[$pk]) sightings, no jar on disk contains it)")
+                    }
+                    if ($injected.Count -gt 0) {
+                        $r.Findings.Add("INJECTED CODE, no name needed: $($injected.Count) package(s) are loaded in $where and belong to NO jar anywhere on this disk $([char]0x2014) $($injected -join '; ')")
+                        $script:Evidence.MemInjectedOnly++
+                        $script:Evidence.MemCheatClient++
+                    }
+                    if ($pkgCapped) {
+                        $r.Gaps.Add("The search for injected code stopped after $pkgChunkCap memory blocks in $where $([char]0x2014) a client loaded only in the part that was not reached would have been missed")
                     }
                 }
 
@@ -8808,6 +8932,19 @@ if (-not $SkipModCheck) {
         }
     }
 }
+
+    # Before the memory scan, learn what is actually ON the disk: the version jar
+    # and the whole libraries tree, not just the mods folder. The injected-code
+    # rule says "this package belongs to no jar here", and that claim is only as
+    # good as this set - without it every launcher library reads as injected.
+    $instJars = 0
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try { $instJars += Add-InstallPackages ([System.IO.Path]::GetDirectoryName(([string]$t).TrimEnd('\'))) } catch {}
+    }
+    if ($instJars -gt 0) {
+        W "  $([char]0x25CF) Read $instJars library/version jar(s) so injected code can be told from a library" DarkGray
+    }
 
     $jvm = Run-JVMScan
     # ONLY the findings count. A note has an innocent explanation and a gap is

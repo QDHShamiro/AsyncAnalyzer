@@ -1,3 +1,16 @@
+    # Before the memory scan, learn what is actually ON the disk: the version jar
+    # and the whole libraries tree, not just the mods folder. The injected-code
+    # rule says "this package belongs to no jar here", and that claim is only as
+    # good as this set - without it every launcher library reads as injected.
+    $instJars = 0
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try { $instJars += Add-InstallPackages ([System.IO.Path]::GetDirectoryName(([string]$t).TrimEnd('\'))) } catch {}
+    }
+    if ($instJars -gt 0) {
+        W "  $([char]0x25CF) Read $instJars library/version jar(s) so injected code can be told from a library" DarkGray
+    }
+
     $jvm = Run-JVMScan
     # ONLY the findings count. A note has an innocent explanation and a gap is
     # something the scan could not look at - neither is proof of an injection,

@@ -154,6 +154,30 @@ function Get-BcWitness($Bc, [string[]]$Cats, [int]$Max = 2) {
     return " [$($parts -join '; ')]"
 }
 
+# Everything on the disk, not just the mods folder.
+#
+# The injected-client rule below says "this package is loaded and no jar on disk
+# contains it". That claim is only as good as the disk side: if the tool knows
+# the mods folder alone, every launcher library and the game's own code read as
+# injected. So the version jar and the whole libraries tree are walked too -
+# entry names only, no decompression, which is cheap enough for the few hundred
+# jars a Minecraft install carries.
+function Add-InstallPackages([string]$GameDir) {
+    if (-not $GameDir) { return 0 }
+    $n = 0
+    foreach ($sub in @('libraries', 'versions')) {
+        $d = [System.IO.Path]::Combine($GameDir, $sub)
+        if (-not [System.IO.Directory]::Exists($d)) { continue }
+        try {
+            foreach ($j in @([System.IO.Directory]::GetFiles($d, '*.jar', [System.IO.SearchOption]::AllDirectories) | Select-Object -First 1200)) {
+                Add-DiskPackages $j
+                $n++
+            }
+        } catch {}
+    }
+    return $n
+}
+
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
             StrReadableRatio = 0.0; StrEntropy = 0.0

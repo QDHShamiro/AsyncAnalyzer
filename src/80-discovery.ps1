@@ -396,16 +396,29 @@ function Get-ScanTargets {
             if ($r.Instance) { W " / $($r.Instance)" White -NoNewline }
             W "  ($($r.JarCount) mods)" DarkGray
         }
+        # An install that is NOT open is scanned too. It used to be reported as a
+        # gap and skipped, which is backwards: the profile somebody is not playing
+        # is exactly where a jar gets parked while the one they ARE playing is
+        # being watched. A second Modrinth profile called "Cheats test" sat right
+        # next to the running one and was listed as "not scanned".
         $idle = @($plain | Where-Object { -not $_.IsRunning })
-        if ($idle.Count -gt 0) {
-            Add-ScanGap "$($idle.Count) other Minecraft install(s) exist but were not open, so they were not scanned"
+        foreach ($i in $idle) {
+            if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
+            W "  $([char]0x2713) Also scanning (not open): " DarkGray -NoNewline
+            W "$($i.Launcher)" Cyan -NoNewline
+            if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
+            W "  ($($i.JarCount) mods)" DarkGray
         }
     } elseif ($plain.Count -gt 0) {
-        [void]$targets.Add($plain[0].Path)
-        W "  $([char]0x2713) Nothing open $([char]0x2014) checking the most likely install: $($plain[0].Launcher)" Yellow
-        if ($plain.Count -gt 1) {
-            Add-ScanGap "$($plain.Count) installs found and none was open $([char]0x2014) only the most likely one was scanned"
+        # Nothing open: scan every install that was found, not the best guess.
+        foreach ($i in $plain) {
+            if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
+            W "  $([char]0x2713) Nothing open $([char]0x2014) scanning: " Yellow -NoNewline
+            W "$($i.Launcher)" Cyan -NoNewline
+            if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
+            W "  ($($i.JarCount) mods)" DarkGray
         }
+        Add-ScanGap "No Minecraft was running, so nothing could be read out of a live game $([char]0x2014) an injected client leaves no file to find"
     }
 
     # An alternative client's mods/addons folder is always scanned, open or not. It
