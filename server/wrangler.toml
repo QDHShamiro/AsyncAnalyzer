@@ -1,14 +1,32 @@
-name = "asyncanalyzer-backend"
+name = "asyncanalyzer"
 main = "worker.js"
-compatibility_date = "2024-11-01"
+compatibility_date = "2025-06-01"
+
+# The site and the API are one Worker on one origin. That is what lets the session
+# cookie work without CORS, and it means one deploy instead of two things that can
+# be at different versions.
+[assets]
+directory = "../site"
+binding = "ASSETS"
 
 # Create the DB once with:  wrangler d1 create asyncanalyzer
 # then paste the printed database_id below.
 [[d1_databases]]
 binding = "DB"
 database_name = "asyncanalyzer"
-database_id = "PASTE-YOUR-D1-DATABASE-ID-HERE"
+database_id = "local-placeholder-replace-after-wrangler-d1-create"
 
-# Set secrets (not committed) with:
-#   wrangler secret put WRITE_KEY
-#   wrangler secret put VIEW_KEY     # optional; leave unset to make history public
+# Secrets (never committed) — set with `wrangler secret put <NAME>`:
+#
+#   SESSION_SECRET          required. signs session + OAuth-state cookies.
+#                           rotating it signs everybody out.
+#   DISCORD_CLIENT_ID       Discord Developer Portal -> OAuth2
+#   DISCORD_CLIENT_SECRET   redirect: https://<host>/auth/discord/callback
+#   GOOGLE_CLIENT_ID        Google Cloud Console -> Credentials -> OAuth client
+#   GOOGLE_CLIENT_SECRET    redirect: https://<host>/auth/google/callback
+#   RESEND_KEY              resend.com api key; without it, email signups cannot
+#                           confirm and the signup response says so
+#   MAIL_FROM               e.g. "AsyncAnalyzer <noreply@yourdomain>"
+#   DISCORD_WEBHOOK         channel that gets pinged on a new application
+#   STAFF_KEY               uploads allowed to train the shared model
+#   VIEW_KEY                legacy: read /api/history without an account
