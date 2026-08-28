@@ -111,6 +111,8 @@ if (-not $script:_DevMode) {
 # What Windows still remembers about files that are already gone. Runs last, so
 # the deletion window can use the game's start time and the mod scan's results.
 Show-HistoryScan
+# Needs Administrator, so it is announced separately when it cannot run.
+Show-UsnScan
 
 # Every stage has now run (mods, system, JVM, PC, BAM) - so the session AI can
 # finally judge the scan AS A WHOLE, learn from it, and upload it to the team.

@@ -30,6 +30,12 @@ W "    $([char]0x2139) Every scan also reads macro scripts (.ahk .ahk2 .au3 .lua
 W "      Downloads, Desktop, Documents, Temp and your mouse driver's script folder," DarkGray
 W "      because an autoclicker is never in the mods folder and does not need the" DarkGray
 W "      game to be open. Read-only, like everything else here." DarkGray
+W "    $([char]0x2139) It also reads what Windows remembers about files that are GONE:" DarkGray
+W "      the Recycle Bin's own records (original path and deletion time), the" DarkGray
+W "      list of programs you started by double-clicking them, and with" DarkGray
+W "      Administrator the NTFS change journal and the compatibility cache." DarkGray
+W "      Those are the only places a jar deleted before a screenshare still" DarkGray
+W "      exists. All read-only: nothing is mounted, copied or restored." DarkGray
 if ($script:MemoryAuto) {
     W "    $([char]0x2139) Minecraft is running $([char]0x2014) the live-memory check is ON automatically." Yellow
     W "      That is the only way to catch a ghost client injected into the game." DarkGray
