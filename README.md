@@ -257,10 +257,11 @@ stay **Clean**; people update mods all the time.
 
 An autoclicker is never in the mods folder. It is an AutoHotkey script on the desktop, an
 AutoIt binary, or — the case people assume a screenshare cannot see — a **Lua script running
-inside the mouse driver**, where the clicks are produced below the game entirely. So the
-deep scan reads `.ahk`, `.ahk2`, `.au3`, `.lua` and `.vbs` files in Downloads, Desktop,
+inside the mouse driver**, where the clicks are produced below the game entirely. So
+**every** scan reads `.ahk`, `.ahk2`, `.au3`, `.lua` and `.vbs` files in Downloads, Desktop,
 Documents, Temp *and* the script folders that G HUB, Synapse, iCUE, SteelSeries, Glorious
-and Bloody run code out of.
+and Bloody run code out of. Not the deep scan — every scan: a macro doesn't need the game to
+be open, so closing Minecraft before the screenshare must not hide it.
 
 Clicking the mouse is not a cheat, so there are three levels and the difference between
 them is **evidence, not confidence**:
@@ -268,7 +269,7 @@ them is **evidence, not confidence**:
 | what was found | verdict |
 |---|---|
 | repeats mouse input in a loop **and** names Minecraft, the launcher or `javaw` | 🔴 **Confirmed** — an autoclicker aimed at this game |
-| repeats mouse input in a loop and the **file** is named after the technique (`blockhit`, `butterflyclick`, `autocrystal`) | 🟠 **Likely** — the file says what it is; it does not prove where it was used |
+| repeats mouse input in a loop and the **file** is named after the technique (`blockhit`, `butterflyclick`, `autocrystal`) | 🔴 **Confirmed** — those are Minecraft words; the file says what it is. What it doesn't say is *which game* it was used in — that question goes to the person reading the report, it isn't a reason to score it lower |
 | repeats mouse input in a loop, nothing ties it to the game | ⚪ reported as *a click macro exists*, **never** an accusation |
 
 That last row is the one that keeps this honest. A recoil script for a shooter is a real

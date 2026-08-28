@@ -187,10 +187,12 @@ def verdict(raw, weights=None, intercept=None):
     # one cannot be bolted on without retraining the model.
     if raw.get("macro_cheat", 0) > 0:
         score = max(score, 85)
-    # One step weaker on purpose: the FILE is named after the technique, which says
-    # what it is without proving where it was used.
+    # Butterfly-click, blockhit, autocrystal and the rest are Minecraft terms. A file
+    # with one of those names containing a click loop IS an autoclicker; what the file
+    # alone does not prove is which game it was used in - a question for the person
+    # reading the report rather than a reason to score it lower.
     if raw.get("macro_named", 0) > 0:
-        score = max(score, 60)
+        score = max(score, 85)
 
     return {"score": score, "band": band(score), "probability": round(p * 100)}
 

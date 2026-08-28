@@ -495,13 +495,14 @@ def build_doc(m, c):
   see &mdash; a <b>Lua script running inside the mouse driver</b>, where the clicks are
   produced below the game entirely. So <span class="mono">.ahk .ahk2 .au3 .lua .vbs</span>
   are read as well, in the usual folders and in the script directories G HUB, Synapse, iCUE,
-  SteelSeries, Glorious and Bloody run code out of.</p>
+  SteelSeries, Glorious and Bloody run code out of &mdash; on <b>every</b> scan, not only the
+  deep one, because a macro does not need the game to be open and closing Minecraft before
+  the screenshare must not hide it.</p>
   <p class="note" style="margin-top:10px">Clicking the mouse is not a cheat, so there are
   three levels and the difference between them is evidence rather than confidence: a click
-  loop that <b>names Minecraft</b> is an accusation; a click loop in a file <b>named after
-  the technique</b> is one step weaker, because the file says what it is without proving
-  where it was used; and a click loop with nothing tying it to the game is reported as
-  exactly that. A recoil script for a shooter has the third shape, and it is in the test
+  loop that <b>names Minecraft</b>, and a click loop in a file <b>named after the
+  technique</b> (butterfly-click, blockhit, autocrystal are Minecraft words), are both an
+  accusation; a click loop with nothing tying it to the game is reported as exactly that. A recoil script for a shooter has the third shape, and it is in the test
   corpus so that it stays there.</p>
   <p class="note" style="margin-top:10px"><b>What this cannot see</b>, said on every scan
   rather than only when something turns up: a macro burned into a mouse's <b>onboard

@@ -63,7 +63,7 @@ SCANS = [
     ("Spotless mods, autoclicker aimed at Minecraft",
      dict(total_mods=25, verified=25, macro_cheat=1, mc_running=1), {"Confirmed"}),
     ("Spotless mods, macro named after the technique",
-     dict(total_mods=25, verified=25, macro_named=1), {"Likely"}),
+     dict(total_mods=25, verified=25, macro_named=1), {"Confirmed"}),
     # The negative: a click macro with nothing tying it to Minecraft never reaches
     # the raw counts at all - it is reported in the PC scan and does not accuse.
     ("Click macro with no link to Minecraft",

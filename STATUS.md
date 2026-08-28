@@ -175,10 +175,16 @@ silently), and that the PS feature ORDER equals the Python one.
 - `Test-MacroFile` + `Run-MacroScan` (`src/96-pcscan.ps1`) read `.ahk .ahk2 .au3
   .lua .vbs` in Downloads / Desktop / Documents / Temp (+2 sub-levels) and in the
   script folders of G HUB, LGS, Synapse 2+3, iCUE, SteelSeries, Glorious, Bloody.
+- Runs on **every** scan, not only the deep one (`Show-MacroScan`, called from
+  `99-finish.ps1` before the deep gate). A macro does not need the game to be open,
+  so closing Minecraft before the screenshare must not hide it.
 - **Three levels, and the difference is evidence, not confidence.** Click loop +
   names Minecraft -> **cheat** (session verdict >=85). Click loop + the FILE named
-  after the technique -> **named** (>=60). Click loop, nothing tying it to the game
-  -> **macro**, reported and never accused.
+  after the technique -> **named**, also **>=85**: butterfly-click, blockhit and
+  autocrystal are Minecraft words, so the file says what it is. What it does not say
+  is which game it was used in - a question for the person reading the report, not a
+  reason to score it lower. Click loop, nothing tying it to the game -> **macro**,
+  reported and never accused.
 - Why `.lua` is safe to scan at all: the rules require the Logitech/Razer driver
   API (`PressMouseButton`, `OnEvent`, `IsMouseButtonPressed`...). Minecraft's own
   Lua (ComputerCraft), Garry's Mod and Roblox share none of that vocabulary.

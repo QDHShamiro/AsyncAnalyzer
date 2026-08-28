@@ -61,9 +61,14 @@ Write-Host ""
 Write-Host ""
 # No question here any more - the tool decided this itself in Set-AutoDepth, and
 # escalated on its own if the mod pass turned anything up.
+# Not gated on the deep scan. An autoclicker is not in the mods folder and does not
+# need the game to be open, so closing Minecraft before the screenshare used to hide
+# it completely - which is the opposite of the point.
+Show-MacroScan
+
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {
-    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running. Running processes, stray jars, autostart entries and CLICK MACROS (.ahk/.au3/.lua/.vbs) were therefore not checked"
+    Add-ScanGap "Deep system scan was not run $([char]0x2014) nothing suspicious came up and Minecraft was not running. Running processes, stray jars and autostart entries were therefore not checked (click macros WERE checked $([char]0x2014) that scan runs every time)"
 }
 if ($doDeep -or $script:_DevMode) {
     Run-RecentActivity

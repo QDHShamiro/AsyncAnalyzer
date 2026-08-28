@@ -644,7 +644,7 @@ function Invoke-SelfTest {
         # An autoclicker is never in the mods folder, so the mods can be spotless
         # and the scan still has to say what it found on the PC.
         @{ Label = "Spotless mods, autoclicker aimed at MC"; Bands = @("Confirmed"); Raw = @{ total_mods = 25; verified = 25; macro_cheat = 1; mc_running = 1 } }
-        @{ Label = "Spotless mods, macro named as technique"; Bands = @("Likely"); Raw = @{ total_mods = 25; verified = 25; macro_named = 1 } }
+        @{ Label = "Spotless mods, macro named as technique"; Bands = @("Confirmed"); Raw = @{ total_mods = 25; verified = 25; macro_named = 1 } }
         # The hole v3 closes: a behaviour-confirmed cheat reached this model only
         # through the flagged RATIO, which a large modpack divides away to nothing.
         @{ Label = "Big pack, ONE behaviour-confirmed cheat"; Bands = @("Confirmed"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_cheat = 1 } }

@@ -16,9 +16,10 @@ W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud
 W "    $([char]0x2713) Verified mods are never flagged. Flags come with a reason + score." Green
 W "    $([char]0x2139) By default it only scans your mods folder. A deep, whole-PC scan is" DarkGray
 W "      optional and asked for separately." DarkGray
-W "    $([char]0x2139) The deep scan also reads macro scripts (.ahk .ahk2 .au3 .lua .vbs) in" DarkGray
+W "    $([char]0x2139) Every scan also reads macro scripts (.ahk .ahk2 .au3 .lua .vbs) in" DarkGray
 W "      Downloads, Desktop, Documents, Temp and your mouse driver's script folder," DarkGray
-W "      because an autoclicker is never in the mods folder. Read-only, like the rest." DarkGray
+W "      because an autoclicker is never in the mods folder and does not need the" DarkGray
+W "      game to be open. Read-only, like everything else here." DarkGray
 if ($script:MemoryAuto) {
     W "    $([char]0x2139) Minecraft is running $([char]0x2014) the live-memory check is ON automatically." Yellow
     W "      That is the only way to catch a ghost client injected into the game." DarkGray

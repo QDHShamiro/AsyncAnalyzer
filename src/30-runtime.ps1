@@ -297,9 +297,11 @@ function Get-SessionVerdict($raw) {
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
     if ($raw.macro_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.macro_cheat) click macro(s) that repeat mouse input in a loop and name Minecraft $([char]0x2014) an autoclicker, aimed at this game") }
-    # One step weaker on purpose: the file is named after the technique, which says
-    # what it is without proving where it was used.
-    if ($raw.macro_named -gt 0) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.macro_named) click macro(s) named after a cheat technique (autoclicker, blockhit, butterfly-click $([char]0x2026))") }
+    # Butterfly-click, blockhit, autocrystal and the rest are Minecraft terms. A file
+    # with one of those names containing a click loop IS an autoclicker; what the file
+    # alone does not prove is which game it was used in - which is a question for the
+    # person reading the report, not a reason to score it lower.
+    if ($raw.macro_named -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.macro_named) click macro(s) named after a cheat technique (autoclicker, blockhit, butterfly-click $([char]0x2026)) $([char]0x2014) the file says what it is; it does not say which game it was used in") }
     if ($raw.deleted_jars -gt 0 -and $raw.mc_running) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.deleted_jars) .jar file(s) ran on this PC and were deleted while Minecraft is still running $([char]0x2014) the classic 'wiped it before the screenshare' pattern") }
     if ($raw.bam_deleted -gt 0)  { [void]$reasons.Add("$($raw.bam_deleted) executable(s) ran on this PC and were deleted afterwards") }
     if ($raw.flagged -gt 0)      { [void]$reasons.Add("$($raw.flagged) flagged mod(s)") }
