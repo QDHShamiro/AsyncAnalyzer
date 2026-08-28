@@ -577,9 +577,6 @@ $script:pendingProcessNames = @()
 # loaded from the mods folder - which is the whole point of a ghost client, and the
 # strongest thing a screenshare check can show.
 $script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-# Everything this run could NOT check. An autonomous tool must never report "clean"
-# for a check it silently skipped, so every limitation is collected and shown with
-# the verdict instead of being swallowed.
 # ---------------------------------------------------------------------------
 # Windows system checks - the tables. Mirrors ml/sysscan.py.
 #
@@ -594,6 +591,18 @@ $script:sysAuthHosts = @('sessionserver.mojang.com', 'authserver.mojang.com', 'a
 # replaced matched the substring 'mod', which covers ModernWarfare and \Models\.
 $script:sysMcMarkers = @('\.minecraft', '\.lunarclient', '\badlion', '\feather', '\labymod', '\prismlauncher', '\multimc', '\polymc', '\atlauncher', '\modrinthapp', '\curseforge\minecraft', '\.technic', '\.tlauncher', '\gdlauncher')
 
+# Which signature set is BUILT IN to this copy. It matches ml/signatures.json at
+# the moment this file was written - ml/test_report.py fails the build if the two
+# drift apart - and it is what a scan falls back to when the auto-update cannot be
+# reached. The repository is private, so raw.githubusercontent.com answers 404 to
+# everyone without a token: without these two the fallback is silent and a scan
+# running on a months-old list looks exactly like a current one.
+$script:SigVersion  = 7
+$script:SigDate     = "2026-08-28"
+
+# Everything this run could NOT check. An autonomous tool must never report "clean"
+# for a check it silently skipped, so every limitation is collected and shown with
+# the verdict instead of being swallowed.
 $script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
 # Jars that ran on this PC and are gone now, from BOTH sources: the BAM registry
 # (needs admin, sees executables) and the live JVM's own record of what it loaded

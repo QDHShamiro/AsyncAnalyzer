@@ -22,8 +22,6 @@ function Invoke-SelfElevate {
     W "    without those checks $([char]0x2014) it is not required. Use -NoElevate to skip asking." DarkGray
     Write-Host ""
     try {
-        # The one-liner has no file on disk, so the elevated process re-fetches the
-        # script. Say so plainly rather than doing it quietly.
         $flags = @()
         if ($script:DeepScan)   { $flags += '-DeepScan' }
         if ($script:Deep)       { $flags += '-Deep' }
@@ -32,8 +30,32 @@ function Invoke-SelfElevate {
         if ($script:NoLearn)    { $flags += '-NoLearn' }
         if ($script:Share)      { $flags += '-Share' }
         $flags += '-NoElevate'          # the elevated run must never try to elevate again
-        $url = "https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1"
-        $inner = "& ([scriptblock]::Create((irm '$url'))) " + ($flags -join ' ')
+        if ($script:ScanCode) { $flags += @('-Code', ('"' + $script:ScanCode + '"')) }
+        if ($ModPath)         { $flags += @('-Path', ('"' + $ModPath + '"')) }
+
+        # The elevated window runs THIS code, not a fresh download.
+        #
+        # It used to re-fetch the script from GitHub, which is wrong twice over.
+        # It is a different file: whatever is on main at that second, not what the
+        # person watching just read. And it stops working the moment the repo is
+        # private, which it now is - the fetch returns 404 and the elevated window
+        # dies with nothing on screen.
+        #
+        # So the running script writes ITSELF to a temp file and elevates that.
+        # Same bytes, no network, and the temp copy is deleted by the elevated run
+        # before it does anything else.
+        $self = $null
+        if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+            $self = $PSCommandPath
+        } else {
+            # Started with iex, so there is no file. Write the source out.
+            $body = $MyInvocation.MyCommand.ScriptBlock.Ast.Extent.Text
+            if (-not $body) { throw "cannot recover the running script to elevate it" }
+            $self = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_" + $script:ScanId + ".ps1")
+            [System.IO.File]::WriteAllText($self, $body, [System.Text.UTF8Encoding]::new($true))
+            W "  $([char]0x2139) Elevating THIS copy, not a fresh download: $self" DarkGray
+        }
+        $inner = "& '" + ($self -replace "'", "''") + "' " + ($flags -join ' ')
         Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $inner) -ErrorAction Stop
         W "  $([char]0x2713) Continuing in the elevated window." Green
@@ -449,7 +471,17 @@ function Write-SessionCard($v, $raw) {
 }
 
 function Invoke-CloudUpdate {
-    if ($script:NoUpdate) { return }
+    # Every fetch below can fail: no network on the PC being screenshared, a school
+    # or company proxy, or - as right now - a PRIVATE repository, where
+    # raw.githubusercontent.com answers 404 to everybody without a token. Swallowed,
+    # that turns a scan running on a months-old list into one that looks current,
+    # which is the single thing a report must never do. So each failure is named and
+    # lands in the coverage gaps, next to the verdict.
+    if ($script:NoUpdate) {
+        Add-ScanGap "Signature and model auto-update was switched off with -NoUpdate. This scan used the built-in signature set v$($script:SigVersion) from $($script:SigDate); a cheat added to the team list after that date was not looked for."
+        return
+    }
+    $staleModels = [System.Collections.Generic.List[string]]::new()
     try {
         $m = Invoke-RestMethod -Uri "$($script:RepoRaw)/model.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($m.version -and ([int]$m.version) -gt $script:mlModelVersion -and $m.weights -and $m.feature_order) {
@@ -462,7 +494,7 @@ function Invoke-CloudUpdate {
             $script:mlModelVersion = [int]$m.version
             W "  $([char]0x2713) AI model auto-updated to v$($script:mlModelVersion) from GitHub." DarkGray
         }
-    } catch {}
+    } catch { [void]$staleModels.Add("the mod AI model") }
     try {
         $sm = Invoke-RestMethod -Uri "$($script:RepoRaw)/session_model.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($sm.version -and ([int]$sm.version) -gt $script:smModelVersion -and $sm.weights -and $sm.feature_order) {
@@ -475,7 +507,7 @@ function Invoke-CloudUpdate {
             $script:smModelVersion = [int]$sm.version
             W "  $([char]0x2713) Overall-scan AI updated to v$($script:smModelVersion) from GitHub." DarkGray
         }
-    } catch {}
+    } catch { [void]$staleModels.Add("the overall-scan AI model") }
     try {
         $s = Invoke-RestMethod -Uri "$($script:RepoRaw)/signatures.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($s.knownCheatHashes) { foreach ($h in $s.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
@@ -511,17 +543,29 @@ function Invoke-CloudUpdate {
             if ($added) { Build-PatternRegex }
         }
         if ($s.telemetry -and -not $env:ASYNCANALYZER_ENDPOINT) { $script:Telemetry = $s.telemetry }
-    } catch {}
+    } catch {
+        Add-ScanGap "The cheat signature list could not be refreshed from GitHub. This scan used the built-in set v$($script:SigVersion) from $($script:SigDate); a cheat added to the team list after that date was not looked for."
+    }
+
+    if ($staleModels.Count -gt 0) {
+        $which = $staleModels -join " and "
+        Add-ScanGap "Could not refresh $which from GitHub, so this scan scored with the copy built into the tool (mod model v$($script:mlModelVersion), overall-scan model v$($script:smModelVersion)). Scores may be older than the team's current ones; the hard rules are unaffected."
+    }
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.pullSignatures -and $script:Telemetry.endpoint) {
         try {
             $ts = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/signatures" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
             if ($ts.knownCheatHashes) { foreach ($h in $ts.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
             if ($ts.knownGoodHashes)  { foreach ($h in $ts.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
-        } catch {}
+        } catch {
+            # The endpoint itself is deliberately not named: this text ends up in a
+            # report the scanned person reads.
+            Add-ScanGap "The team backend could not be reached, so hashes other staff confirmed since this copy was made were not part of this scan."
+        }
     }
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.endpoint) {
+        $teamStale = [System.Collections.Generic.List[string]]::new()
         try {
             $tm = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/model" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
             if ($tm.weights -and $tm.feature_order) {
@@ -530,7 +574,7 @@ function Invoke-CloudUpdate {
                 $script:mlIntercept = [double]$tm.intercept; $script:mlBaseIntercept = [double]$tm.intercept
                 W "  $([char]0x2713) Using team-trained AI model $([char]0x2014) learned from $($tm.trainedCount) samples across all team scans." DarkGray
             }
-        } catch {}
+        } catch { [void]$teamStale.Add("mod") }
         try {
             $tsm = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/smodel" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
             if ($tsm.weights -and $tsm.feature_order) {
@@ -539,7 +583,10 @@ function Invoke-CloudUpdate {
                 $script:smIntercept = [double]$tsm.intercept; $script:smBaseIntercept = [double]$tsm.intercept
                 W "  $([char]0x2713) Overall-scan AI is team-trained $([char]0x2014) $($tsm.trainedCount) whole scans learned from." DarkGray
             }
-        } catch {}
+        } catch { [void]$teamStale.Add("overall-scan") }
+        if ($teamStale.Count -gt 0) {
+            Add-ScanGap "The team-trained AI could not be downloaded, so this scan scored with the model shipped in the tool rather than the one the team has trained since."
+        }
     }
 }
 

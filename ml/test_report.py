@@ -284,6 +284,55 @@ check("PC state sits below the findings it is not part of",
 check("findings and PC state use one card renderer",
       REPORT.count("New-FindingCard") >= 3)
 
+# ------------------------------------------------- what the scan actually ran on ---
+# The signature list and the two models are refreshed from GitHub at start-up, and
+# every one of those fetches used to fail into an empty catch. The repository is
+# PRIVATE, so raw.githubusercontent.com answers 404 to everyone without a token -
+# meaning the silent path is now the normal path, and a scan running on the list
+# baked in months ago would look exactly like a current one.
+import json
+SIGS = json.loads((ROOT / "ml" / "signatures.json").read_text(encoding="utf-8"))
+SIGNATURES = (ROOT / "src" / "10-signatures.ps1").read_text(encoding="utf-8")
+
+_m = re.search(r'\$script:SigVersion\s*=\s*(\d+)', SIGNATURES)
+_d = re.search(r'\$script:SigDate\s*=\s*"([\d-]+)"', SIGNATURES)
+check("the built-in signature set names its version", _m is not None)
+check("the built-in signature set names its date", _d is not None)
+check("that version matches ml/signatures.json",
+      bool(_m) and int(_m.group(1)) == int(SIGS["version"]),
+      f"ps={_m and _m.group(1)} json={SIGS.get('version')}")
+check("that date matches ml/signatures.json",
+      bool(_d) and "updated" in SIGS and _d.group(1) == SIGS["updated"],
+      f"ps={_d and _d.group(1)} json={SIGS.get('updated')}")
+
+_upd = re.search(r"function Invoke-CloudUpdate.*?\n\}\n", RUNTIME, re.S)
+check("Invoke-CloudUpdate was found", _upd is not None)
+_upd = _upd.group(0) if _upd else ""
+_silent_upd = re.findall(r"\}\s*catch\s*\{\s*\}", _upd)
+check("no signature or model download fails silently", not _silent_upd,
+      f"{len(_silent_upd)} empty catch block(s)")
+check("a failed signature refresh says which list the scan then used",
+      "The cheat signature list could not be refreshed" in _upd
+      and "$($script:SigVersion)" in _upd and "$($script:SigDate)" in _upd)
+check("a failed model refresh says the scan scored with the built-in copy",
+      "Could not refresh $which from GitHub, so this scan scored with the copy built into the tool" in _upd)
+check("-NoUpdate is itself recorded as a gap, not treated as normal",
+      re.search(r"if \(\$script:NoUpdate\) \{\s*\n\s*Add-ScanGap", _upd) is not None)
+check("an unreachable team backend is recorded too",
+      "The team backend could not be reached" in _upd
+      and "The team-trained AI could not be downloaded" in _upd)
+# The report is read by the person being scanned, so an internal URL must not ride
+# along in a gap message.
+_gap_texts = re.findall(r'Add-ScanGap "([^"]+)"', _upd)
+check("no gap message leaks the backend URL",
+      not [g for g in _gap_texts if "endpoint" in g.lower() or "http" in g.lower()],
+      str(_gap_texts)[:120])
+check("every update gap says what it means for the scan", 
+      all(("not looked for" in g or "scored with" in g or "not part of this scan" in g
+           or "rather than the one" in g) for g in _gap_texts),
+      str([g[:40] for g in _gap_texts]))
+check("there are update gap messages at all", len(_gap_texts) >= 4, str(len(_gap_texts)))
+
 print("=== report checks ===")
 failed = 0
 for name, ok, detail in results:

@@ -451,7 +451,7 @@ can be edited afterwards; the console output happening in front of you cannot.
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
 | `-DeepMemory` | Force the live-memory check on. It already turns on by itself whenever Minecraft is running. |
 | `-Share` | Export confirmed cheat hashes locally to contribute them. |
-| `-NoUpdate` | Skip the GitHub model/signature auto-update. |
+| `-NoUpdate` | Skip the GitHub model/signature auto-update (recorded in the report as a coverage gap). |
 | `-NoLearn` | Don't adapt the local model this run. |
 | `-Reset` | Wipe the learned memory and start fresh. |
 | `-Yes` | Kept for compatibility &mdash; the tool decides the depth itself now. |
@@ -493,6 +493,7 @@ Detection gets better **every time you use it** — all on your machine, nothing
 2. **Online learning** — each confirmed verdict does one bounded SGD step on the model weights (anchored to the base model, so it adapts but can never drift into false positives). Stored in `%APPDATA%\AsyncAnalyzer\learned.json`.
 3. **Whole-scan learning** — every *finished scan* also teaches the overall-scan AI, so the tool gets better at reading a **situation**, not just a file. Only unambiguous scans teach it (a hard-confirmed cheat / injected JVM → *cheat*; an all-verified, issue-free scan → *clean*); anything in between teaches it nothing, which is what stops it drifting.
 4. **Cloud auto-update** — on start it pulls the newest models + community signature list from this repo, so improvements reach **everyone** (turn off with `-NoUpdate`).
+   **If that fails it says so.** The repository is private, so `raw.githubusercontent.com` answers 404 to anyone without a token — and a proxy, no network or `-NoUpdate` do the same thing. Every one of those now writes a line into the report's coverage box naming what could not be refreshed and which built-in set the scan used instead (*"used the built-in set v7 from 2026-08-28; a cheat added to the team list after that date was not looked for"*). A scan on an old list must never look like a current one. To get the updates, run the tool from a **local clone you `git pull`** — the clone carries the current `ml/` next to it.
 
 > Proven: after confirming a handful of a *new* cheat family, the model's score for it climbs from **20% → 66%** — while all 37 real clean libraries stay Clean. (`python3 ml/test_selflearn.py`)
 
