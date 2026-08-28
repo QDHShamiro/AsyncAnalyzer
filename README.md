@@ -294,6 +294,30 @@ user alive. The walker only collects `mods/` and `addons/`, which those are not 
 And if a client is installed but no mods/addons folder turns up under it, that goes in the
 **coverage box** — it means a format this tool cannot read, which is not the same as clean.
 
+### 📁 The rest of the Minecraft folder
+
+Four things live outside `mods/`, and none of them needs a heuristic — either the launcher
+starts a cheat's class or it doesn't:
+
+| where | what is read | why |
+|---|---|---|
+| `versions/<v>/<v>.json` | the `mainClass` the launcher starts, the `--tweakClass` it passes | an injected client installs itself as a **custom version profile** and writes its own class name in there in plain text |
+| `launcher_profiles.json` | JVM arguments | `-javaagent:` is how a ghost client gets attached at launch |
+| `resourcepacks/`, `shaderpacks/` | the entry names inside each `.zip` | a pack is textures, sounds, json and shader source. A `.class` or a `.jar` in one is **a jar in a costume**, and packs don't load from the mods folder |
+| `config/<name>` | folder names | a config folder **outlives the jar** — it's what's left when somebody deletes the mod and not its settings, and the date says when it was last used |
+
+A cheat named in a launcher profile, a pack carrying bytecode, or a client's config folder
+is **Confirmed**. The `-javaagent` line is deliberately one step lower (🟠 **Likely**): a
+profiler or a dev setup can carry one too, so it goes to a person with the path attached
+rather than being called proof.
+
+The config-folder match is **exact on the normalised name**, and that isn't academic —
+`ml/test_instscan.py` has `doomsday-realms-datapack-helper` in it, which a substring match
+reads as the Doomsday client because "doomsday" is also an English word. A config folder is
+named after the client and nothing else, so the whole name has to match. The same file
+carries an ordinary texture pack, a shader pack, a Fabric profile, a Forge profile and a
+1.8.9 OptiFine profile, none of which may ever be a finding.
+
 ### 📜 The game's own logs — the evidence that survives deleting the jar
 
 `latest.log`, the rotated `.log.gz` files and `crash-reports/` are read on **every**

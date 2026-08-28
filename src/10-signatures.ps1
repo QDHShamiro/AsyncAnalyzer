@@ -653,3 +653,41 @@ $script:logCodeContext = '^\s*at\s+[\w$.]+\(|\bClassNotFoundException\b|\bNoClas
 # "Loading 42 mods:" then "- modid 1.2.3" - Fabric and Forge both print this.
 $script:logModListHeader = 'Loading \d+ mods?:|Mod List:|Loading Minecraft .* with'
 $script:logModListItem = '^\s*[-│|]\s*([a-z0-9_-]{2,64})\s+([\w.+-]{1,32})\s*$'
+
+# ---------------------------------------------------------------------------
+# The parts of a Minecraft install that are NOT the mods folder
+#
+# Four things, all structural rather than fuzzy, because this directory is full of
+# files every normal player has and none of them may be accused:
+#   version profile   versions/<v>/<v>.json says which mainClass the launcher
+#                     starts and which --tweakClass it passes. An injected client
+#                     installs itself as a custom version profile and writes its
+#                     own class name in there in plain text.
+#   launcher profile  launcher_profiles.json can carry JVM arguments, and
+#                     -javaagent: is how a ghost client gets attached to the game.
+#   resource pack     a .zip in resourcepacks/ or shaderpacks/ containing .class or
+#                     .jar entries. A pack is textures, sounds, json and shader
+#                     source; Java classes in one are not a thing.
+#   config folder     config/<name> named after a known client. A config folder
+#                     outlives the jar - it is what is left when somebody deletes
+#                     the mod and not its settings.
+#
+# Mirrored from ml/instscan.py; parity is machine-checked by ml/test_instscan.py.
+# ---------------------------------------------------------------------------
+# What a normal version profile starts. The list is not the test - the test is
+# whether a CHEAT's own name is in there - but anything outside it is worth a look.
+$script:instKnownMain = @(
+    'cpw.mods.bootstraplauncher.BootstrapLauncher'
+    'cpw.mods.modlauncher.Launcher'
+    'io.github.zekerzhayard.forgewrapper.installer.Main'
+    'net.fabricmc.loader.impl.launch.knot.KnotClient'
+    'net.minecraft.client.main.Main'
+    'net.minecraft.launchwrapper.Launch'
+    'org.quiltmc.loader.impl.launch.knot.KnotClient'
+)
+$script:instJavaAgent  = '-javaagent:\s*([^\"'',\s\]]+)'
+$script:instMainClass  = '"mainClass"\s*:\s*"([^"]+)"'
+$script:instTweakClass = '--tweakClass["\s,:]+([\w.$]+)'
+# Entries a resource pack has no business containing. .jar is in there because a
+# pack that ships one is a jar in a costume.
+$script:instPackExec   = '\.(class|jar|dll|so|dylib|exe)$'

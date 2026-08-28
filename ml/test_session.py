@@ -87,6 +87,11 @@ SCANS = [
     # The jar can be gone. The log line saying it loaded is not, and it is dated.
     ("Mods folder spotless, cheat named in the log",
      dict(total_mods=20, verified=20, log_cheat=1), {"Confirmed"}),
+    # None of these is in the mods folder, and all of them outlive deleting the jar.
+    ("Launcher profile starts a cheat's own class",
+     dict(total_mods=20, verified=20, instance_cheat=1), {"Confirmed"}),
+    ("A -javaagent in the launcher profile",
+     dict(total_mods=20, verified=20, instance_agent=1), {"Likely"}),
 ]
 
 print("=== Session scoring (whole scan, not one jar) ===")

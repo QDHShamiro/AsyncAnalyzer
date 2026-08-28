@@ -80,6 +80,8 @@ $script:AltClients = [System.Collections.Generic.List[string]]::new()
 # instances' logs/ and crash-reports/ to read.
 $script:ScanTargetDirs = [System.Collections.Generic.List[string]]::new()
 $script:LogHits = 0
+$script:InstanceHits = 0
+$script:InstanceAgents = 0
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null

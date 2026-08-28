@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_logscan.py` (21, log evidence + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_logscan.py` (21, log evidence + PS parity), `test_instscan.py` (31, launcher profiles / packs / config folders + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -214,6 +214,28 @@ silently), and that the PS feature ORDER equals the Python one.
 - Client installed but no mods/addons folder found -> `Add-ScanGap`. A format that
   cannot be read is not a clean result.
 
+## The rest of the .minecraft folder (not mods/)
+- `ml/instscan.py` is the source of truth; `$script:instKnownMain`, `instJavaAgent`,
+  `instMainClass`, `instTweakClass`, `instPackExec` in `src/10-signatures.ps1` are
+  generated from it, parity-checked by `ml/test_instscan.py` (31).
+  `Test-CheatName` / `Test-CheatConfigDir` / `Run-InstanceScan` / `Show-InstanceScan`
+  in `src/96-pcscan.ps1`, run on every scan.
+- Four things, all structural: `versions/<v>/<v>.json` mainClass + `--tweakClass`
+  (an injected client installs itself as a custom version profile), `-javaagent:`
+  in a launcher profile, `.class`/`.jar` inside a resource or shader pack, and a
+  `config/<name>` folder named after a known client.
+- **Config folders match EXACTLY on the normalised name, not as a substring.** The
+  test file carries `doomsday-realms-datapack-helper`, which a boundary match reads
+  as the Doomsday client because doomsday is also an English word - it caught that
+  on the first run. A config folder is named after the client and nothing else.
+- Session model **v4 -> v5**: `instance_cheat` (5.0, hard rule >=85, auto-labels).
+  `instance_agent` is raw-only at >=60 and does NOT auto-label - it is the one
+  entry here with an innocent reading (a profiler, a dev setup), so it goes to a
+  person with the path rather than being called proof. That split is exactly what
+  the "every cheat-label signal must be a feature" invariant allows.
+- The transparency notice now lists what is read inside Minecraft, because "only
+  scans your mods folder" stopped being true.
+
 ## Game logs and crash reports (the evidence that outlives the jar)
 - `ml/logscan.py` is the source of truth; `$script:logChatLine` / `logCodeContext`
   in `src/10-signatures.ps1` are generated from it and parity-checked by
@@ -271,7 +293,7 @@ silently), and that the PS feature ORDER equals the Python one.
 
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
-- CI runs ten suites now (`test_macro`, `test_logscan` added).
+- CI runs eleven suites now (`test_macro`, `test_logscan`, `test_instscan` added).
 - **CI owns both generated files.** Run the benchmark locally as much as you like, but do NOT commit the regenerated files - the bot writes them on every push to main, and committing your own copy produces a merge conflict every time (it already did once). If you do hit that conflict: resolve it by regenerating rather than hand-editing, and for the history take the UNION of both sides keyed by commit.
 - `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all seven suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
 - **Regression gates fail the build**: no real library flagged by a cheat rule; aim + dropper always detected; detection independent of hiding depth.
@@ -282,7 +304,7 @@ silently), and that the PS feature ORDER equals the Python one.
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **79/79**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **81/81**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

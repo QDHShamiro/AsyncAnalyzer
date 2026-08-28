@@ -14,8 +14,11 @@ W "    $([char]0x2713) Network use is limited to looking mods up by hash on Modr
 W "      CurseForge / Megabase $([char]0x2014) only the file hash is sent, never the file." DarkGray
 W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud, no key)." Green
 W "    $([char]0x2713) Verified mods are never flagged. Flags come with a reason + score." Green
-W "    $([char]0x2139) By default it only scans your mods folder. A deep, whole-PC scan is" DarkGray
-W "      optional and asked for separately." DarkGray
+W "    $([char]0x2139) Inside Minecraft it reads: the mods folder, the game's own logs and" DarkGray
+W "      crash reports, the launcher profiles under versions/, and resource and" DarkGray
+W "      shader packs. Nothing outside Minecraft except the folders below." DarkGray
+W "    $([char]0x2139) A deep, whole-PC scan (processes, stray jars, autostart) is separate" DarkGray
+W "      and turns itself on when Minecraft is running or something turns up." DarkGray
 W "    $([char]0x2139) Every scan also reads macro scripts (.ahk .ahk2 .au3 .lua .vbs) in" DarkGray
 W "      Downloads, Desktop, Documents, Temp and your mouse driver's script folder," DarkGray
 W "      because an autoclicker is never in the mods folder and does not need the" DarkGray

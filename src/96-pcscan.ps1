@@ -396,6 +396,215 @@ function Run-BamScan {
     Write-Host ""
 }
 
+function Test-CheatName([string]$Value) {
+    # Mirror of _names_hit() in ml/instscan.py: is this class or path naming a known
+    # cheat? A package path is matched as a substring (it IS a path); a client token
+    # only on a separator boundary, so 'impactclient' is not found in 'impactful'.
+    if ([string]::IsNullOrEmpty($Value)) { return "" }
+    $low = $Value.ToLower()
+    foreach ($p in $script:cheatPackagePaths) {
+        $pl = $p.ToLower()
+        foreach ($form in @($pl, ($pl -replace '/', '.'))) {
+            if ($low.IndexOf($form, [System.StringComparison]::Ordinal) -ge 0) { return $form }
+        }
+    }
+    foreach ($t in $script:distinctiveClientTokens) {
+        $tl = $t.ToLower()
+        if ($tl.Length -lt 5) { continue }
+        if ($low -match ('(?:^|[/.\\_\-])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-])')) { return $tl }
+    }
+    return ""
+}
+
+function Test-CheatConfigDir([string]$Name) {
+    # EXACT on the normalised name, and the difference is not academic: a boundary
+    # match reads "doomsday-realms-datapack-helper" as the Doomsday client, because
+    # doomsday is also an English word with a hyphen after it. A config folder is
+    # named after the client and nothing else, so compare the whole thing.
+    if ([string]::IsNullOrEmpty($Name)) { return "" }
+    $n = ($Name.ToLower() -replace '[^a-z0-9]', '')
+    if ($n.Length -lt 4) { return "" }
+    foreach ($t in $script:distinctiveClientTokens) {
+        if ($n -eq ($t.ToLower() -replace '[^a-z0-9]', '')) { return $t.ToLower() }
+    }
+    return ""
+}
+
+function Run-InstanceScan {
+    # Everything in a .minecraft folder that is not the mods folder.
+    $res = @{
+        Launch = [System.Collections.Generic.List[object]]::new()   # version / launcher profiles
+        Packs  = [System.Collections.Generic.List[object]]::new()   # packs carrying bytecode
+        Configs = [System.Collections.Generic.List[string]]::new()  # cheat config folders
+        UnknownMain = [System.Collections.Generic.List[string]]::new()
+        Checked = 0
+    }
+    $roots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try { $d = [System.IO.Path]::GetDirectoryName($t.TrimEnd('\')); if ($d) { [void]$roots.Add($d) } } catch {}
+    }
+    foreach ($root in $roots) {
+        # --- version profiles: what the launcher actually starts -----------------
+        $vdir = [System.IO.Path]::Combine($root, 'versions')
+        if ([System.IO.Directory]::Exists($vdir)) {
+            try {
+                foreach ($vd in ([System.IO.Directory]::GetDirectories($vdir) | Select-Object -First 60)) {
+                    foreach ($vj in [System.IO.Directory]::GetFiles($vd, '*.json')) {
+                        try {
+                            $fi = [System.IO.FileInfo]::new($vj)
+                            if ($fi.Length -gt 4MB) { continue }
+                            $txt = [System.IO.File]::ReadAllText($vj)
+                        } catch { continue }
+                        $res.Checked++
+                        foreach ($m in ([regex]::Matches($txt, $script:instMainClass))) {
+                            $cls = $m.Groups[1].Value
+                            $hit = Test-CheatName $cls
+                            if ($hit) {
+                                [void]$res.Launch.Add([PSCustomObject]@{ Kind='mainclass'; Value=$cls; File=$vj })
+                            } elseif ($script:instKnownMain -notcontains $cls) {
+                                if (-not $res.UnknownMain.Contains($cls)) { [void]$res.UnknownMain.Add("$cls  ($vj)") }
+                            }
+                        }
+                        foreach ($m in ([regex]::Matches($txt, $script:instTweakClass))) {
+                            if (Test-CheatName $m.Groups[1].Value) {
+                                [void]$res.Launch.Add([PSCustomObject]@{ Kind='tweakclass'; Value=$m.Groups[1].Value; File=$vj })
+                            }
+                        }
+                        foreach ($m in ([regex]::Matches($txt, $script:instJavaAgent))) {
+                            [void]$res.Launch.Add([PSCustomObject]@{ Kind='javaagent'; Value=$m.Groups[1].Value; File=$vj })
+                        }
+                    }
+                }
+            } catch {}
+        }
+        # --- the launcher's own profiles ----------------------------------------
+        foreach ($lp in @('launcher_profiles.json', 'launcher_profiles_microsoft_store.json')) {
+            $lpf = [System.IO.Path]::Combine($root, $lp)
+            if (-not [System.IO.File]::Exists($lpf)) { continue }
+            try {
+                $fi = [System.IO.FileInfo]::new($lpf)
+                if ($fi.Length -gt 8MB) { continue }
+                $txt = [System.IO.File]::ReadAllText($lpf)
+            } catch { continue }
+            $res.Checked++
+            foreach ($m in ([regex]::Matches($txt, $script:instJavaAgent))) {
+                [void]$res.Launch.Add([PSCustomObject]@{ Kind='javaagent'; Value=$m.Groups[1].Value; File=$lpf })
+            }
+        }
+        # --- resource and shader packs carrying bytecode -------------------------
+        foreach ($pdir in @('resourcepacks', 'shaderpacks')) {
+            $pd = [System.IO.Path]::Combine($root, $pdir)
+            if (-not [System.IO.Directory]::Exists($pd)) { continue }
+            try {
+                foreach ($pk in ([System.IO.Directory]::GetFiles($pd, '*.zip') | Select-Object -First 80)) {
+                    $res.Checked++
+                    try {
+                        $fi = [System.IO.FileInfo]::new($pk)
+                        if ($fi.Length -gt 512MB) { continue }
+                        $zip = [System.IO.Compression.ZipFile]::OpenRead($pk)
+                    } catch { continue }
+                    try {
+                        $bad = [System.Collections.Generic.List[string]]::new()
+                        foreach ($e in $zip.Entries) {
+                            if ($e.FullName -match $script:instPackExec) {
+                                [void]$bad.Add($e.FullName)
+                                if ($bad.Count -ge 5) { break }
+                            }
+                        }
+                        if ($bad.Count -gt 0) {
+                            [void]$res.Packs.Add([PSCustomObject]@{ Path=$pk; Entries=@($bad) })
+                        }
+                    } finally { $zip.Dispose() }
+                }
+            } catch {}
+        }
+        # --- config folders named after a client ---------------------------------
+        $cd = [System.IO.Path]::Combine($root, 'config')
+        foreach ($base in @($cd, $root)) {
+            if (-not [System.IO.Directory]::Exists($base)) { continue }
+            try {
+                foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                    $nm = [System.IO.Path]::GetFileName($sub)
+                    $hit = Test-CheatConfigDir $nm
+                    if ($hit -and -not $res.Configs.Contains($sub)) {
+                        $when = try { [System.IO.Directory]::GetLastWriteTime($sub).ToString('yyyy-MM-dd HH:mm') } catch { "?" }
+                        [void]$res.Configs.Add("$sub  ($([char]0x2192) $hit, last changed $when)")
+                    }
+                }
+            } catch {}
+        }
+    }
+    return $res
+}
+
+function Show-InstanceScan {
+    $inst = Run-InstanceScan
+    # A -javaagent line is counted separately: it is the one entry here with an
+    # innocent reading (a profiler, a dev setup), so it flags for a person at Likely
+    # rather than joining the things that are proof.
+    $agents = @($inst.Launch | Where-Object { $_.Kind -eq 'javaagent' })
+    $script:InstanceAgents = $agents.Count
+    $script:InstanceHits = ($inst.Launch.Count - $agents.Count) + $inst.Packs.Count + $inst.Configs.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) THE REST OF THE MINECRAFT FOLDER " + "$([char]0x2500)" * 37 + "$([char]0x2510)") DarkCyan
+    $iLine = "  $([char]0x2502)  Checked $($inst.Checked) profile(s) and pack(s)"
+    W ($iLine + (" " * [Math]::Max(0, 75 - $iLine.Length)) + "$([char]0x2502)") DarkGray
+    if ($script:InstanceHits -eq 0) {
+        W ("  $([char]0x2502)   OK $([char]0x2014) launcher profiles, packs and configs are ordinary" + (" " * 19) + "$([char]0x2502)") DarkCyan
+    } else {
+        foreach ($l in $inst.Launch) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) $($l.Kind.ToUpper())  $($l.Value)" Red
+            W "  $([char]0x2502)    $($l.File)" DarkYellow
+        }
+        foreach ($pk in $inst.Packs) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) PACK WITH CODE  $($pk.Path)" Red
+            foreach ($e in $pk.Entries) { W "  $([char]0x2502)    $e" DarkYellow }
+        }
+        foreach ($c in $inst.Configs) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) CHEAT CONFIG  $c" Red
+        }
+    }
+    foreach ($u in ($inst.UnknownMain | Select-Object -First 5)) {
+        W "  $([char]0x2502)  $([char]0x2022) launcher starts an unrecognised class: $u" DarkGray
+    }
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
+    Write-Host ""
+
+    $script:SysArea = "Rest of the PC"
+    if ($inst.Launch.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($inst.Launch.Count) launcher profile entr(y/ies) that start something other than the game" `
+            @($inst.Launch | ForEach-Object { "$($_.Kind): $($_.Value)  $([char]0x2014) $($_.File)" }) `
+            "Every versions/<v>/<v>.json and launcher_profiles.json was read for the class the launcher starts, the tweaker it passes, and any -javaagent it attaches." `
+            "An injected client installs itself as a custom version profile and writes its own class name in there in plain text. A -javaagent line is how a ghost client is attached to the game at launch." `
+            "" "This is written down before the game starts, so it is there even if the jar is not." | Out-Null
+    }
+    if ($inst.Packs.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($inst.Packs.Count) resource/shader pack(s) containing executable code" `
+            @($inst.Packs | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Entries) -join ', ')" }) `
+            "Resource and shader packs were opened and their entry names read." `
+            "A pack is textures, sounds, json and shader source. Java classes or a jar inside one is a jar in a costume $([char]0x2014) packs are not loaded from the mods folder, so this is a hiding place." | Out-Null
+    }
+    if ($inst.Configs.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($inst.Configs.Count) config folder(s) named after a cheat client" `
+            @($inst.Configs) `
+            "Folder names under config/ and the instance root were compared, whole and normalised, against the known-client list." `
+            "A config folder outlives the jar: it is what is left when somebody deletes the mod and not its settings. The date says when it was last used." | Out-Null
+    }
+    if ($inst.UnknownMain.Count -gt 0) {
+        Add-Finding "INFO" "Rest of the PC" "$($inst.UnknownMain.Count) launcher profile(s) start a class this tool does not recognise" `
+            @($inst.UnknownMain) `
+            "The mainClass of every version profile was compared against the ones vanilla, Forge, Fabric and Quilt use." `
+            "Not a finding $([char]0x2014) custom launchers and wrappers are ordinary. It is listed because an injected client also looks exactly like this." | Out-Null
+    }
+    if ($script:InstanceHits -eq 0 -and $inst.Checked -gt 0) {
+        Add-Finding "OK" "Rest of the PC" "Launcher profiles, resource packs and config folders $([char]0x2014) nothing out of place" `
+            @() "$($inst.Checked) version profile(s), launcher profile(s) and pack(s) were read." | Out-Null
+    }
+}
+
 function Test-LogLine([string]$Line) {
     # Mirror of classify_line() in ml/logscan.py. Returns @{ Kind = ""|"package"|"client"; Evidence = "" }.
     $out = @{ Kind = ""; Evidence = "" }

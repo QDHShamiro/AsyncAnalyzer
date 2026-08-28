@@ -80,6 +80,8 @@ $script:AltClients = [System.Collections.Generic.List[string]]::new()
 # instances' logs/ and crash-reports/ to read.
 $script:ScanTargetDirs = [System.Collections.Generic.List[string]]::new()
 $script:LogHits = 0
+$script:InstanceHits = 0
+$script:InstanceAgents = 0
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
@@ -756,6 +758,44 @@ $script:logCodeContext = '^\s*at\s+[\w$.]+\(|\bClassNotFoundException\b|\bNoClas
 $script:logModListHeader = 'Loading \d+ mods?:|Mod List:|Loading Minecraft .* with'
 $script:logModListItem = '^\s*[-│|]\s*([a-z0-9_-]{2,64})\s+([\w.+-]{1,32})\s*$'
 
+# ---------------------------------------------------------------------------
+# The parts of a Minecraft install that are NOT the mods folder
+#
+# Four things, all structural rather than fuzzy, because this directory is full of
+# files every normal player has and none of them may be accused:
+#   version profile   versions/<v>/<v>.json says which mainClass the launcher
+#                     starts and which --tweakClass it passes. An injected client
+#                     installs itself as a custom version profile and writes its
+#                     own class name in there in plain text.
+#   launcher profile  launcher_profiles.json can carry JVM arguments, and
+#                     -javaagent: is how a ghost client gets attached to the game.
+#   resource pack     a .zip in resourcepacks/ or shaderpacks/ containing .class or
+#                     .jar entries. A pack is textures, sounds, json and shader
+#                     source; Java classes in one are not a thing.
+#   config folder     config/<name> named after a known client. A config folder
+#                     outlives the jar - it is what is left when somebody deletes
+#                     the mod and not its settings.
+#
+# Mirrored from ml/instscan.py; parity is machine-checked by ml/test_instscan.py.
+# ---------------------------------------------------------------------------
+# What a normal version profile starts. The list is not the test - the test is
+# whether a CHEAT's own name is in there - but anything outside it is worth a look.
+$script:instKnownMain = @(
+    'cpw.mods.bootstraplauncher.BootstrapLauncher'
+    'cpw.mods.modlauncher.Launcher'
+    'io.github.zekerzhayard.forgewrapper.installer.Main'
+    'net.fabricmc.loader.impl.launch.knot.KnotClient'
+    'net.minecraft.client.main.Main'
+    'net.minecraft.launchwrapper.Launch'
+    'org.quiltmc.loader.impl.launch.knot.KnotClient'
+)
+$script:instJavaAgent  = '-javaagent:\s*([^\"'',\s\]]+)'
+$script:instMainClass  = '"mainClass"\s*:\s*"([^"]+)"'
+$script:instTweakClass = '--tweakClass["\s,:]+([\w.$]+)'
+# Entries a resource pack has no business containing. .jar is in there because a
+# pack that ships one is a jar in a costume.
+$script:instPackExec   = '\.(class|jar|dll|so|dylib|exe)$'
+
 $script:mlModelVersion = 2
 $script:mlIntercept = -3.595535
 $script:mlFeatureOrder = @('pkgpath','cheatsite','strong_sig','weak_sig','fullwidth_str','fullwidth_cls','japanese_cls','singlechar_cls','numeric_cls','novowel_cls','avg_entropy','high_entropy','reflection','runtime_exec','http_download','http_exfil','nested_hollow','fake_identity','filename_client','random_name','verified','legit_modid')
@@ -974,8 +1014,8 @@ function Update-ModelOnline($raw, $label) {
 # from every finished scan, locally and (with team mode) across everyone.
 # Source of truth for the weights: ml/session_model.py -> ml/session_model.json
 # ---------------------------------------------------------------------------
-$script:smModelVersion = 4
-$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat','log_cheat')
+$script:smModelVersion = 5
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat','log_cheat','instance_cheat')
 $script:smIntercept = -4.0
 $script:smWeights = @{
     'flagged_ratio' = 4
@@ -999,6 +1039,7 @@ $script:smWeights = @{
     'hidden_api' = 0.8
     'macro_cheat' = 4.5
     'log_cheat' = 5
+    'instance_cheat' = 5
 }
 $script:smBaseWeights = @{}
 foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
@@ -1042,6 +1083,11 @@ function Get-SessionRaw {
         # The game's own logs. This is the evidence that survives deleting the jar:
         # a log line says the cheat LOADED, and says when.
         log_cheat        = [int]$script:LogHits
+        # The rest of the .minecraft folder: a launcher profile that starts a
+        # cheat's own class, a pack carrying bytecode, a config folder named after a
+        # client. None of it is in the mods folder, all of it outlives the jar.
+        instance_cheat   = [int]$script:InstanceHits
+        instance_agent   = [int]$script:InstanceAgents
     }
 }
 
@@ -1071,6 +1117,7 @@ function Get-SessionVector($raw) {
         hidden_api       = Get-Clip01 ([Math]::Min([double]$raw.hidden_api, 2.0) / 2.0)
         macro_cheat      = $(if ($raw.macro_cheat) { 1.0 } else { 0.0 })
         log_cheat        = $(if ($raw.log_cheat) { 1.0 } else { 0.0 })
+        instance_cheat   = $(if ($raw.instance_cheat) { 1.0 } else { 0.0 })
     }
 }
 
@@ -1107,6 +1154,14 @@ function Get-SessionVerdict($raw) {
     # excluded before anything is matched, so this cannot be someone typing a cheat
     # name at another player.
     if ($raw.log_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.log_cheat) cheat name(s) found in Minecraft's OWN logs $([char]0x2014) proof it was loaded, with a timestamp, whatever is in the mods folder now") }
+    # The launcher profile that starts the cheat, the pack with bytecode in it, the
+    # config folder named after a client. Written down before the game starts, and
+    # left behind after the jar is gone.
+    if ($raw.instance_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.instance_cheat) thing(s) in the Minecraft folder outside mods name a cheat $([char]0x2014) a launcher profile that starts it, a pack carrying code, or its config folder") }
+    # A -javaagent in a launcher profile is how a ghost client gets attached at
+    # launch. One step below the rest, because a profiler or a dev setup can carry
+    # one too - so it flags for a person and teaches the model nothing.
+    if ($raw.instance_agent -gt 0) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.instance_agent) launcher profile(s) attach a Java agent at startup $([char]0x2014) that is how an injected client is loaded, and the path is in the report") }
     # An autoclicker is not a mod and never shows up in the mods folder. A script
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
@@ -1138,12 +1193,13 @@ function Get-SessionVerdictCached {
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
     if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0 -or
-        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0 -or $raw.log_cheat -gt 0) { return 1 }
+        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0 -or $raw.log_cheat -gt 0 -or
+        $raw.instance_cheat -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
         $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
         $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
         $raw.behaviour_cheat -eq 0 -and $raw.behaviour_likely -eq 0 -and $raw.server_rule -eq 0 -and
-        $raw.log_cheat -eq 0 -and
+        $raw.log_cheat -eq 0 -and $raw.instance_cheat -eq 0 -and $raw.instance_agent -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }
@@ -2571,6 +2627,8 @@ function Invoke-SelfTest {
         @{ Label = "Server-rule findings only"; Bands = @("Review"); Raw = @{ total_mods = 40; verified = 20; review = 8; server_rule = 8 } }
         # The jar can be gone. The log line saying it loaded is not, and it is dated.
         @{ Label = "Mods clean, cheat named in the log"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; log_cheat = 1 } }
+        @{ Label = "Launcher profile starts a cheat class"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; instance_cheat = 1 } }
+        @{ Label = "A -javaagent in the launcher profile"; Bands = @("Likely"); Raw = @{ total_mods = 20; verified = 20; instance_agent = 1 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {
@@ -4882,8 +4940,11 @@ W "    $([char]0x2713) Network use is limited to looking mods up by hash on Modr
 W "      CurseForge / Megabase $([char]0x2014) only the file hash is sent, never the file." DarkGray
 W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud, no key)." Green
 W "    $([char]0x2713) Verified mods are never flagged. Flags come with a reason + score." Green
-W "    $([char]0x2139) By default it only scans your mods folder. A deep, whole-PC scan is" DarkGray
-W "      optional and asked for separately." DarkGray
+W "    $([char]0x2139) Inside Minecraft it reads: the mods folder, the game's own logs and" DarkGray
+W "      crash reports, the launcher profiles under versions/, and resource and" DarkGray
+W "      shader packs. Nothing outside Minecraft except the folders below." DarkGray
+W "    $([char]0x2139) A deep, whole-PC scan (processes, stray jars, autostart) is separate" DarkGray
+W "      and turns itself on when Minecraft is running or something turns up." DarkGray
 W "    $([char]0x2139) Every scan also reads macro scripts (.ahk .ahk2 .au3 .lua .vbs) in" DarkGray
 W "      Downloads, Desktop, Documents, Temp and your mouse driver's script folder," DarkGray
 W "      because an autoclicker is never in the mods folder and does not need the" DarkGray
@@ -5658,6 +5719,215 @@ function Run-BamScan {
     }
 
     Write-Host ""
+}
+
+function Test-CheatName([string]$Value) {
+    # Mirror of _names_hit() in ml/instscan.py: is this class or path naming a known
+    # cheat? A package path is matched as a substring (it IS a path); a client token
+    # only on a separator boundary, so 'impactclient' is not found in 'impactful'.
+    if ([string]::IsNullOrEmpty($Value)) { return "" }
+    $low = $Value.ToLower()
+    foreach ($p in $script:cheatPackagePaths) {
+        $pl = $p.ToLower()
+        foreach ($form in @($pl, ($pl -replace '/', '.'))) {
+            if ($low.IndexOf($form, [System.StringComparison]::Ordinal) -ge 0) { return $form }
+        }
+    }
+    foreach ($t in $script:distinctiveClientTokens) {
+        $tl = $t.ToLower()
+        if ($tl.Length -lt 5) { continue }
+        if ($low -match ('(?:^|[/.\\_\-])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-])')) { return $tl }
+    }
+    return ""
+}
+
+function Test-CheatConfigDir([string]$Name) {
+    # EXACT on the normalised name, and the difference is not academic: a boundary
+    # match reads "doomsday-realms-datapack-helper" as the Doomsday client, because
+    # doomsday is also an English word with a hyphen after it. A config folder is
+    # named after the client and nothing else, so compare the whole thing.
+    if ([string]::IsNullOrEmpty($Name)) { return "" }
+    $n = ($Name.ToLower() -replace '[^a-z0-9]', '')
+    if ($n.Length -lt 4) { return "" }
+    foreach ($t in $script:distinctiveClientTokens) {
+        if ($n -eq ($t.ToLower() -replace '[^a-z0-9]', '')) { return $t.ToLower() }
+    }
+    return ""
+}
+
+function Run-InstanceScan {
+    # Everything in a .minecraft folder that is not the mods folder.
+    $res = @{
+        Launch = [System.Collections.Generic.List[object]]::new()   # version / launcher profiles
+        Packs  = [System.Collections.Generic.List[object]]::new()   # packs carrying bytecode
+        Configs = [System.Collections.Generic.List[string]]::new()  # cheat config folders
+        UnknownMain = [System.Collections.Generic.List[string]]::new()
+        Checked = 0
+    }
+    $roots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try { $d = [System.IO.Path]::GetDirectoryName($t.TrimEnd('\')); if ($d) { [void]$roots.Add($d) } } catch {}
+    }
+    foreach ($root in $roots) {
+        # --- version profiles: what the launcher actually starts -----------------
+        $vdir = [System.IO.Path]::Combine($root, 'versions')
+        if ([System.IO.Directory]::Exists($vdir)) {
+            try {
+                foreach ($vd in ([System.IO.Directory]::GetDirectories($vdir) | Select-Object -First 60)) {
+                    foreach ($vj in [System.IO.Directory]::GetFiles($vd, '*.json')) {
+                        try {
+                            $fi = [System.IO.FileInfo]::new($vj)
+                            if ($fi.Length -gt 4MB) { continue }
+                            $txt = [System.IO.File]::ReadAllText($vj)
+                        } catch { continue }
+                        $res.Checked++
+                        foreach ($m in ([regex]::Matches($txt, $script:instMainClass))) {
+                            $cls = $m.Groups[1].Value
+                            $hit = Test-CheatName $cls
+                            if ($hit) {
+                                [void]$res.Launch.Add([PSCustomObject]@{ Kind='mainclass'; Value=$cls; File=$vj })
+                            } elseif ($script:instKnownMain -notcontains $cls) {
+                                if (-not $res.UnknownMain.Contains($cls)) { [void]$res.UnknownMain.Add("$cls  ($vj)") }
+                            }
+                        }
+                        foreach ($m in ([regex]::Matches($txt, $script:instTweakClass))) {
+                            if (Test-CheatName $m.Groups[1].Value) {
+                                [void]$res.Launch.Add([PSCustomObject]@{ Kind='tweakclass'; Value=$m.Groups[1].Value; File=$vj })
+                            }
+                        }
+                        foreach ($m in ([regex]::Matches($txt, $script:instJavaAgent))) {
+                            [void]$res.Launch.Add([PSCustomObject]@{ Kind='javaagent'; Value=$m.Groups[1].Value; File=$vj })
+                        }
+                    }
+                }
+            } catch {}
+        }
+        # --- the launcher's own profiles ----------------------------------------
+        foreach ($lp in @('launcher_profiles.json', 'launcher_profiles_microsoft_store.json')) {
+            $lpf = [System.IO.Path]::Combine($root, $lp)
+            if (-not [System.IO.File]::Exists($lpf)) { continue }
+            try {
+                $fi = [System.IO.FileInfo]::new($lpf)
+                if ($fi.Length -gt 8MB) { continue }
+                $txt = [System.IO.File]::ReadAllText($lpf)
+            } catch { continue }
+            $res.Checked++
+            foreach ($m in ([regex]::Matches($txt, $script:instJavaAgent))) {
+                [void]$res.Launch.Add([PSCustomObject]@{ Kind='javaagent'; Value=$m.Groups[1].Value; File=$lpf })
+            }
+        }
+        # --- resource and shader packs carrying bytecode -------------------------
+        foreach ($pdir in @('resourcepacks', 'shaderpacks')) {
+            $pd = [System.IO.Path]::Combine($root, $pdir)
+            if (-not [System.IO.Directory]::Exists($pd)) { continue }
+            try {
+                foreach ($pk in ([System.IO.Directory]::GetFiles($pd, '*.zip') | Select-Object -First 80)) {
+                    $res.Checked++
+                    try {
+                        $fi = [System.IO.FileInfo]::new($pk)
+                        if ($fi.Length -gt 512MB) { continue }
+                        $zip = [System.IO.Compression.ZipFile]::OpenRead($pk)
+                    } catch { continue }
+                    try {
+                        $bad = [System.Collections.Generic.List[string]]::new()
+                        foreach ($e in $zip.Entries) {
+                            if ($e.FullName -match $script:instPackExec) {
+                                [void]$bad.Add($e.FullName)
+                                if ($bad.Count -ge 5) { break }
+                            }
+                        }
+                        if ($bad.Count -gt 0) {
+                            [void]$res.Packs.Add([PSCustomObject]@{ Path=$pk; Entries=@($bad) })
+                        }
+                    } finally { $zip.Dispose() }
+                }
+            } catch {}
+        }
+        # --- config folders named after a client ---------------------------------
+        $cd = [System.IO.Path]::Combine($root, 'config')
+        foreach ($base in @($cd, $root)) {
+            if (-not [System.IO.Directory]::Exists($base)) { continue }
+            try {
+                foreach ($sub in [System.IO.Directory]::GetDirectories($base)) {
+                    $nm = [System.IO.Path]::GetFileName($sub)
+                    $hit = Test-CheatConfigDir $nm
+                    if ($hit -and -not $res.Configs.Contains($sub)) {
+                        $when = try { [System.IO.Directory]::GetLastWriteTime($sub).ToString('yyyy-MM-dd HH:mm') } catch { "?" }
+                        [void]$res.Configs.Add("$sub  ($([char]0x2192) $hit, last changed $when)")
+                    }
+                }
+            } catch {}
+        }
+    }
+    return $res
+}
+
+function Show-InstanceScan {
+    $inst = Run-InstanceScan
+    # A -javaagent line is counted separately: it is the one entry here with an
+    # innocent reading (a profiler, a dev setup), so it flags for a person at Likely
+    # rather than joining the things that are proof.
+    $agents = @($inst.Launch | Where-Object { $_.Kind -eq 'javaagent' })
+    $script:InstanceAgents = $agents.Count
+    $script:InstanceHits = ($inst.Launch.Count - $agents.Count) + $inst.Packs.Count + $inst.Configs.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) THE REST OF THE MINECRAFT FOLDER " + "$([char]0x2500)" * 37 + "$([char]0x2510)") DarkCyan
+    $iLine = "  $([char]0x2502)  Checked $($inst.Checked) profile(s) and pack(s)"
+    W ($iLine + (" " * [Math]::Max(0, 75 - $iLine.Length)) + "$([char]0x2502)") DarkGray
+    if ($script:InstanceHits -eq 0) {
+        W ("  $([char]0x2502)   OK $([char]0x2014) launcher profiles, packs and configs are ordinary" + (" " * 19) + "$([char]0x2502)") DarkCyan
+    } else {
+        foreach ($l in $inst.Launch) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) $($l.Kind.ToUpper())  $($l.Value)" Red
+            W "  $([char]0x2502)    $($l.File)" DarkYellow
+        }
+        foreach ($pk in $inst.Packs) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) PACK WITH CODE  $($pk.Path)" Red
+            foreach ($e in $pk.Entries) { W "  $([char]0x2502)    $e" DarkYellow }
+        }
+        foreach ($c in $inst.Configs) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) CHEAT CONFIG  $c" Red
+        }
+    }
+    foreach ($u in ($inst.UnknownMain | Select-Object -First 5)) {
+        W "  $([char]0x2502)  $([char]0x2022) launcher starts an unrecognised class: $u" DarkGray
+    }
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
+    Write-Host ""
+
+    $script:SysArea = "Rest of the PC"
+    if ($inst.Launch.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($inst.Launch.Count) launcher profile entr(y/ies) that start something other than the game" `
+            @($inst.Launch | ForEach-Object { "$($_.Kind): $($_.Value)  $([char]0x2014) $($_.File)" }) `
+            "Every versions/<v>/<v>.json and launcher_profiles.json was read for the class the launcher starts, the tweaker it passes, and any -javaagent it attaches." `
+            "An injected client installs itself as a custom version profile and writes its own class name in there in plain text. A -javaagent line is how a ghost client is attached to the game at launch." `
+            "" "This is written down before the game starts, so it is there even if the jar is not." | Out-Null
+    }
+    if ($inst.Packs.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($inst.Packs.Count) resource/shader pack(s) containing executable code" `
+            @($inst.Packs | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Entries) -join ', ')" }) `
+            "Resource and shader packs were opened and their entry names read." `
+            "A pack is textures, sounds, json and shader source. Java classes or a jar inside one is a jar in a costume $([char]0x2014) packs are not loaded from the mods folder, so this is a hiding place." | Out-Null
+    }
+    if ($inst.Configs.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($inst.Configs.Count) config folder(s) named after a cheat client" `
+            @($inst.Configs) `
+            "Folder names under config/ and the instance root were compared, whole and normalised, against the known-client list." `
+            "A config folder outlives the jar: it is what is left when somebody deletes the mod and not its settings. The date says when it was last used." | Out-Null
+    }
+    if ($inst.UnknownMain.Count -gt 0) {
+        Add-Finding "INFO" "Rest of the PC" "$($inst.UnknownMain.Count) launcher profile(s) start a class this tool does not recognise" `
+            @($inst.UnknownMain) `
+            "The mainClass of every version profile was compared against the ones vanilla, Forge, Fabric and Quilt use." `
+            "Not a finding $([char]0x2014) custom launchers and wrappers are ordinary. It is listed because an injected client also looks exactly like this." | Out-Null
+    }
+    if ($script:InstanceHits -eq 0 -and $inst.Checked -gt 0) {
+        Add-Finding "OK" "Rest of the PC" "Launcher profiles, resource packs and config folders $([char]0x2014) nothing out of place" `
+            @() "$($inst.Checked) version profile(s), launcher profile(s) and pack(s) were read." | Out-Null
+    }
 }
 
 function Test-LogLine([string]$Line) {
@@ -7013,6 +7283,7 @@ Write-Host ""
 # log line says the cheat LOADED, and says when.
 Show-MacroScan
 Show-LogScan
+Show-InstanceScan
 
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {

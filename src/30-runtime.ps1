@@ -170,8 +170,8 @@ function Update-ModelOnline($raw, $label) {
 # from every finished scan, locally and (with team mode) across everyone.
 # Source of truth for the weights: ml/session_model.py -> ml/session_model.json
 # ---------------------------------------------------------------------------
-$script:smModelVersion = 4
-$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat','log_cheat')
+$script:smModelVersion = 5
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat','log_cheat','instance_cheat')
 $script:smIntercept = -4.0
 $script:smWeights = @{
     'flagged_ratio' = 4
@@ -195,6 +195,7 @@ $script:smWeights = @{
     'hidden_api' = 0.8
     'macro_cheat' = 4.5
     'log_cheat' = 5
+    'instance_cheat' = 5
 }
 $script:smBaseWeights = @{}
 foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
@@ -238,6 +239,11 @@ function Get-SessionRaw {
         # The game's own logs. This is the evidence that survives deleting the jar:
         # a log line says the cheat LOADED, and says when.
         log_cheat        = [int]$script:LogHits
+        # The rest of the .minecraft folder: a launcher profile that starts a
+        # cheat's own class, a pack carrying bytecode, a config folder named after a
+        # client. None of it is in the mods folder, all of it outlives the jar.
+        instance_cheat   = [int]$script:InstanceHits
+        instance_agent   = [int]$script:InstanceAgents
     }
 }
 
@@ -267,6 +273,7 @@ function Get-SessionVector($raw) {
         hidden_api       = Get-Clip01 ([Math]::Min([double]$raw.hidden_api, 2.0) / 2.0)
         macro_cheat      = $(if ($raw.macro_cheat) { 1.0 } else { 0.0 })
         log_cheat        = $(if ($raw.log_cheat) { 1.0 } else { 0.0 })
+        instance_cheat   = $(if ($raw.instance_cheat) { 1.0 } else { 0.0 })
     }
 }
 
@@ -303,6 +310,14 @@ function Get-SessionVerdict($raw) {
     # excluded before anything is matched, so this cannot be someone typing a cheat
     # name at another player.
     if ($raw.log_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.log_cheat) cheat name(s) found in Minecraft's OWN logs $([char]0x2014) proof it was loaded, with a timestamp, whatever is in the mods folder now") }
+    # The launcher profile that starts the cheat, the pack with bytecode in it, the
+    # config folder named after a client. Written down before the game starts, and
+    # left behind after the jar is gone.
+    if ($raw.instance_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.instance_cheat) thing(s) in the Minecraft folder outside mods name a cheat $([char]0x2014) a launcher profile that starts it, a pack carrying code, or its config folder") }
+    # A -javaagent in a launcher profile is how a ghost client gets attached at
+    # launch. One step below the rest, because a profiler or a dev setup can carry
+    # one too - so it flags for a person and teaches the model nothing.
+    if ($raw.instance_agent -gt 0) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.instance_agent) launcher profile(s) attach a Java agent at startup $([char]0x2014) that is how an injected client is loaded, and the path is in the report") }
     # An autoclicker is not a mod and never shows up in the mods folder. A script
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
@@ -334,12 +349,13 @@ function Get-SessionVerdictCached {
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
     if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0 -or
-        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0 -or $raw.log_cheat -gt 0) { return 1 }
+        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0 -or $raw.log_cheat -gt 0 -or
+        $raw.instance_cheat -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
         $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
         $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
         $raw.behaviour_cheat -eq 0 -and $raw.behaviour_likely -eq 0 -and $raw.server_rule -eq 0 -and
-        $raw.log_cheat -eq 0 -and
+        $raw.log_cheat -eq 0 -and $raw.instance_cheat -eq 0 -and $raw.instance_agent -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }

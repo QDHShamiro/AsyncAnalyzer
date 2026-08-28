@@ -56,9 +56,14 @@ FEATURE_NAMES = [
     # does. Chat is excluded before anything is matched, so it cannot be someone
     # typing a cheat name at another player.
     "log_cheat",         # 0/1 a cheat package path or client name in the game's logs
+    # v5: the rest of the .minecraft folder. A launcher profile that starts a
+    # cheat's own class, a resource pack carrying bytecode, a config folder named
+    # after a client - none of which is in the mods folder, and all of which
+    # outlive deleting the jar.
+    "instance_cheat",    # 0/1 launcher profile / pack / config folder naming a cheat
 ]
 
-VERSION = 4
+VERSION = 5
 
 # Expert prior. Deliberately conservative: nothing except real proof
 # (a hard-confirmed cheat, an injected JVM, a cheat process) can push a scan
@@ -94,6 +99,7 @@ WEIGHTS = {
     # The strongest single thing this tool can find short of the cheat being live in
     # memory: proof it was loaded, with a timestamp.
     "log_cheat":        5.0,
+    "instance_cheat":   5.0,
 }
 
 
@@ -128,6 +134,7 @@ def raw_to_vector(raw):
         _c01(min(raw.get("hidden_api", 0), 2) / 2.0),
         1.0 if raw.get("macro_cheat", 0) else 0.0,
         1.0 if raw.get("log_cheat", 0) else 0.0,
+        1.0 if raw.get("instance_cheat", 0) else 0.0,
     ]
 
 
@@ -193,6 +200,16 @@ def verdict(raw, weights=None, intercept=None):
     # jar can be gone; the record that it loaded is not, and it is dated.
     if raw.get("log_cheat", 0) > 0:
         score = max(score, 85)
+    # The launcher profile that starts the cheat, the pack with bytecode in it, the
+    # config folder named after a client. Written down before the game starts, and
+    # left behind after the jar is gone.
+    if raw.get("instance_cheat", 0) > 0:
+        score = max(score, 85)
+    # A -javaagent in a launcher profile is how a ghost client gets attached at
+    # launch. One step below the rest, because a profiler or a dev setup can carry
+    # one too - so it flags for a person and does not auto-label anything.
+    if raw.get("instance_agent", 0) > 0:
+        score = max(score, 60)
     # An autoclicker is not a mod and never appears in the mods folder. A script
     # that repeats mouse input IN A LOOP and names the Minecraft window, the
     # launcher or javaw has no second reading. These reach the verdict as hard
@@ -216,7 +233,7 @@ def label_for(raw):
     if (raw.get("hard_confirmed") or raw.get("jvm_inject", 0) > 0
             or raw.get("cheat_procs", 0) > 0 or raw.get("mem_client", 0) > 0
             or raw.get("macro_cheat", 0) > 0 or raw.get("behaviour_cheat", 0) > 0
-            or raw.get("log_cheat", 0) > 0):
+            or raw.get("log_cheat", 0) > 0 or raw.get("instance_cheat", 0) > 0):
         return 1
     if (
         raw.get("total_mods", 0) > 0
@@ -233,6 +250,8 @@ def label_for(raw):
         and raw.get("behaviour_likely", 0) == 0
         and raw.get("server_rule", 0) == 0
         and raw.get("log_cheat", 0) == 0
+        and raw.get("instance_cheat", 0) == 0
+        and raw.get("instance_agent", 0) == 0
         and raw.get("verified", 0) >= 0.6 * raw.get("total_mods", 0)
     ):
         return 0

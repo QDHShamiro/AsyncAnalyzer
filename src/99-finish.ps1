@@ -71,6 +71,7 @@ Write-Host ""
 # log line says the cheat LOADED, and says when.
 Show-MacroScan
 Show-LogScan
+Show-InstanceScan
 
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {
