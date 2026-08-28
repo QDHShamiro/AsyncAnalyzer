@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -167,6 +167,26 @@ closer to "cheat". The macro signals did exactly that when they went in as hard
 rules only. Three checks now guard it: the invariant, that the PS
 `Get-SessionVector` covers every feature (a missing key multiplies by `$null` = 0,
 silently), and that the PS feature ORDER equals the Python one.
+
+## Alternative clients (Lunar / Badlion / Feather / LabyMod)
+- The three clients' mods folders were already looked up by EXACT path, which works
+  until one of them moves. LabyMod has no mods folder at all - its extensions are
+  jars in `addons/` - so a cheat as a LabyMod addon was never opened.
+- `Get-AltClientRoots` + `Find-AltClientModDirs` (`src/80-discovery.ps1`): each
+  client root is walked to depth 4 and every directory literally named `mods` or
+  `addons` is taken. Survives a version bump by construction.
+- Those folders are **always** scan targets (`AltClient=$true`), open or not: a
+  handful of jars, and exactly where one gets parked when `.minecraft` is watched.
+  They are excluded from `$plain`, so they are neither the "most likely install"
+  guess nor counted as a skipped one - reporting a folder as unchecked while
+  checking it is the one thing the coverage box cannot survive.
+- **Deliberately NOT collected: the jars a client ships itself.** Lunar's own client
+  jars render entities and read the entity list (nametags, waypoints), so treating
+  them as mods would put a SERVER-RULE finding on every Lunar user's report. The
+  walker only takes mods/ and addons/, which those are not in. Pinned in
+  `ml/test_autoscan.py`.
+- Client installed but no mods/addons folder found -> `Add-ScanGap`. A format that
+  cannot be read is not a clean result.
 
 ## Autoclickers / macro files (the half that is not a mod)
 - `ml/macro.py` is the source of truth for the patterns; `$script:macroLangs`,

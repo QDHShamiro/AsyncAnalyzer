@@ -253,6 +253,25 @@ gone **while Minecraft is still open**, the overall verdict goes to at least **L
 the classic wipe-before-the-check pattern. If the game isn't running, the same deletions
 stay **Clean**; people update mods all the time.
 
+### 🌙 Lunar, Badlion, Feather, LabyMod — the other Minecraft on the PC
+
+Their mods folders were already looked up by exact path, which works right up until one
+of them moves. **LabyMod doesn't have a mods folder at all** — its extensions are jars in
+`addons/`, so a cheat shipped as a LabyMod addon was simply never opened.
+
+Now each client's *root* is walked to a bounded depth and every directory literally named
+`mods` or `addons` is taken, which survives a version bump by construction. Those folders
+are **always scanned**, open or not: they hold a handful of jars rather than a modpack, and
+they are exactly where a jar gets parked when `.minecraft` is the folder being watched.
+
+What is deliberately *not* taken is the jars a client ships itself. Lunar's own client jars
+render entities and read the entity list — that's what nametags and waypoints are — so
+treating them as mods would put a **SERVER-REGEL** finding on the report of every Lunar
+user alive. The walker only collects `mods/` and `addons/`, which those are not in.
+
+And if a client is installed but no mods/addons folder turns up under it, that goes in the
+**coverage box** — it means a format this tool cannot read, which is not the same as clean.
+
 ### 🖱 Autoclicker — the half that is not a mod
 
 An autoclicker is never in the mods folder. It is an AutoHotkey script on the desktop, an

@@ -39,6 +39,25 @@ def escalate(state, flagged, review, hard_confirmed, random_named):
 
 
 # -------------------------------------------------------------- targets ---
+def alt_client_dirs(tree, root, max_depth=4):
+    """Find-AltClientModDirs: every directory named mods or addons under a client
+    root, to a bounded depth. Deliberately NOT the loose jars a client ships itself -
+    Lunar's own jars render entities and read the entity list, because that is what
+    nametags and waypoints are, and treating them as mods would put a server-rule
+    finding on the report of every Lunar user alive."""
+    out, queue = [], [(root, 0)]
+    while queue:
+        cur, d = queue.pop(0)
+        for sub in sorted(tree.get(cur, [])):
+            leaf = sub.rsplit("/", 1)[-1].lower()
+            if leaf in ("mods", "addons"):
+                out.append(sub)
+                continue
+            if d < max_depth:
+                queue.append((sub, d + 1))
+    return out
+
+
 def scan_targets(installs, configured, explicit_path=None):
     """Get-ScanTargets: what is OPEN is the ground truth; configured paths add to it."""
     if explicit_path:
@@ -47,13 +66,20 @@ def scan_targets(installs, configured, explicit_path=None):
     running = [i for i in installs if i["running"]]
     if running:
         targets = [i["path"] for i in running]
-        idle = [i for i in installs if not i["running"]]
+        idle = [i for i in installs if not i["running"] and not i.get("alt")]
         if idle:
             gaps.append("%d other install(s) not open" % len(idle))
-    elif installs:
-        targets = [installs[0]["path"]]
-        if len(installs) > 1:
-            gaps.append("%d installs, none open" % len(installs))
+    elif [i for i in installs if not i.get("alt")]:
+        targets = [[i for i in installs if not i.get("alt")][0]["path"]]
+        plain = [i for i in installs if not i.get("alt")]
+        if len(plain) > 1:
+            gaps.append("%d installs, none open" % len(plain))
+    # An alternative client's mods/addons folder is always scanned, open or not: it
+    # holds a handful of jars rather than a modpack, and it is exactly where a jar
+    # gets parked when the vanilla folder is the one being watched.
+    for a in installs:
+        if a.get("alt") and a["jars"] > 0 and a["path"] not in targets:
+            targets.append(a["path"])
     for c in configured:
         if c not in targets:
             targets.append(c)
@@ -106,6 +132,53 @@ def main():
 
     t, _ = scan_targets(two_open, ["X"], explicit_path="P")
     check("-Path wins over everything", t, ["P"])
+
+    print("\n=== Alternative clients (Lunar / Badlion / Feather / LabyMod) ===")
+    # LabyMod has no mods folder at all - its extensions are jars in addons/, which
+    # is why an exact-path lookup for "mods" missed them completely.
+    tree = {
+        "/laby": ["/laby/addons", "/laby/assets", "/laby/versions"],
+        "/laby/versions": ["/laby/versions/1.20"],
+        "/laby/versions/1.20": ["/laby/versions/1.20/mods"],
+        "/laby/assets": [],
+    }
+    check("addons/ and a nested mods/ are both found",
+          sorted(alt_client_dirs(tree, "/laby")),
+          ["/laby/addons", "/laby/versions/1.20/mods"])
+    # Lunar ships its own client jars in offline/multiver. They render entities and
+    # read the entity list because that is what nametags and waypoints are, so
+    # collecting them would put a server-rule finding on every Lunar user's report.
+    lunar = {
+        "/lunar": ["/lunar/offline", "/lunar/profiles"],
+        "/lunar/offline": ["/lunar/offline/multiver"],
+        "/lunar/offline/multiver": [],
+        "/lunar/profiles": ["/lunar/profiles/main"],
+        "/lunar/profiles/main": ["/lunar/profiles/main/mods"],
+    }
+    check("a client's own jar folder is NOT taken as mods",
+          alt_client_dirs(lunar, "/lunar"), ["/lunar/profiles/main/mods"])
+    # the walk is bounded, so a deep tree cannot turn into a whole-disk scan
+    deep = {"/r": ["/r/a"], "/r/a": ["/r/a/b"], "/r/a/b": ["/r/a/b/c"],
+            "/r/a/b/c": ["/r/a/b/c/d"], "/r/a/b/c/d": ["/r/a/b/c/d/e"],
+            "/r/a/b/c/d/e": ["/r/a/b/c/d/e/mods"]}
+    check("the walk stops at the depth limit", alt_client_dirs(deep, "/r"), [])
+
+    # an alt client is scanned whether or not it is the one that is open
+    mixed = [{"path": "vanilla", "running": True},
+             {"path": "laby/addons", "running": False, "alt": True, "jars": 3}]
+    t, g = scan_targets(mixed, [])
+    check("alt client scanned alongside the open instance", t, ["vanilla", "laby/addons"])
+    check("and is not counted as a skipped install", len(g), 0)
+
+    idle_only = [{"path": "vanilla", "running": False},
+                 {"path": "laby/addons", "running": False, "alt": True, "jars": 2}]
+    t, _ = scan_targets(idle_only, [])
+    check("alt client scanned even when nothing is open", t, ["vanilla", "laby/addons"])
+
+    empty_alt = [{"path": "vanilla", "running": True},
+                 {"path": "laby/addons", "running": False, "alt": True, "jars": 0}]
+    t, _ = scan_targets(empty_alt, [])
+    check("an empty addons folder is not a target", t, ["vanilla"])
 
     print("\n=== RESULT: %d passed, %d failed ===" % (passed, failed))
     return 0 if failed == 0 else 1

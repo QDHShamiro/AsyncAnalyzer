@@ -1,3 +1,59 @@
+# ---------------------------------------------------------------------------
+# Alternative clients keep their mods somewhere else - and under another name.
+#
+# Lunar, Badlion and Feather already had their mods folders looked up by exact
+# path above, which works right up until they move one. LabyMod does not have a
+# mods folder at all: its extensions are jars in addons/, and a cheat shipped as
+# a LabyMod addon was simply never opened.
+#
+# So instead of guessing more exact paths, each client's ROOT is walked to a
+# bounded depth and every directory literally named mods or addons is taken. That
+# survives a version bump by construction.
+#
+# What is deliberately NOT taken: the loose jars a client ships itself. Lunar's
+# own client jars sit in offline/multiver, they render entities and read the
+# entity list because that is what nametags and waypoints are, and treating them
+# as mods would put a SERVER-RULE finding on the report of every Lunar user alive.
+# The walker only collects mods/ and addons/, which those are not in.
+# ---------------------------------------------------------------------------
+function Get-AltClientRoots {
+    return @(
+        @('Lunar Client',   "$env:USERPROFILE\.lunarclient"),
+        @('Lunar Client',   "$env:APPDATA\.lunarclient"),
+        @('Badlion Client', "$env:APPDATA\Badlion Client"),
+        @('Badlion Client', "$env:LOCALAPPDATA\Badlion Client"),
+        @('Badlion Client', "$env:APPDATA\.badlion"),
+        @('Feather Client', "$env:APPDATA\.feather"),
+        @('Feather Client', "$env:USERPROFILE\.feather"),
+        @('Feather Client', "$env:APPDATA\feather"),
+        @('LabyMod',        "$env:APPDATA\.minecraft\LabyMod"),
+        @('LabyMod 4',      "$env:APPDATA\.minecraft\labymod-neo"),
+        @('LabyMod 4',      "$env:APPDATA\LabyMod"),
+        @('Salwyrr',        "$env:APPDATA\.salwyrrclient"),
+        @('PvPLounge',      "$env:APPDATA\.pvplounge"),
+        @('SKLauncher',     "$env:APPDATA\.minecraft\sklauncher")
+    )
+}
+
+function Find-AltClientModDirs([string]$Root, [int]$MaxDepth = 4) {
+    $out = [System.Collections.Generic.List[string]]::new()
+    if (-not [System.IO.Directory]::Exists($Root)) { return $out }
+    $queue = [System.Collections.Generic.Queue[object]]::new()
+    $queue.Enqueue([PSCustomObject]@{ P = $Root; D = 0 })
+    $visited = 0
+    while ($queue.Count -gt 0 -and $visited -lt 3000) {
+        $node = $queue.Dequeue(); $visited++
+        try {
+            foreach ($sub in [System.IO.Directory]::GetDirectories($node.P)) {
+                $leaf = [System.IO.Path]::GetFileName($sub).ToLower()
+                if ($leaf -eq 'mods' -or $leaf -eq 'addons') { [void]$out.Add($sub); continue }
+                if ($node.D -lt $MaxDepth) { $queue.Enqueue([PSCustomObject]@{ P = $sub; D = $node.D + 1 }) }
+            }
+        } catch {}
+    }
+    return $out
+}
+
 function Find-MinecraftModFolders {
     $runningJava = @(Get-Process javaw,java -ErrorAction SilentlyContinue)
 
@@ -135,6 +191,39 @@ function Find-MinecraftModFolders {
         }
     }
 
+    # Alternative clients: LabyMod's addons/, and every mods/ the three clients above
+    # may have moved since the exact paths were written. See Get-AltClientRoots.
+    $script:AltClients = [System.Collections.Generic.List[string]]::new()
+    $altSeenRoot = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($ac in (Get-AltClientRoots)) {
+        $acName = $ac[0]; $acRoot = $ac[1]
+        if (-not [System.IO.Directory]::Exists($acRoot)) { continue }
+        if (-not $altSeenRoot.Add($acRoot)) { continue }
+        $acRunning = $false
+        foreach ($info in $script:javaProcessInfos) {
+            if ($info.CommandLine -and $info.CommandLine.IndexOf($acRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { $acRunning = $true; break }
+        }
+        $acDirs = @(Find-AltClientModDirs $acRoot)
+        $acJars = 0
+        foreach ($d in $acDirs) {
+            if (-not $seen.Add($d)) { continue }
+            $jars  = @([System.IO.Directory]::GetFiles($d, "*.jar"))
+            $acJars += $jars.Count
+            $lastW = if ($jars.Count -gt 0) { ($jars | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($d) }
+            [void]$results.Add([PSCustomObject]@{ Path=$d; Launcher=$acName; Instance=[System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($d)); JarCount=$jars.Count; LastWrite=$lastW; IsRunning=$acRunning; AltClient=$true })
+        }
+        try {
+            $rootW = [System.IO.Directory]::GetLastWriteTime($acRoot).ToString('yyyy-MM-dd HH:mm')
+        } catch { $rootW = "?" }
+        [void]$script:AltClients.Add("$acName $([char]0x2014) $acRoot (last changed $rootW, $($acDirs.Count) mod/addon folder(s), $acJars jar(s))")
+        if ($acDirs.Count -eq 0) {
+            # The client is installed and nothing that looks like a mod folder was
+            # found under it. That is not "clean" - it is a format this tool cannot
+            # read, and saying so is the whole point of the coverage box.
+            Add-ScanGap "$acName is installed ($acRoot) but no mods/addons folder was found in it $([char]0x2014) if it stores extensions in its own format, they were NOT checked"
+        }
+    }
+
     # deep scan: find .minecraft folders anywhere on fixed drives (portable / renamed installs)
     # skipped when a running instance is already found (that is the target anyway)
     if (-not ($results | Where-Object { $_.IsRunning })) {
@@ -197,7 +286,12 @@ function Get-ScanTargets {
     W "  $([char]0x25CF) Finding what to scan..." DarkGray
     $targets = [System.Collections.Generic.List[string]]::new()
     $found   = @(Find-MinecraftModFolders)
-    $running = @($found | Where-Object { $_.IsRunning })
+    # Alternative clients are handled separately below and are ALWAYS scanned, so
+    # they must not be counted here - neither as the best guess nor as a skipped
+    # install. Reporting a folder as unchecked while checking it is the one kind of
+    # wrong the coverage box cannot survive.
+    $plain   = @($found | Where-Object { -not $_.AltClient })
+    $running = @($plain | Where-Object { $_.IsRunning })
 
     if ($running.Count -gt 0) {
         foreach ($r in $running) {
@@ -207,15 +301,28 @@ function Get-ScanTargets {
             if ($r.Instance) { W " / $($r.Instance)" White -NoNewline }
             W "  ($($r.JarCount) mods)" DarkGray
         }
-        $idle = @($found | Where-Object { -not $_.IsRunning })
+        $idle = @($plain | Where-Object { -not $_.IsRunning })
         if ($idle.Count -gt 0) {
             Add-ScanGap "$($idle.Count) other Minecraft install(s) exist but were not open, so they were not scanned"
         }
-    } elseif ($found.Count -gt 0) {
-        [void]$targets.Add($found[0].Path)
-        W "  $([char]0x2713) Nothing open $([char]0x2014) checking the most likely install: $($found[0].Launcher)" Yellow
-        if ($found.Count -gt 1) {
-            Add-ScanGap "$($found.Count) installs found and none was open $([char]0x2014) only the most likely one was scanned"
+    } elseif ($plain.Count -gt 0) {
+        [void]$targets.Add($plain[0].Path)
+        W "  $([char]0x2713) Nothing open $([char]0x2014) checking the most likely install: $($plain[0].Launcher)" Yellow
+        if ($plain.Count -gt 1) {
+            Add-ScanGap "$($plain.Count) installs found and none was open $([char]0x2014) only the most likely one was scanned"
+        }
+    }
+
+    # An alternative client's mods/addons folder is always scanned, open or not. It
+    # holds a handful of jars rather than a modpack, so it costs almost nothing, and
+    # it is exactly where a jar gets parked when the vanilla folder is the one being
+    # watched.
+    foreach ($a in @($found | Where-Object { $_.AltClient -and $_.JarCount -gt 0 })) {
+        if (-not $targets.Contains($a.Path)) {
+            [void]$targets.Add($a.Path)
+            W "  $([char]0x2713) Alternative client: " Green -NoNewline
+            W "$($a.Launcher)" Cyan -NoNewline
+            W "  ($($a.JarCount) jar(s))" DarkGray
         }
     }
 
@@ -230,6 +337,15 @@ function Get-ScanTargets {
         $def = "$env:APPDATA\.minecraft\mods"
         W "  $([char]0x26A0)  No Minecraft found $([char]0x2014) trying the default folder." Yellow
         [void]$targets.Add($def)
+    }
+    # Which alternative clients are installed at all. Not a finding - Lunar and
+    # Badlion are two of the most-played clients there are - but a moderator should
+    # see that another Minecraft exists on this PC and when it was last touched.
+    if ($script:AltClients.Count -gt 0) {
+        Add-Finding "INFO" "Where this was scanned" "$($script:AltClients.Count) alternative Minecraft client(s) installed" `
+            @($script:AltClients) `
+            "The install folders of Lunar, Badlion, Feather, LabyMod and friends were located, and every mods/ or addons/ folder inside them was added to the scan." `
+            "Owning one of these is completely normal. It is here because a jar parked in another client's folder is out of sight of a scan that only looks at .minecraft." | Out-Null
     }
     Write-Host ""
     return @($targets)
