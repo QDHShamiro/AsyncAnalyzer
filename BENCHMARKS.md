@@ -29,6 +29,28 @@ game's own input system, the cheat writes the movement packet itself.
 | Pathing (cheat) | yes | flagged |
 | AutoWalk (clean) | no | clean |
 
+## Mixins — code compiled INTO the game
+
+A Mixin is not a mod calling Minecraft. It is code the loader compiles into a
+game class, and it names its target in an **annotation**: a string constant, not
+a symbol. So a mixin cheat calls nothing. Silent rotations mix into the packet
+that reports where you are looking, shadow its rotation fields and overwrite
+them — through the symbol table that class is two floats and no Minecraft at all.
+
+The catch is that mixins are also how ordinary mods are built. Sodium, Lithium
+and the Fabric API are nothing but mixins, so reading them has to separate the
+cheat from the mod rather than flag the technique.
+
+| jar | what it mixes into | rules tripped | expected |
+|---|---|---|:--:|
+| MixinSilentRot (cheat) | the outgoing movement packet | aim+nodinput | flagged |
+| MixinRender (clean) | the level renderer | — | clean |
+| MixinFreelook (clean) | the player — shadows the *same* rotation fields | — | clean |
+
+`MixinFreelook` is the negative this exists for: a freelook mod shadows exactly
+the rotation fields the cheat does. The difference read here is the **target** —
+a camera mixes into the player, never into the packet that reports your aim.
+
 ## Hiding depth
 
 A cheat's modules need not sit at the front of the archive; real jars run to a
@@ -69,8 +91,8 @@ abnormal; in an ordinary application classpath it is not.
 | | |
 |---|---|
 | classes parsed | 122556 |
-| time | ~65 s |
-| per class | ~0.5 ms |
+| time | ~70 s |
+| per class | ~0.6 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -128,7 +150,6 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
-| `222e20f` | 174 ██████ | 0 | ok | ok | ok |
 | `b3efb99` | 174 ██████ | 0 | ok | ok | ok |
 | `bca1c5c` | 174 ██████ | 0 | ok | ok | ok |
 | `af6c847` | 174 ██████ | 0 | ok | ok | ok |
@@ -140,6 +161,7 @@ of 0 means more as that number grows.
 | `71b5528` | 186 ███████ | 0 | ok | ok | ok |
 | `9d44dee` | 186 ███████ | 0 | ok | ok | ok |
 | `2a46aac` | 186 ███████ | 0 | ok | ok | ok |
+| `65d1492` | 186 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
