@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Join a server — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap narrow" style="padding-top:56px">
+  <div id="body"><div class="skeleton" style="height:140px"></div></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, pathParts, esc, $ } from '/assets/app.js';
+
+boot(async () => {
+  // requireAuth sends them to /login with this URL as next, so signing in lands
+  // them right back here and the invite goes through on its own.
+  if (!await requireAuth()) return;
+  const code = decodeURIComponent(pathParts()[1] || '');
+  try {
+    const r = await api('/api/join/' + encodeURIComponent(code), { method: 'POST', body: {} });
+    $('#body').innerHTML =
+      '<div class="card card-pad"><span class="chip chip-good">Joined</span>' +
+      '<h3 style="margin-top:14px">You are a moderator on ' + esc(r.name) + '</h3>' +
+      '<p class="muted" style="margin:8px 0 20px">You can run scans and read this server\'s history.</p>' +
+      '<a class="btn btn-primary" href="/app/' + encodeURIComponent(r.slug) + '">Open it</a></div>';
+  } catch (e) {
+    $('#body').innerHTML =
+      '<div class="card card-pad"><span class="chip chip-bad">Not valid</span>' +
+      '<h3 style="margin-top:14px">That invite did not work</h3>' +
+      '<p class="muted" style="margin:8px 0 20px">' + esc(e.message) + ' Ask your server owner for a fresh link.</p>' +
+      '<a class="btn" href="/app">Go to your dashboard</a></div>';
+  }
+});
+</script>
+</body></html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scan — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div id="body"><div class="skeleton" style="height:200px;margin-top:44px"></div></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, pathParts, renderScan, reveal, wireCopy, toast, esc, $ } from '/assets/app.js';
+
+boot(async () => {
+  if (!await requireAuth()) return;
+  const parts = pathParts();
+  const slug = decodeURIComponent(parts[1] || '');
+  const id = decodeURIComponent(parts[3] || '');
+  const base = '/app/' + encodeURIComponent(slug);
+
+  const scan = await api('/api/servers/' + encodeURIComponent(slug) + '/scan/' + encodeURIComponent(id));
+  const share = location.origin + '/s/' + encodeURIComponent(scan.id);
+
+  $('#body').innerHTML = renderScan(scan, {
+    crumb: `<a href="/app">Servers</a><span aria-hidden="true">/</span><a href="${base}">Scans</a><span aria-hidden="true">/</span><span>${esc(scan.scanId || scan.id)}</span>`,
+    actions: `<div class="btn-row" style="margin-top:20px">
+        <button class="btn btn-sm" data-copy="${esc(share)}">Copy a shareable link</button>
+        <a class="btn btn-sm" href="/s/${esc(scan.id)}">Open the shared view</a>
+      </div>
+      <p class="muted tiny" style="margin-top:10px">
+        The shared view drops the PC name, the folder path and the system notes. It keeps the verdict and
+        what it rests on, so it can be posted as evidence without handing out anything else.
+      </p>`,
+  });
+  reveal();
+  wireCopy();
+});
+</script>
+</body></html>

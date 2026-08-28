@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Benchmarks</title>
+<meta name="description" content="Measured detection numbers for AsyncAnalyzer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="stylesheet" href="/assets/docs.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div class="nav-shell"><nav class="nav" aria-label="Main"><a class="brand" href="/"><span class="dot" aria-hidden="true"></span>AsyncAnalyzer</a><div class="nav-links"><a href="/how-it-works" class="hide-sm">How it works</a><a href="/benchmarks" class="hide-sm" aria-current="page">Benchmarks</a><span id="nav-auth"></span><button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch between light and dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/></svg></button></div></nav></div>
+<main class="wrap">
+
+<div class="page-head">
+  <h1>Benchmarks</h1>
+  <p class="lede">Every number on this site is measured, and the measurement runs on
+  every push. This copy of the site was built somewhere that could not run it.</p>
+</div>
+
+<div class="grid grid-3">
+  <div class="card"><span class="k">0</span><b>false flags</b>
+    <span>on 186 real Java libraries, through the full verdict chain. From the last
+    committed run.</span></div>
+  <div class="card"><span class="k">24</span><b>behaviours read from bytecode</b>
+    <span>Counted from the shipped analyser, not from the last benchmark.</span></div>
+  <div class="card"><span class="k">22</span><b>features per mod</b>
+    <span>Counted from the shipped model.</span></div>
+</div>
+
+<p class="note" style="margin-top:26px">
+  The full run, with its history and the raw output, is in
+  <a href="https://github.com/QDHShamiro/AsyncAnalyzer/blob/main/BENCHMARKS.md">BENCHMARKS.md</a>. To produce this page for real:
+</p>
+<div class="cmd"><div class="cmd-head"><span>Rebuild the measurements</span></div>
+<pre>python3 ml/fetch_jars.py &amp;&amp; python3 ml/benchmark.py &amp;&amp; python3 ml/site.py</pre></div>
+
+</main>
+<footer><div class="wrap">
+  <span class="mono">AsyncAnalyzer</span>
+  <a href="/how-it-works">How it works</a>
+  <a href="/privacy">Privacy</a>
+  <a href="https://github.com/QDHShamiro/AsyncAnalyzer">Source</a>
+  <a href="https://github.com/QDHShamiro/AsyncAnalyzer/blob/main/BENCHMARKS.md">Raw benchmark output</a>
+  <span class="spacer"></span>
+  <span class="tiny">The scan runs on the suspect's own PC.</span>
+</div></footer>
+<script type="module">import { boot } from '/assets/app.js'; boot();</script>
+</body></html>

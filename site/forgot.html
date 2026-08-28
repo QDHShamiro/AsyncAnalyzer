@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reset your password — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap narrow" style="padding-top:56px">
+  <h2 style="margin-bottom:10px">Reset your password</h2>
+  <p class="muted" style="margin-bottom:28px">We will send a link to the address on your account.</p>
+
+  <div id="done" hidden class="notice notice-good">
+    If that address has an account with a password, a reset link is on its way. It is good for one hour.
+  </div>
+
+  <form id="form" novalidate>
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" required>
+    </div>
+    <button class="btn btn-primary" style="width:100%" type="submit">Send the link</button>
+  </form>
+
+  <p class="muted small" style="margin-top:24px">Signed up with Discord or Google? <a href="/login">Use that instead</a> — there is no password to reset.</p>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, $ } from '/assets/app.js';
+boot(() => {
+  $('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    btn.setAttribute('aria-busy', 'true');
+    try {
+      await api('/api/auth/forgot', { body: { email: $('#email').value.trim() } });
+      $('#form').hidden = true;
+      $('#done').hidden = false;
+    } finally {
+      btn.removeAttribute('aria-busy');
+    }
+  });
+});
+</script>
+</body></html>

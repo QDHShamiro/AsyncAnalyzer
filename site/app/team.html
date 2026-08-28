@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Team — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div id="head"><div class="skeleton" style="height:110px;margin-top:44px"></div></div>
+  <div id="invite"></div>
+  <div id="body"></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, serverSlug, serverHead, wireCopy, toast, esc, fmtDate, $ } from '/assets/app.js';
+
+boot(async () => {
+  const state = await requireAuth();
+  if (!state) return;
+  const slug = serverSlug();
+  const path = '/api/servers/' + encodeURIComponent(slug);
+  const { server, role } = await api(path);
+  $('#head').outerHTML = serverHead(slug, server, role, '/app/' + encodeURIComponent(slug) + '/team');
+
+  const drawInvite = (link) => {
+    if (!link) return;
+    $('#invite').innerHTML = `
+      <div class="card card-pad reveal" style="margin-bottom:22px">
+        <h3>Invite your moderators</h3>
+        <p class="muted small" style="margin:8px 0 16px">
+          Paste this in your staff channel. Whoever opens it and signs in becomes a moderator here —
+          they can run scans and read this server's history, nothing else.
+        </p>
+        <div class="copy"><code id="inv">${esc(link)}</code><button type="button" data-copy-from="#inv">Copy</button></div>
+        <button class="btn btn-sm btn-danger" id="rot" style="margin-top:14px">Replace the link</button>
+      </div>`;
+    wireCopy();
+    $('#rot').addEventListener('click', async () => {
+      if (!confirm('Replace the invite link? The old one stops working immediately.')) return;
+      try {
+        const r = await api(path + '/rotate-invite', { method: 'POST', body: {} });
+        drawInvite(r.inviteUrl);
+        toast('New invite link ready.');
+      } catch (e) { toast(e.message, true); }
+    });
+  };
+  drawInvite(server.inviteUrl);
+
+  const load = async () => {
+    const { members, canManage } = await api(path + '/members');
+    $('#body').innerHTML =
+      '<div class="table-scroll"><table><thead><tr><th>Name</th><th>Rank</th><th>Since</th>' +
+      (canManage ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      members.map(m => {
+        const owner = m.role === 'owner';
+        return '<tr><td><b>' + esc(m.name) + '</b>' +
+          (m.email ? ' <span class="muted tiny">' + esc(m.email) + '</span>' : '') + '</td>' +
+          '<td><span class="chip ' + (owner ? 'chip-good' : 'chip-flat') + '">' + (owner ? 'Owner' : 'Moderator') + '</span></td>' +
+          '<td class="num muted">' + esc(fmtDate(m.added_ts)) + '</td>' +
+          (canManage
+            ? '<td>' + (owner ? '' :
+                '<div class="btn-row"><button class="btn btn-sm" data-promote="' + esc(m.id) + '">Make owner</button>' +
+                '<button class="btn btn-sm btn-danger" data-remove="' + esc(m.id) + '">Remove</button></div>') + '</td>'
+            : '') +
+          '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      (canManage ? '' : '<p class="muted tiny" style="margin-top:12px">Only the server owner can change this list.</p>');
+
+    $('#body').querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Remove this moderator? They lose access to this server’s scans.')) return;
+      try { await api(path + '/members/' + b.dataset.remove, { method: 'DELETE' }); await load(); toast('Removed.'); }
+      catch (e) { toast(e.message, true); }
+    }));
+    $('#body').querySelectorAll('[data-promote]').forEach(b => b.addEventListener('click', async () => {
+      // Two owners is a normal thing to want; it is not a demotion of anybody.
+      if (!confirm('Make this person an owner? They will be able to manage the team and rotate keys.')) return;
+      try { await api(path + '/members/' + b.dataset.promote, { body: { role: 'owner' } }); await load(); toast('Done.'); }
+      catch (e) { toast(e.message, true); }
+    }));
+  };
+  await load();
+});
+</script>
+</body></html>

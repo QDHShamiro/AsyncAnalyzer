@@ -1,55 +1,38 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AsyncAnalyzer Detection Report</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="stylesheet" href="/assets/docs.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 
 <style>
+/* The palette is app.css. These are the extra names the charts on this page
+   were written against, mapped onto it rather than defined a second time. */
 :root{
-  --ground:#f6f7f9; --surface:#ffffff; --sunk:#f0f2f5;
-  --ink:#11151b; --muted:#59636f; --line:#e2e6ec;
-  --accent:#00a89b; --s1:#00a89b; --s2:#6d4fd0;
-  --pass:#1c7f47; --pass-bg:#e6f4ec;
-  --warn:#96610a; --warn-bg:#fbf0dd;
-  --grid:#eceff3;
-  --shadow:0 1px 2px rgba(17,21,27,.05),0 8px 24px -12px rgba(17,21,27,.12);
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --ground:#0f1216; --surface:#161a20; --sunk:#12161b;
-    --ink:#e7ebf1; --muted:#8a94a1; --line:#262c35;
-    --accent:#00a89b; --s1:#00a89b; --s2:#8064f0;
-    --pass:#43cf85; --pass-bg:#122a1e;
-    --warn:#e0a63c; --warn-bg:#2a2113;
-    --grid:#1e242c;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
-  }
-}
-:root[data-theme="dark"]{
-  --ground:#0f1216; --surface:#161a20; --sunk:#12161b;
-  --ink:#e7ebf1; --muted:#8a94a1; --line:#262c35;
-  --accent:#00a89b; --s1:#00a89b; --s2:#8064f0;
-  --pass:#43cf85; --pass-bg:#122a1e;
-  --warn:#e0a63c; --warn-bg:#2a2113;
-  --grid:#1e242c;
-  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+  --ground:var(--bg); --s1:var(--accent); --s2:var(--accent-2);
+  --pass:var(--good); --pass-bg:var(--good-bg); --grid:var(--line);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   background:var(--ground); color:var(--ink);
-  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
   font-size:16px; line-height:1.6;
   padding:0 20px 80px;
 }
 .wrap{max-width:860px;margin:0 auto}
-.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
 .num{font-variant-numeric:tabular-nums}
 
 /* ---- build stamp ---------------------------------------------------- */
 .stamp{
   display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;
   padding:22px 0 20px;border-bottom:1px solid var(--line);
-  font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);
+  font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--muted);
 }
 .stamp b{color:var(--ink);font-weight:500}
 .stamp .sep{color:var(--line)}
@@ -69,7 +52,7 @@ h1{
   display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 28px;
 }
 .hero .fig{
-  font-family:"IBM Plex Mono",monospace;font-size:clamp(52px,9vw,76px);
+  font-family:"JetBrains Mono",monospace;font-size:clamp(52px,9vw,76px);
   font-weight:600;line-height:1;letter-spacing:-.04em;color:var(--accent);
   font-variant-numeric:tabular-nums;
 }
@@ -80,7 +63,7 @@ h1{
 /* ---- sections ------------------------------------------------------- */
 section{margin-top:52px}
 .label{
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:500;
+  font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:500;
   letter-spacing:.11em;text-transform:uppercase;color:var(--muted);
   padding-bottom:12px;margin-bottom:20px;border-bottom:1px solid var(--line);
 }
@@ -91,7 +74,7 @@ h2{font-size:21px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
 .tbl-scroll{overflow-x:auto;margin-top:18px}
 table{width:100%;border-collapse:collapse;font-size:15px;min-width:460px}
 th{
-  text-align:left;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+  text-align:left;font-family:"JetBrains Mono",monospace;font-size:11.5px;
   font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
   padding:0 12px 10px 0;border-bottom:1px solid var(--line);
 }
@@ -100,7 +83,7 @@ tr:last-child td{border-bottom:0}
 td.w{color:var(--muted);font-size:14px}
 .pill{
   display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
-  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:500;
+  font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:500;
   padding:3px 9px;border-radius:999px;
 }
 .pill.ok{color:var(--pass);background:var(--pass-bg)}
@@ -118,14 +101,14 @@ td.w{color:var(--muted);font-size:14px}
 .chart-scroll{overflow-x:auto}
 svg{display:block;width:100%;height:auto;min-width:420px}
 .gl{stroke:var(--grid);stroke-width:1}
-.ax{fill:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:11px}
-.dlab{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;fill:var(--ink)}
+.ax{fill:var(--muted);font-family:"JetBrains Mono",monospace;font-size:11px}
+.dlab{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;fill:var(--ink)}
 .hit{fill:transparent;cursor:crosshair}
 #cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3;opacity:0}
 .tip{
   position:absolute;pointer-events:none;opacity:0;transform:translate(-50%,-100%);
   background:var(--ink);color:var(--surface);border-radius:8px;padding:8px 11px;
-  font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5;white-space:nowrap;
+  font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.5;white-space:nowrap;
   transition:opacity .12s;z-index:5;
 }
 .tip b{font-weight:600}
@@ -151,17 +134,16 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius
 </style>
 <style>
 nav.site{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:18px 0 0;}
-nav.site a{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);
+nav.site a{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--muted);
   text-decoration:none;padding:6px 11px;border-radius:8px;}
 nav.site a:hover{color:var(--ink);background:var(--sunk)}
 nav.site a[aria-current]{color:var(--accent);background:var(--sunk)}
 nav.site .grow{flex:1}
 </style>
 
-<nav class="site"><a href="index.html">Overview</a>
-<a href="benchmarks.html" aria-current="page">Benchmarks</a>
-<a href="how-it-works.html">How it works</a><span class="grow"></span>
-<a href="https://github.com/QDHShamiro/AsyncAnalyzer">GitHub &#8599;</a></nav>
+</head>
+<body>
+<div class="nav-shell"><nav class="nav" aria-label="Main"><a class="brand" href="/"><span class="dot" aria-hidden="true"></span>AsyncAnalyzer</a><div class="nav-links"><a href="/how-it-works" class="hide-sm">How it works</a><a href="/benchmarks" class="hide-sm" aria-current="page">Benchmarks</a><span id="nav-auth"></span><button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch between light and dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/></svg></button></div></nav></div>
 <div class="wrap">
 
   <div class="stamp">
@@ -367,3 +349,5 @@ svg.addEventListener("mousemove", e=>{
 });
 svg.addEventListener("mouseleave", ()=>{ tip.style.opacity = 0; cross.style.opacity = 0; });
 </script>
+<script type="module">import { boot } from '/assets/app.js'; boot();</script>
+</body></html>

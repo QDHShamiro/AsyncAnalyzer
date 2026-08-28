@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the public site into docs/.
+"""Build the public site into site/.
 
 Three pages, all generated. The landing page quotes measured numbers, the rule
 documentation is read out of the shipped PowerShell and the Python model, and the
@@ -7,19 +7,22 @@ benchmark page is rendered from the last measurement. Nothing here is written by
 hand, so no page can claim something the tool does not actually do - which is the
 only way a transparency page is worth anything.
 
-    python3 ml/site.py            # writes docs/index.html, benchmarks.html, how-it-works.html
+    python3 ml/site.py            # writes site/index.html, benchmarks.html, how-it-works.html
 """
 import csv, json, os, re, sys, html
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DOCS = os.path.join(ROOT, "docs")
+SITE = os.path.join(ROOT, "site")
 E = html.escape
 
 REPO = "https://github.com/QDHShamiro/AsyncAnalyzer"
 RAW = "https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1"
-ONELINER = ('powershell -ExecutionPolicy Bypass -Command "iex (irm \''
-            + RAW + '\')"')
+# The command a moderator hands over now carries their server's key, so it is shown
+# on their own setup page and not here. What the public page can honestly show is
+# the shape of it.
+ONELINER = ('powershell -ExecutionPolicy Bypass -Command "$env:ASYNCANALYZER_KEY=\'<your server key>\';'
+            'iex (irm \'https://asyncanalyzer.dev/run.ps1\')"')
 
 
 def read(*parts):
@@ -27,118 +30,41 @@ def read(*parts):
         return f.read()
 
 
-def shared_style():
-    """One stylesheet for the whole site, taken from the benchmark template so the
-    three pages cannot drift into three different-looking sites."""
-    tpl = read(HERE, "page_template.html")
-    m = re.search(r"<style>(.*?)</style>", tpl, re.S)
-    return m.group(1) if m else ""
+# The three generated pages are the ones search engines and first-time visitors
+# see, so their navigation is rendered here rather than by JavaScript. The app
+# pages under /app do it the other way round, where there is nothing to index.
+NAV_ITEMS = [("/", "Overview"), ("/how-it-works", "How it works"), ("/benchmarks", "Benchmarks")]
 
-
-EXTRA_CSS = """
-/* ---- site chrome (shared by every page) ------------------------------ */
-nav.site{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:18px 0 0;}
-nav.site a{
-  font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);
-  text-decoration:none;padding:6px 11px;border-radius:8px;
-}
-nav.site a:hover{color:var(--ink);background:var(--sunk)}
-nav.site a[aria-current]{color:var(--accent);background:var(--sunk)}
-nav.site .grow{flex:1}
-a{color:var(--accent)}
-
-/* ---- landing --------------------------------------------------------- */
-.cmd{
-  margin-top:26px;background:var(--surface);border:1px solid var(--line);
-  border-radius:14px;box-shadow:var(--shadow);overflow:hidden;
-}
-.cmd-head{
-  display:flex;align-items:center;gap:10px;padding:11px 16px;
-  border-bottom:1px solid var(--line);background:var(--sunk);
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;
-  letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
-}
-.cmd-head .grow{flex:1}
-.cmd pre{
-  /* A command people copy is worth seeing in full - wrapping beats a scrollbar
-     that hides half of it behind the edge of the card. */
-  padding:18px 16px;font-family:"IBM Plex Mono",monospace;
-  font-size:13px;line-height:1.7;color:var(--ink);
-  white-space:pre-wrap;overflow-wrap:anywhere;
-}
-.btn{
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.06em;
-  text-transform:uppercase;background:var(--surface);color:var(--muted);
-  border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer;
-}
-.btn:hover{color:var(--accent);border-color:var(--accent)}
-.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:20px}
-.card{
-  padding:20px;background:var(--surface);border:1px solid var(--line);
-  border-radius:13px;box-shadow:var(--shadow);
-}
-.card b{display:block;font-size:15.5px;font-weight:600;margin-bottom:6px}
-.card span{color:var(--muted);font-size:14.5px}
-.card .k{
-  font-family:"IBM Plex Mono",monospace;font-size:30px;font-weight:600;
-  color:var(--accent);letter-spacing:-.03em;display:block;margin-bottom:4px;
-  font-variant-numeric:tabular-nums;
-}
-
-/* ---- documentation --------------------------------------------------- */
-.rule{
-  padding:17px 19px;background:var(--surface);border:1px solid var(--line);
-  border-left:2px solid var(--accent);border-radius:11px;margin-top:12px;
-}
-.rule b{display:block;font-size:15.5px;font-weight:600;margin-bottom:4px}
-.rule span{color:var(--muted);font-size:14.5px}
-.rule .mono{color:var(--ink);font-size:13px}
-.rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px}
-.rules-grid .rule{margin-top:0}
-.bands{display:grid;gap:10px;margin-top:18px}
-.band{
-  display:grid;grid-template-columns:minmax(96px,132px) minmax(58px,72px) 1fr;
-  gap:14px;align-items:baseline;padding:13px 16px;background:var(--surface);
-  border:1px solid var(--line);border-left:3px solid var(--bc);border-radius:11px;
-}
-.band .nm{font-weight:600;color:var(--bc)}
-.band .rg{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-.band .ds{color:var(--muted);font-size:14.5px}
-ul.pts{list-style:none;display:grid;gap:8px;margin-top:16px}
-ul.pts li{padding-left:17px;position:relative;color:var(--muted);font-size:15px}
-ul.pts li:before{
-  content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;
-  border-radius:50%;background:var(--accent);
-}
-ul.pts li b{color:var(--ink);font-weight:600}
-.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
-.chip{
-  font-family:"IBM Plex Mono",monospace;font-size:12px;padding:4px 10px;
-  border-radius:999px;background:var(--sunk);color:var(--muted);border:1px solid var(--line);
-}
-footer.site{
-  margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
-  color:var(--muted);font-size:14px;
-}
-"""
+# Body copy was written when every page sat next to the others as a flat file.
+# The site serves clean URLs now, so the links are rewritten in one place instead
+# of being edited into every string below.
+CLEAN_URLS = {'href="index.html"': 'href="/"',
+              'href="how-it-works.html"': 'href="/how-it-works"',
+              'href="benchmarks.html"': 'href="/benchmarks"'}
 
 
 def nav(current):
-    items = [("index.html", "Overview"), ("benchmarks.html", "Benchmarks"),
-             ("how-it-works.html", "How it works")]
-    out = ['<nav class="site">']
-    for href, label in items:
+    out = ['<div class="nav-shell"><nav class="nav" aria-label="Main">',
+           '<a class="brand" href="/"><span class="dot" aria-hidden="true"></span>AsyncAnalyzer</a>',
+           '<div class="nav-links">']
+    for href, label in NAV_ITEMS:
+        if href == "/":
+            continue
         cur = ' aria-current="page"' if href == current else ""
-        out.append('<a href="%s"%s>%s</a>' % (href, cur, label))
-    out.append('<span class="grow"></span>')
-    out.append('<a href="%s">GitHub &#8599;</a>' % REPO)
-    out.append("</nav>")
+        out.append('<a href="%s" class="hide-sm"%s>%s</a>' % (href, cur, label))
+    out.append('<span id="nav-auth"></span>')
+    out.append('<button id="theme-toggle" class="icon-btn" type="button" '
+               'aria-label="Switch between light and dark">'
+               '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+               'stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/>'
+               '<path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/></svg></button>')
+    out.append("</div></nav></div>")
     return "".join(out)
 
 
 def page(title, desc, body, current):
+    for old, new in CLEAN_URLS.items():
+        body = body.replace(old, new)
     return """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -146,27 +72,36 @@ def page(title, desc, body, current):
 <meta name="description" content="%s">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<style>%s
-%s</style></head>
-<body><div class="wrap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="stylesheet" href="/assets/docs.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
 %s
+<main class="wrap">
 %s
-<footer class="site">
-  AsyncAnalyzer is built by Async Studio and is open source &mdash; the whole scanner is
-  one PowerShell file you can read before you run it.
-  <a href="%s">Source</a> &middot; <a href="%s/blob/main/BENCHMARKS.md">Raw benchmark output</a>
-</footer>
-</div></body></html>
-""" % (E(title), E(desc), shared_style(), EXTRA_CSS, nav(current), body, REPO, REPO)
+</main>
+<footer><div class="wrap">
+  <span class="mono">AsyncAnalyzer</span>
+  <a href="/how-it-works">How it works</a>
+  <a href="/privacy">Privacy</a>
+  <a href="%s">Source</a>
+  <a href="%s/blob/main/BENCHMARKS.md">Raw benchmark output</a>
+  <span class="spacer"></span>
+  <span class="tiny">The scan runs on the suspect's own PC.</span>
+</div></footer>
+<script type="module">import { boot } from '/assets/app.js'; boot();</script>
+</body></html>
+""" % (E(title), E(desc), nav(current), body, REPO, REPO)
 
 
 # ---------------------------------------------------------------- metrics ---
 def metrics():
-    """Measured numbers. Prefers docs/metrics.json (written by benchmark.py);
+    """Measured numbers. Prefers site/metrics.json (written by benchmark.py);
     falls back to the last row of the committed history so the site still builds
     on a machine that has not run the benchmark."""
-    p = os.path.join(DOCS, "metrics.json")
+    p = os.path.join(SITE, "metrics.json")
     if os.path.exists(p):
         try:
             return json.load(open(p, encoding="utf-8"))
@@ -227,32 +162,67 @@ def build_index(m, c):
     libs = m.get("libraries")
     hero_fig = "0" if fp == 0 else str(fp)
     body = """
-<header>
-  <h1>Know what is in your mods folder &mdash; and be able to prove it.</h1>
-  <p class="lede">AsyncAnalyzer reads every mod on a Windows PC, works out what its code
-  actually does, and writes a report a screenshare moderator can act on. It runs entirely
-  on the machine: nothing is uploaded, nothing is installed, nothing is changed.</p>
-</header>
+<div class="hero">
+  <span class="eyebrow"><span class="dot" aria-hidden="true"></span>Invite only &mdash; every server is let in by hand</span>
+  <h1>Stop guessing in screenshares.</h1>
+  <p class="lede">AsyncAnalyzer reads every mod on the suspect's PC, works out what the code
+  actually does, and hands your staff a verdict they can defend &mdash; with the reasoning
+  attached, not a number to argue about.</p>
+  <div class="btn-row">
+    <a class="btn btn-primary" href="/apply">Apply with your server</a>
+    <a class="btn" href="/how-it-works">How it works</a>
+  </div>
 
-<div class="cmd">
-  <div class="cmd-head"><span>Run it &mdash; PowerShell</span><span class="grow"></span>
-    <button class="btn" id="cp" onclick="copyCmd()">Copy</button></div>
-  <pre id="oneliner">%s</pre>
+  <div class="stats">
+    <div class="stat reveal"><b class="num">%s</b><span>False flags</span></div>
+    <div class="stat reveal"><b class="num">%s</b><span>Real libraries tested</span></div>
+    <div class="stat reveal"><b class="num">%s</b><span>Behaviours read from bytecode</span></div>
+    <div class="stat reveal"><b class="num">%s</b><span>Features per mod</span></div>
+  </div>
 </div>
-<p class="note" style="margin-top:12px">No flags, no questions. It finds the Minecraft
-installations by itself, decides how deep to look, and tells you at the end what it could
-<em>not</em> check.</p>
 
-<section>
-  <div class="label">Measured, not claimed</div>
+<section class="section">
+  <div class="section-head"><span class="section-num">01 / 04</span><h2>How a screenshare goes</h2></div>
+  <div class="grid grid-3">
+    <div class="card reveal">
+      <div class="step-n">1</div>
+      <h3>Say the code out loud</h3>
+      <span>Your dashboard gives your staff one command carrying your server's key. The moderator
+      reads a short code aloud before it runs.</span>
+    </div>
+    <div class="card reveal">
+      <div class="step-n">2</div>
+      <h3>They run it themselves</h3>
+      <span>On their own machine, in their own PowerShell. Nothing is installed, no window opens,
+      no file is touched. It reads the Minecraft instance that is actually running.</span>
+    </div>
+    <div class="card reveal">
+      <div class="step-n">3</div>
+      <h3>The verdict lands with you</h3>
+      <span>In your server's history, with every finding and the reasoning behind it &mdash; and the
+      code you said aloud printed back, so a borrowed screenshot proves nothing.</span>
+    </div>
+  </div>
+
+  <div class="cmd reveal">
+    <div class="cmd-head"><span>What your staff hand over</span><span class="grow"></span></div>
+    <pre>%s</pre>
+  </div>
+  <p class="note" style="margin-top:12px">No flags, no questions. It finds the Minecraft
+  installation by itself, decides how deep to look, and says at the end what it could
+  <em>not</em> check.</p>
+</section>
+
+<section class="section">
+  <div class="section-head"><span class="section-num">02 / 04</span><h2>Measured, not claimed</h2></div>
   <div class="cards">
-    <div class="card"><span class="k">%s</span><b>false flags</b>
+    <div class="card reveal"><span class="k">%s</span><b>false flags</b>
       <span>on %s real Java libraries from Maven Central &mdash; through the full verdict
       chain, not one rule. The build fails if that ever stops being true.</span></div>
-    <div class="card"><span class="k">%s</span><b>behaviours read from bytecode</b>
+    <div class="card reveal"><span class="k">%s</span><b>behaviours read from bytecode</b>
       <span>What a mod <em>does</em>, taken from the compiled code. Renaming a class or
       encrypting its strings does not change it.</span></div>
-    <div class="card"><span class="k">%s</span><b>features per mod</b>
+    <div class="card reveal"><span class="k">%s</span><b>features per mod</b>
       <span>Scored by a model that runs in PowerShell itself &mdash; no cloud, no API key,
       no dependency to install.</span></div>
   </div>
@@ -260,50 +230,52 @@ installations by itself, decides how deep to look, and tells you at the end what
   &mdash; rerun automatically on every change, with the history.</p>
 </section>
 
-<section>
-  <div class="label">Why you can run this on your own PC</div>
+<section class="section">
+  <div class="section-head"><span class="section-num">03 / 04</span><h2>Why anyone can agree to run it</h2></div>
   <ul class="pts">
     <li><b>It only reads.</b> No file is modified, moved or deleted. No program is installed
     and nothing is left running afterwards.</li>
-    <li><b>Nothing leaves the machine.</b> The analysis is local. Team upload exists but is
-    off unless a team turns it on, and it sends results &mdash; never your files.</li>
-    <li><b>You can read it before you run it.</b> The whole scanner is one PowerShell file.
-    Open the link in a browser and read it top to bottom.</li>
-    <li><b>It says what it could not check.</b> A clean result only ever covers what was
-    actually looked at, and the report lists the gaps next to the verdict instead of
-    implying more.</li>
-    <li><b>It does not open anything.</b> No windows pop up, no file explorer, no browser.
-    It prints where the report is and stops.</li>
+    <li><b>Their files stay theirs.</b> The analysis happens on their machine. What reaches your
+    dashboard is the result &mdash; mod names, hashes and verdicts &mdash; never their files.</li>
+    <li><b>They can read it before they run it.</b> The whole scanner is one open PowerShell
+    file. Anyone can open the link in a browser and read it top to bottom.</li>
+    <li><b>It says what it could not check.</b> A clean result only ever covers what was actually
+    looked at, and the report lists the gaps next to the verdict instead of implying more.</li>
+    <li><b>It does not open anything.</b> No windows pop up, no file explorer, no browser. It
+    prints the verdict and stops.</li>
   </ul>
 </section>
 
-<section>
-  <div class="label">What the report gives a moderator</div>
+<section class="section">
+  <div class="section-head"><span class="section-num">04 / 04</span><h2>What your staff get</h2></div>
   <ul class="pts">
     <li><b>One verdict</b>, judged across mods, system, processes, the live game and the
     execution history together &mdash; not one number per file to add up by hand.</li>
     <li><b>Every finding with its reasoning</b> and the exact paths, hashes, process IDs and
     memory addresses behind it.</li>
-    <li><b>A coverage box</b> naming what could not be checked, so nobody reads more into a
-    clean result than it says.</li>
-    <li><b>Prints to PDF</b>, so it can be attached to a ban appeal.</li>
+    <li><b>A shareable link</b> that keeps the verdict and drops the personal details, so it can
+    be posted in a ban appeal without handing out anything else.</li>
+    <li><b>A history that is yours.</b> Your server's scans, visible to your staff and nobody
+    else's.</li>
   </ul>
 </section>
 
-<script>
-function copyCmd(){
-  var t=document.getElementById('oneliner').textContent, b=document.getElementById('cp');
-  var ok=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1400);};
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,function(){});return;}
-  var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();
-  try{document.execCommand('copy');ok();}catch(e){}document.body.removeChild(a);
-}
-</script>
-""" % (E(ONELINER), hero_fig, libs if libs is not None else "the",
+<section class="section">
+  <div class="card card-pad reveal" style="text-align:center;padding:44px 24px">
+    <h2 style="margin-bottom:12px">Bring it to your server</h2>
+    <p class="muted" style="margin:0 auto 26px">Tell us about your server in a few sentences.
+    Applications are read by a person, which is the whole reason a verdict from this tool
+    is worth something.</p>
+    <a class="btn btn-primary" href="/apply">Apply with your server</a>
+  </div>
+</section>
+""" % (hero_fig, libs if libs is not None else "&mdash;",
+       c.get("behaviours", "14"), c.get("features", "22"),
+       E(ONELINER), hero_fig, libs if libs is not None else "the",
        c.get("behaviours", "14"), c.get("features", "22"))
     return page("AsyncAnalyzer",
-                "A local, open-source Minecraft mod scanner that produces evidence a "
-                "screenshare moderator can act on.", body, "index.html")
+                "Mod forensics for Minecraft screenshares: a local scanner that hands your "
+                "staff a verdict they can defend.", body, "/")
 
 
 def ps_bands():
@@ -543,23 +515,61 @@ def build_doc(m, c):
        c.get("packages", "?"), c.get("tokens", "?"))
     return page("How AsyncAnalyzer decides",
                 "Every rule the scanner applies, read out of the shipped source when this "
-                "page is built.", body, "how-it-works.html")
+                "page is built.", body, "/how-it-works")
+
+
+def build_benchmark_stub(m, c):
+    """A page for when the measurements have not been made on this machine."""
+    body = """
+<div class="page-head">
+  <h1>Benchmarks</h1>
+  <p class="lede">Every number on this site is measured, and the measurement runs on
+  every push. This copy of the site was built somewhere that could not run it.</p>
+</div>
+
+<div class="grid grid-3">
+  <div class="card"><span class="k">%s</span><b>false flags</b>
+    <span>on %s real Java libraries, through the full verdict chain. From the last
+    committed run.</span></div>
+  <div class="card"><span class="k">%s</span><b>behaviours read from bytecode</b>
+    <span>Counted from the shipped analyser, not from the last benchmark.</span></div>
+  <div class="card"><span class="k">%s</span><b>features per mod</b>
+    <span>Counted from the shipped model.</span></div>
+</div>
+
+<p class="note" style="margin-top:26px">
+  The full run, with its history and the raw output, is in
+  <a href="%s/blob/main/BENCHMARKS.md">BENCHMARKS.md</a>. To produce this page for real:
+</p>
+<div class="cmd"><div class="cmd-head"><span>Rebuild the measurements</span></div>
+<pre>python3 ml/fetch_jars.py &amp;&amp; python3 ml/benchmark.py &amp;&amp; python3 ml/site.py</pre></div>
+""" % ("0" if m.get("cheat_rule_fp") == 0 else str(m.get("cheat_rule_fp", "?")),
+       m.get("libraries", "?"), c.get("behaviours", "?"), c.get("features", "?"), REPO)
+    return page("Benchmarks", "Measured detection numbers for AsyncAnalyzer.", body, "/benchmarks")
 
 
 def main():
-    os.makedirs(DOCS, exist_ok=True)
+    os.makedirs(SITE, exist_ok=True)
     m, c = metrics(), counts()
     written = []
     for name, html_text in (("index.html", build_index(m, c)),
                             ("how-it-works.html", build_doc(m, c))):
-        with open(os.path.join(DOCS, name), "w", encoding="utf-8") as f:
+        with open(os.path.join(SITE, name), "w", encoding="utf-8") as f:
             f.write(html_text)
         written.append(name)
-    # benchmarks.html is produced by benchmark.py, which owns the measurements.
-    if not os.path.exists(os.path.join(DOCS, "benchmarks.html")):
-        print("note: docs/benchmarks.html missing - run ml/benchmark.py to produce it",
+    # benchmarks.html is produced by benchmark.py, which owns the measurements and
+    # needs javac and the downloaded corpus. Somewhere that cannot run it - a laptop,
+    # a fresh clone - the site would otherwise ship a navigation link to a 404, so a
+    # stand-in is written that says where the numbers actually live. CI overwrites it
+    # with the real page on the next push.
+    bench = os.path.join(SITE, "benchmarks.html")
+    if not os.path.exists(bench):
+        with open(bench, "w", encoding="utf-8") as f:
+            f.write(build_benchmark_stub(m, c))
+        written.append("benchmarks.html (stand-in)")
+        print("note: benchmarks.html is a stand-in - run ml/benchmark.py for the real one",
               file=sys.stderr)
-    print("site: wrote %s into docs/" % ", ".join(written))
+    print("site: wrote %s into site/" % ", ".join(written))
     return 0
 
 

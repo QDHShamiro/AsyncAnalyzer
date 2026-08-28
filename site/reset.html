@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Set a new password — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap narrow" style="padding-top:56px">
+  <h2 style="margin-bottom:10px">Set a new password</h2>
+  <p class="muted" style="margin-bottom:28px">This also confirms your email address.</p>
+
+  <div id="error" hidden class="notice notice-bad" role="alert" style="margin-bottom:20px"></div>
+
+  <form id="form" novalidate>
+    <div class="field">
+      <label for="password">New password</label>
+      <input id="password" type="password" autocomplete="new-password" required minlength="8">
+      <div class="hint">At least 8 characters.</div>
+    </div>
+    <button class="btn btn-primary" style="width:100%" type="submit">Save and sign in</button>
+  </form>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, $ } from '/assets/app.js';
+boot(() => {
+  const token = new URLSearchParams(location.search).get('token') || '';
+  if (!token) {
+    $('#form').hidden = true;
+    $('#error').textContent = 'That link is incomplete. Ask for a new reset mail.';
+    $('#error').hidden = false;
+    return;
+  }
+  $('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    btn.setAttribute('aria-busy', 'true');
+    $('#error').hidden = true;
+    try {
+      await api('/api/auth/reset', { body: { token, password: $('#password').value } });
+      location.replace('/app');
+    } catch (ex) {
+      $('#error').textContent = ex.message;
+      $('#error').hidden = false;
+    } finally {
+      btn.removeAttribute('aria-busy');
+    }
+  });
+});
+</script>
+</body></html>

@@ -560,7 +560,7 @@ def main():
             f.write("\n".join(lines) + "\n")
 
         # ------------------------------------------------------- public page ---
-        # docs/benchmarks.html is the same measurements as a page anyone can read.
+        # site/benchmarks.html is the same measurements as a page anyone can read.
         # Generated from the template so it cannot drift from the numbers above -
         # a benchmark page that is edited by hand stops being a benchmark.
         try:
@@ -583,20 +583,20 @@ def main():
                        .replace("{{CLEAN}}", repr(curve_clean))
                        .replace("{{STAMP}}", stamp)
                        .replace("{{DETECTION_ROWS}}", "\n".join(det_rows)))
-            docs = os.path.join(ROOT, "docs")
-            os.makedirs(docs, exist_ok=True)
-            with open(os.path.join(docs, "benchmarks.html"), "w", encoding="utf-8") as f:
+            site = os.path.join(ROOT, "site")
+            os.makedirs(site, exist_ok=True)
+            with open(os.path.join(site, "benchmarks.html"), "w", encoding="utf-8") as f:
                 f.write(page)
             # The landing page quotes these numbers, so hand them over rather than
             # letting it re-derive them and drift.
-            with open(os.path.join(docs, "metrics.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(site, "metrics.json"), "w", encoding="utf-8") as f:
                 json.dump({"libraries": len(libs), "cheat_rule_fp": len(e2e_fp),
                            "agent_matches": len(agent_fp),
                            "tool_version": tool_ver, "model_version": mod_ver,
                            "session_version": sess_ver, "sig_version": sig_ver,
                            "stamp": stamp}, f, indent=2)
         except Exception as e:
-            print("could not write docs/benchmarks.html: %s" % e, file=sys.stderr)
+            print("could not write site/benchmarks.html: %s" % e, file=sys.stderr)
 
         if failures:
             print("\nREGRESSION: " + "; ".join(failures), file=sys.stderr)

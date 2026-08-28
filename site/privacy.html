@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy — AsyncAnalyzer</title>
+<meta name="description" content="What AsyncAnalyzer reads, what it stores, and who can see it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div class="page-head">
+    <h1>Privacy</h1>
+    <p class="lede">A scan produces a judgement about a real person. Here is exactly what is read, what is
+      kept, and who can see it.</p>
+  </div>
+
+  <section class="section" style="padding-top:24px">
+    <div class="section-head"><span class="section-num">01 / 05</span><h2>What runs where</h2></div>
+    <p>The scanner runs on the scanned person's own computer. It reads the Minecraft installation that is
+      actually open, the jars in it, running processes, JVM arguments and Windows records of recently
+      deleted files. It does not upload their files — only what it concluded about them.</p>
+    <p style="margin-top:14px">The whole scanner is one open file. Anyone can read it before running it,
+      and everyone should.</p>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><span class="section-num">02 / 05</span><h2>What is stored</h2></div>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Kept</h3>
+        <ul class="reasons" style="margin-top:10px">
+          <li>The Minecraft name the moderator entered</li>
+          <li>The Windows computer name</li>
+          <li>Mod file names, sizes and hashes</li>
+          <li>The verdict and the reasons behind it</li>
+          <li>Which moderator ran it, and when</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Never uploaded</h3>
+        <ul class="reasons" style="margin-top:10px">
+          <li>Any actual file from the computer</li>
+          <li>Screenshots, key presses, browsing</li>
+          <li>Passwords, tokens or account details</li>
+          <li>The Windows account name — it is stripped out of every stored path</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><span class="section-num">03 / 05</span><h2>Who can see a scan</h2></div>
+    <p>A scan belongs to exactly one server. Its moderators and that server's owner can read it. Another
+      server cannot, no matter how many scans it has. AsyncAnalyzer staff can read scans for support and
+      for the shared cheat intelligence described below.</p>
+    <p style="margin-top:14px">A moderator can also produce a shareable link. That version drops the
+      computer name, the folder path and the system notes, and keeps the verdict and its reasons — the
+      part somebody accused of cheating is entitled to argue with.</p>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><span class="section-num">04 / 05</span><h2>What is shared between servers</h2></div>
+    <p>File hashes of confirmed cheats and confirmed-good mods are pooled, so a cheat caught on one server
+      is known on the next. A hash is a fingerprint of a file — not of a person, and it carries no name.</p>
+    <p style="margin-top:14px">A pooled hash reaches every client, so a wrong one would be a permanent
+      false accusation against a legitimate mod. Every contributed hash records which scan it came from,
+      waits for a human before it counts, and can be revoked.</p>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><span class="section-num">05 / 05</span><h2>Accounts and removal</h2></div>
+    <p>An account holds your name, your email if you gave one, and the avatar from the service you signed
+      in with. Signing in with Discord or Google shares nothing back with them beyond the fact that you
+      signed in.</p>
+    <p style="margin-top:14px">To have a scan or an account deleted, ask the owner of the server it
+      belongs to, or write to us through the
+      <a href="https://github.com/QDHShamiro/AsyncAnalyzer">project page</a>.</p>
+  </section>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot } from '/assets/app.js';
+boot();
+</script>
+</body></html>

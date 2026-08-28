@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Setup — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div id="head"><div class="skeleton" style="height:110px;margin-top:44px"></div></div>
+  <div id="body"></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, serverSlug, serverHead, wireCopy, toast, esc, $ } from '/assets/app.js';
+
+boot(async () => {
+  if (!await requireAuth()) return;
+  const slug = serverSlug();
+  const base = '/app/' + encodeURIComponent(slug);
+  const { server, role } = await api('/api/servers/' + encodeURIComponent(slug));
+  $('#head').outerHTML = serverHead(slug, server, role, base + '/setup');
+
+  const line = (key) =>
+    'powershell -ExecutionPolicy Bypass -Command "$env:ASYNCANALYZER_ENDPOINT=\'' + location.origin +
+    '\';$env:ASYNCANALYZER_KEY=\'' + key + '\';iex (irm \'' + location.origin + '/run.ps1\')"';
+
+  const draw = (key) => {
+    $('#body').innerHTML = `
+      <div class="card card-pad reveal" style="margin-bottom:18px">
+        <h3>The command</h3>
+        <p class="muted small" style="margin:8px 0 16px">
+          The person you are screensharing runs this in their own PowerShell. Nothing is installed,
+          nothing is uploaded except the result, and the scan lands in this server's history.
+        </p>
+        <div class="copy"><code id="cmd">${esc(line(key))}</code><button type="button" data-copy-from="#cmd">Copy</button></div>
+        <p class="muted tiny" style="margin-top:12px">
+          Say the scan code out loud before they run it. The report prints it back, which is what makes a
+          screenshot of somebody else's clean scan useless.
+        </p>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card reveal">
+          <h3>What they see</h3>
+          <p class="muted small" style="margin-top:8px">
+            A console window that names this server, says the result will be uploaded here, and prints a
+            verdict at the end. They can read the whole scanner first — it is one open file.
+          </p>
+        </div>
+        <div class="card reveal">
+          <h3>Your key</h3>
+          <p class="muted small" style="margin:8px 0 14px">
+            The key travels inside the command, so treat it as public. It decides which server a scan lands
+            in — nothing else. Rotate it if an old command is still floating around.
+          </p>
+          <div class="copy" style="margin-bottom:14px"><code id="key">${esc(key)}</code><button type="button" data-copy-from="#key">Copy</button></div>
+          <button class="btn btn-sm btn-danger" id="rotate" ${role === 'owner' ? '' : 'disabled'}>Rotate the key</button>
+          ${role === 'owner' ? '' : '<p class="muted tiny" style="margin-top:10px">Only the server owner can rotate it.</p>'}
+        </div>
+      </div>`;
+    wireCopy();
+
+    const btn = $('#rotate');
+    if (btn && role === 'owner') {
+      btn.addEventListener('click', async () => {
+        // Rotating breaks every command already pasted in a staff channel, so it
+        // asks first rather than being one stray click away.
+        if (!confirm('Rotate the key? Every command your staff already saved will stop working.')) return;
+        btn.setAttribute('aria-busy', 'true');
+        try {
+          const r = await api('/api/servers/' + encodeURIComponent(slug) + '/rotate-key', { method: 'POST', body: {} });
+          draw(r.writeKey);
+          toast('New key in place. Send your staff the new command.');
+        } catch (e) {
+          toast(e.message, true);
+        } finally {
+          btn.removeAttribute('aria-busy');
+        }
+      });
+    }
+  };
+
+  draw(server.writeKey);
+});
+</script>
+</body></html>
