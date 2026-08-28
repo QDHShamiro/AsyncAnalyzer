@@ -105,13 +105,13 @@ median of ~220 classes. Detection must not depend on where it hides.
 
 ## False flags on real software — the number that matters
 
-Negative class: **186 real libraries** from Maven Central (ASM, ByteBuddy,
+Negative class: **181 real libraries** from Maven Central (ASM, ByteBuddy,
 Netty, Guava, Kotlin, Spring, BouncyCastle, LWJGL — the library Minecraft
 itself uses for input and OpenGL — mockito, log4j, …).
 
 | | count |
 |---|---:|
-| real libraries tested | 186 |
+| real libraries tested | 181 |
 | **flagged by any of the 12 cheat rules** | **0** |
 | rules checked | aim, scaffold, speed, invmove, dropper, nodinput, targeting, autoclick, velocity, nuker, freecam, esp |
 | matched the Java-agent rule | 14 |
@@ -125,7 +125,7 @@ abnormal; in an ordinary application classpath it is not.
 
 | | |
 |---|---|
-| classes parsed | 122556 |
+| classes parsed | 122810 |
 | time | ~90 s |
 | per class | ~0.7 ms |
 
@@ -141,7 +141,7 @@ so a normal run only pays for the unverified remainder.
 - **ESP is not decidable from bytecode.** ESP and a mob-radar minimap perform the
   same operations. The tool surfaces that behaviour for review rather than
   accusing, and deciding it needs identity (hash verification), not a bigger model.
-- A false-flag count of 0 means none of *these* 186 libraries were flagged.
+- A false-flag count of 0 means none of *these* 181 libraries were flagged.
   It is evidence, not a guarantee.
 
 ## End-to-end verdict — the whole chain, as a user sees it
@@ -160,8 +160,10 @@ rules and the banding together.
 | a random-named jar, verified | Clean | Clean |
 | a mod with an injected agent | Confirmed | Confirmed |
 
-Through the same full chain, **0 of 186** real libraries come out as anything
-other than Clean.
+Through the same full chain, **0 of 181** real libraries reach an accusing
+band (Likely / Confirmed / server-rule).
+
+**7** land in Review - shown to a moderator as unproven, never as a finding: `aspectjweaver-1.9.22.jar`, `byte-buddy-agent-1.14.12.jar`, `h2-2.2.224.jar`, `kotlinx-coroutines-core-jvm-1.8.0.jar`, `opentelemetry-javaagent-2.4.0.jar`, `sponge-mixin-0.13.2+mixin.0.8.5.jar`, `spring-instrument-6.1.6.jar`.
 
 ## Team learning — does sharing scans actually help?
 
@@ -185,7 +187,6 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
-| `65d1492` | 186 ███████ | 0 | ok | ok | ok |
 | `c046d59` | 186 ███████ | 0 | ok | ok | ok |
 | `9ccd292` | 186 ███████ | 0 | ok | ok | ok |
 | `03c08e7` | 186 ███████ | 0 | ok | ok | ok |
@@ -197,12 +198,13 @@ of 0 means more as that number grows.
 | `8f0a558` | 186 ███████ | 0 | ok | ok | ok |
 | `07358af` | 186 ███████ | 0 | ok | ok | ok |
 | `6d6fadb` | 186 ███████ | 0 | ok | ok | ok |
+| `local` | 181 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
 | gate | result |
 |---|:--:|
-| every real library Clean through the full chain | pass |
+| no real library accused through the full chain | pass |
 | end-to-end verdict cases correct | pass |
 | team learning improves without drifting | pass |
 | no real library flagged by a cheat rule | pass |

@@ -246,6 +246,26 @@ def main():
         ("anticheat: legit id + detection strings", dict(legit_modid=1, strong_count=5, reflection_count=3), {"Clean"}),
         ("architectury: legit id + 2 loaders", dict(legit_modid=1, loader_ids=["fabric", "forge"], reflection_count=2), {"Clean"}),
         ("verified mod shipping its own agent", dict(verified=1, java_agent=1), {"Clean"}),
+        # The two halves of the agent rule. An agent manifest is how an injected
+        # client gets in - and how ByteBuddy, AspectJ, OpenTelemetry,
+        # spring-instrument and Mixin work. Six of those came out Confirmed 90
+        # against the negative corpus, Mixin included, which is the framework nearly
+        # every Minecraft mod is built on. So the accusing floor needs one
+        # corroborating fact: the jar is about Minecraft, or it is hiding what it is.
+        ("instrumentation library, nothing else",
+         dict(java_agent=1, agent_retransform=1, reflection_count=4, avg_entropy=5.4),
+         {"Review"}),
+        ("...the same jar, but it declares a mod id",
+         dict(java_agent=1, agent_retransform=1, reflection_count=4, loader_ids=["fabric"]),
+         {"Confirmed"}),
+        ("...or its classes are single-letter",
+         dict(java_agent=1, agent_retransform=1, reflection_count=4, singlechar_cls_pct=0.4),
+         {"Confirmed"}),
+        # No Can-Retransform-Classes here, so the corroborated floor is 80 rather
+        # than 90 - Likely, not Confirmed. The two floors are the rule's own
+        # distinction between "loads as an agent" and "rewrites code while it runs".
+        ("...or it carries a hidden payload (no retransform: 80)",
+         dict(java_agent=1, reflection_count=4, hidden_payload=2), {"Likely"}),
     ]
     for label, raw, allowed in IMP:
         v = verdict.verdict(raw)
@@ -255,17 +275,17 @@ def main():
         print(f"  [{'PASS' if ok else 'FAIL'}] {label:42s} score={v['score']:3d} band={v['band']:9s}"
               f" (want {sorted(allowed)})")
 
-    # Real library jars. Split, the same way ml/benchmark.py splits them and for
-    # the same reason: a handful of these ARE Java agents - aspectjweaver,
-    # byte-buddy-agent, opentelemetry-javaagent, spring-instrument - and the agent
-    # rule flagging them is correct rather than a false positive. The rule is scoped
-    # to a jar sitting in a MODS FOLDER, where an agent is abnormal; in an ordinary
-    # application classpath it is the library's whole job.
+    # Real library jars. Seven of these ARE Java agents - aspectjweaver,
+    # byte-buddy-agent, opentelemetry-javaagent, spring-instrument, h2,
+    # kotlinx-coroutines and sponge-mixin - and they are counted separately because
+    # an agent in a MODS FOLDER is abnormal while in an application classpath it is
+    # the library's whole job.
     #
-    # This split only appeared when features.py learned to read the manifest. Before
-    # that the Python extractor never computed java_agent at all, so this test was
-    # passing on rules it was not reaching - which is worth stating plainly rather
-    # than quietly widening the expectation.
+    # What that used to hide: six of them came out Confirmed 90, the band that says
+    # "this is cheating", and one of the six is Mixin - what nearly every Minecraft
+    # mod is built on. "Counted separately" was doing a lot of work there. The rule
+    # now needs one corroborating fact before it accuses, so these land in Review,
+    # and the assertion below says so rather than accepting any band at all.
     jars = os.path.join(HERE, "jars_legit")
     if os.path.isdir(jars):
         print("\n=== Real library jars ===")
@@ -278,8 +298,15 @@ def main():
             raw = features.extract_from_jar(path)
             v = analyze(path)
             if raw.get("java_agent") and v["band"] != "Clean":
-                # genuinely an agent, and nothing else about it fired
+                # genuinely an agent, and nothing else about it fired. Review is the
+                # only band that may mean; anything higher is an accusation against a
+                # real library and is a failure like any other.
                 agents.append(f)
+                ok = v["band"] == "Review"
+                passed += ok
+                failed += not ok
+                if not ok:
+                    print(f"  [FAIL] {f:32s} agent library accused: band={v['band']} score={v['score']}")
                 continue
             ok = v["band"] == "Clean"
             passed += ok
