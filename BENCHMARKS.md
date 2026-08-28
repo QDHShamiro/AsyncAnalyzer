@@ -29,6 +29,25 @@ game's own input system, the cheat writes the movement packet itself.
 | Pathing (cheat) | yes | flagged |
 | AutoWalk (clean) | no | clean |
 
+## 1.8.9 and 1.12 — the names the rules did not know
+
+The behaviour tables were written against 1.13+ Mojang, Yarn and intermediary
+names. **1.8.9 is where most Minecraft PvP cheating happens** — it is what Lunar
+and Badlion players run — and a 1.8.9 killaura calls none of those names. It
+sends a `C03PacketPlayer`, writes `rotationYaw`, and asks `PlayerControllerMP` to
+attack. Against the tables as they were, that class matched *nothing at all*.
+
+| jar | version dialect | rules tripped | expected |
+|---|---|---|:--:|
+| Legacy18Aura (cheat) | 1.8.9 MCP | aim+targeting | flagged |
+| Legacy18Fly (cheat) | 1.8.9 MCP | aim+speed+nodinput+velocity | flagged |
+| Legacy18Minimap (clean) | 1.8.9 MCP | — | clean |
+| Legacy18Sprint (clean) | 1.8.9 MCP | — | clean |
+
+`Legacy18Sprint` is the negative that matters: a 1.8.9 sprint mod reads the key
+and moves the player through the game's own fields, and never touches the
+movement packet. Same line as in 1.13+, drawn in 1.8's names.
+
 ## Mixins — code compiled INTO the game
 
 A Mixin is not a mod calling Minecraft. It is code the loader compiles into a
@@ -50,6 +69,22 @@ cheat from the mod rather than flag the technique.
 `MixinFreelook` is the negative this exists for: a freelook mod shadows exactly
 the rotation fields the cheat does. The difference read here is the **target** —
 a camera mixes into the player, never into the packet that reports your aim.
+
+### Coremods — the third door
+
+Reflection hides the API in a string. A Mixin hides its target in an annotation.
+A **class transformer** — a Forge coremod or a LaunchWrapper tweaker — is handed
+every class name the game loads and decides what to rewrite by *comparing that
+name against string constants*. Third door, same key: it calls nothing, so the
+symbol table sees an empty class.
+
+| jar | what it rewrites | rules tripped | expected |
+|---|---|---|:--:|
+| CoreModAura (cheat) | the player, to spoof the rotation it reports | aim+nodinput | flagged |
+| CoreModPerf (clean) | the chunk renderer and the HUD | — | clean |
+
+Installing a transformer is never the finding — OptiFine is a tweaker and half of
+Forge is coremods. It is recorded as *scope*, and what it rewrites is read.
 
 ## Hiding depth
 
@@ -91,8 +126,8 @@ abnormal; in an ordinary application classpath it is not.
 | | |
 |---|---|
 | classes parsed | 122556 |
-| time | ~55 s |
-| per class | ~0.4 ms |
+| time | ~85 s |
+| per class | ~0.7 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -150,7 +185,6 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
-| `75de5c0` | 174 ██████ | 0 | ok | ok | ok |
 | `86e5b7c` | 184 ███████ | 0 | ok | ok | ok |
 | `5f73c7c` | 185 ███████ | 0 | ok | ok | ok |
 | `4d830af` | 185 ███████ | 0 | ok | ok | ok |
@@ -162,6 +196,7 @@ of 0 means more as that number grows.
 | `9ccd292` | 186 ███████ | 0 | ok | ok | ok |
 | `03c08e7` | 186 ███████ | 0 | ok | ok | ok |
 | `6b02ad6` | 186 ███████ | 0 | ok | ok | ok |
+| `adc4a6d` | 186 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
