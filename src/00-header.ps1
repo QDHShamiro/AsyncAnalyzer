@@ -74,7 +74,7 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0 }
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null

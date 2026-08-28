@@ -20,18 +20,28 @@ function json(obj, code = 200) {
 }
 function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
 
+// A stored model from an OLDER version has a shorter feature_order, so the features
+// added since would simply never be trained - silently, because a missing feature
+// multiplies by 0 rather than failing. Refetch the new base instead; the team
+// relearns from its next scans, which is cheap, and a half-trained model is not.
 async function getModel(env) {
   const row = await env.DB.prepare("SELECT v FROM meta WHERE k='model'").first();
-  if (row) return JSON.parse(row.v);
   const base = await (await fetch(BASE_MODEL_URL)).json();
+  if (row) {
+    const cur = JSON.parse(row.v);
+    if ((cur.version || 0) >= (base.version || 0)) return cur;
+  }
   const m = { version: base.version, feature_order: base.feature_order, intercept: base.intercept, weights: { ...base.weights }, base: { intercept: base.intercept, weights: { ...base.weights } }, trainedCount: 0 };
   await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('model', ?)").bind(JSON.stringify(m)).run();
   return m;
 }
 async function getSModel(env) {
   const row = await env.DB.prepare("SELECT v FROM meta WHERE k='smodel'").first();
-  if (row) return JSON.parse(row.v);
   const base = await (await fetch(BASE_SMODEL_URL)).json();
+  if (row) {
+    const cur = JSON.parse(row.v);
+    if ((cur.version || 0) >= (base.version || 0)) return cur;
+  }
   const m = { version: base.version, feature_order: base.feature_order, intercept: base.intercept, weights: { ...base.weights }, base: { intercept: base.intercept, weights: { ...base.weights } }, trainedCount: 0 };
   await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('smodel', ?)").bind(JSON.stringify(m)).run();
   return m;

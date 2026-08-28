@@ -224,6 +224,16 @@ if (-not $SkipModCheck) {
                 Add-ScanGap ("$($jar.Name): declares $($feat.MixinDeclared) mixin(s) in its config but none could be read from the bytecode $([char]0x2014) what it rewrites in the game was NOT checked")
             }
 
+            # What the behaviour rules found, kept separate from the band so the
+            # whole-scan model sees it directly. Only counted where the finding
+            # actually stands: a verified mod is capped safe, and its behaviour is
+            # part of the mod's own function rather than a cheat.
+            if ($verdict.BehaviourScore -ge 85 -and $verdict.Band -eq "Confirmed") {
+                $script:Evidence.BehaviourCheat++
+            } elseif ($verdict.BehaviourScore -ge 60 -and ($verdict.Band -eq "Confirmed" -or $verdict.Band -eq "Likely")) {
+                $script:Evidence.BehaviourLikely++
+            }
+            if ($verdict.HiddenApi -and -not $verified) { $script:Evidence.HiddenApi++ }
             if ($randomName) { $script:Evidence.RandomNamed++ }
             if ($cheatSite)  { $script:Evidence.CheatSiteDl++ }
             if ((-not $verified) -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite -or $mechCheat)) { $script:Evidence.HardConfirmed++ }

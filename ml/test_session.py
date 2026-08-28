@@ -68,6 +68,22 @@ SCANS = [
     # the raw counts at all - it is reported in the PC scan and does not accuse.
     ("Click macro with no link to Minecraft",
      dict(total_mods=25, verified=25), {"Clean"}),
+    # The hole v3 closes. A behaviour-confirmed cheat used to reach this model
+    # only through flagged_ratio, and a big modpack divides that away to nothing:
+    # measured at 3/100, Clean, for a jar the mod pass had already called a cheat.
+    ("Big pack, ONE behaviour-confirmed aimbot",
+     dict(total_mods=100, verified=60, flagged=1, behaviour_cheat=1), {"Confirmed"}),
+    ("Big pack, a behaviour-LIKELY mod",
+     dict(total_mods=100, verified=60, flagged=1, behaviour_likely=1), {"Likely"}),
+    # A server-rule finding is not an accusation - it is floored to Review because
+    # its whole purpose is to put a rule question in front of a person.
+    ("Server-rule findings (ESP-shaped / printer)",
+     dict(total_mods=100, verified=60, review=2, server_rule=2), {"Review"}),
+    # ... and must never add up to a flag on its own, however many there are.
+    ("Many server-rule findings, nothing else",
+     dict(total_mods=40, verified=20, review=8, server_rule=8), {"Review"}),
+    ("Mods that hide the API behind reflection",
+     dict(total_mods=30, verified=20, hidden_api=2), {"Clean", "Review"}),
 ]
 
 print("=== Session scoring (whole scan, not one jar) ===")
@@ -144,6 +160,26 @@ check("hard-confirmed still Confirmed", v_hard["band"] == "Confirmed",
       f"score={v_hard['score']}")
 
 
+# ---------------------------------------------------------------- invariant ---
+# Every raw signal that can auto-label a scan as a CHEAT must also be a model
+# FEATURE. This is not a style rule. label_for() decides what the model trains on;
+# if it teaches on evidence the vector cannot see, the gradient has nowhere to go
+# but the intercept, and every scan afterwards starts closer to "cheat". That is
+# exactly what happened when the macro signals went in as hard rules only, and
+# nothing would have noticed - the scan would simply have crept.
+def _label1_keys():
+    import re
+    src = open(S.__file__, encoding="utf-8").read()
+    body = src[src.index("def label_for("):]
+    body = body[:body.index("return 1")]
+    return set(re.findall(r'raw\.get\("(\w+)"', body))
+
+
+_l1 = _label1_keys()
+_missing = sorted(_l1 - set(S.FEATURE_NAMES))
+check("every cheat-label signal is a model feature (%d)" % len(_l1), not _missing,
+      "" if not _missing else "not features: %s" % _missing)
+
 # ------------------------------------------------------- PS / Python parity ---
 # The hard rules exist in two places: Get-SessionVerdict in the shipped PowerShell
 # and verdict() here. The weights are already machine-checked in CI; the RULES were
@@ -184,6 +220,22 @@ _root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 _ps = open(_os.path.join(_root, "src", "30-runtime.ps1"), encoding="utf-8").read()
 _ps = _ps[_ps.index("function Get-SessionVerdict"):_ps.index("function Get-SessionVerdictCached")]
 _py = open(_os.path.join(_root, "ml", "session_model.py"), encoding="utf-8").read()
+# The PowerShell vector is a hashtable, so a feature missing from it is not an
+# error - Invoke-SessionModel multiplies by $null, which is 0. The feature simply
+# stops existing, silently, on everyone's PC.
+_vec_ps = _ps_all = open(_os.path.join(_root, "src", "30-runtime.ps1"), encoding="utf-8").read()
+_vb = _vec_ps[_vec_ps.index("function Get-SessionVector"):_vec_ps.index("function Invoke-SessionModel")]
+import re as _re2
+_vec_keys = set(_re2.findall(r"^\s*(\w+)\s*=\s*", _vb, _re2.M)) - {"return", "function"}
+_order = _re2.search(r"\$script:smFeatureOrder = @\(([^)]*)\)", _vec_ps).group(1)
+_order_keys = set(_re2.findall(r"'(\w+)'", _order))
+check("PS vector covers every feature (%d)" % len(_order_keys),
+      _order_keys <= _vec_keys,
+      "" if _order_keys <= _vec_keys else "missing from Get-SessionVector: %s" % sorted(_order_keys - _vec_keys))
+check("PS feature order matches Python (%d)" % len(S.FEATURE_NAMES),
+      [k for k in _re2.findall(r"'(\w+)'", _order)] == S.FEATURE_NAMES,
+      "" if [k for k in _re2.findall(r"'(\w+)'", _order)] == S.FEATURE_NAMES else "ps=%s" % _order)
+
 _a, _b = _hard_rules_ps(_ps), _hard_rules_py(_py)
 print("\n--- PowerShell / Python hard-rule parity ---")
 check("hard rules identical (%d)" % len(_b), _a == _b,

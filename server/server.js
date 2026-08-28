@@ -42,6 +42,11 @@ if (!sigs.meta) sigs.meta = {};   // older stores predate attribution
 const MODEL_FILE = path.join(DATA_DIR, 'model.json');
 const BASE = load(path.join(__dirname, '..', 'ml', 'model.json'), null);
 let model = load(MODEL_FILE, null);
+// A stored model from an OLDER version has a shorter feature_order, so the features
+// added since would simply never be trained - silently, because a missing feature
+// multiplies by 0 rather than failing. Reset to the new base instead; the team
+// relearns from its next scans, which is cheap, and a half-trained model is not.
+if (model && BASE && (model.version || 0) < (BASE.version || 0)) model = null;
 if (!model && BASE) {
   model = { version: BASE.version, feature_order: BASE.feature_order, intercept: BASE.intercept, weights: { ...BASE.weights }, trainedCount: 0 };
   save(MODEL_FILE, model);
@@ -50,6 +55,7 @@ if (!model && BASE) {
 const SMODEL_FILE = path.join(DATA_DIR, 'smodel.json');
 const SBASE = load(path.join(__dirname, '..', 'ml', 'session_model.json'), null);
 let smodel = load(SMODEL_FILE, null);
+if (smodel && SBASE && (smodel.version || 0) < (SBASE.version || 0)) smodel = null;
 if (!smodel && SBASE) {
   smodel = { version: SBASE.version, feature_order: SBASE.feature_order, intercept: SBASE.intercept, weights: { ...SBASE.weights }, trainedCount: 0 };
   save(SMODEL_FILE, smodel);

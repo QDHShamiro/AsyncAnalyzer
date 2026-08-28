@@ -259,18 +259,22 @@ function Get-ModVerdict($ctx) {
     # Set when a behaviour is recognised for certain but its legality is a server
     # rule rather than a technical fact. It renames the band; it never raises it.
     $policy = $false
+    # The highest score any BEHAVIOUR rule set, kept separate from $score so the
+    # whole-scan model can see it. It used to reach that model only through the
+    # flagged ratio, which a large modpack divides away to nothing.
+    $bhv = 0
     $bc = $ctx.Bytecode
     if ($bc -and $bc.ClassesParsed -gt 0) {
         # The aim / killaura fingerprint, verified against real cheat source: forging your
         # own outgoing movement packet while writing a computed rotation into it. Measured
         # separation on the corpus was total - no legitimate mod fakes its own movement.
         if ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint; normal mods never do this")
         }
         # Loader / dropper: decrypt something, then define a class out of the plaintext.
         if ($bc.cryptoRatio -ge 0.5 -and ($bc.classloadRatio -gt 0 -or $bc.reflectRatio -ge 0.5)) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: decrypts data and defines classes from it at runtime $([char]0x2014) loader/dropper pattern")
         }
         # Forging your own movement is the line between automating the game and
@@ -278,41 +282,41 @@ function Get-ModVerdict($ctx) {
         # with a second thing no legitimate mod combines it with. Measured on the
         # corpus at 0 hits across 405 clean jars, 177 of them real libraries.
         if ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement")
         }
         if ($bc.movepacketRatio -gt 0 -and $bc.motionRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match $([char]0x2014) speed / no-fall / blink. The game never produced this movement")
         }
         if ($bc.containerRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement")
         }
         # Strong, but not the same order of certainty as forging movement, so these
         # flag rather than confirm.
         if ($bc.movepacketRatio -gt 0 -and $bc.inputRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: sends its own movement packets and never reads the keyboard $([char]0x2014) the movement is not coming from the player")
         }
         if ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep $([char]0x2014) killaura / reach / triggerbot pick their target this way")
         }
         if ($bc.attackRatio -gt 0 -and $bc.inputRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: attacks without ever reading a key or mouse button $([char]0x2014) the hits are not coming from the player (autoclicker / triggerbot)")
         }
         if ($bc.pktlistenRatio -gt 0 -and $bc.motionRatio -gt 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back")
         }
         if ($bc.blockbreakRatio -gt 0 -and $bc.inputRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: breaks blocks without reading input $([char]0x2014) nuker. A vein miner breaks blocks too, but only while the player is mining")
         }
         if ($bc.rotationRatio -gt 0 -and $bc.renderRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them")
         }
         # NOT a rule. A jar that locates its own file and deletes it is exactly the
@@ -351,7 +355,7 @@ function Get-ModVerdict($ctx) {
             [void]$reasons.Add("Behaviour: the game class it rewrites is named only in its Mixin annotation, so it never appears in the class symbol table $([char]0x2014) read out of the annotation instead")
         }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
-            $score = [Math]::Max($score, 80)
+            $score = [Math]::Max($score, 80); $bhv = [Math]::Max($bhv, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
         }
         # ---- server-rule behaviours ------------------------------------------
@@ -436,7 +440,9 @@ function Get-ModVerdict($ctx) {
     # else pushed the same jar to Likely or Confirmed, that finding stands - a printer
     # that also forges movement packets is not a printer.
     if ($policy -and $band -eq "Review") { $band = "ServerRule" }
-    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons; Policy = $policy }
+    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons
+              Policy = $policy; BehaviourScore = $bhv
+              HiddenApi = $(if ($bc -and $bc.hiddenapiRatio -gt 0) { $true } else { $false }) }
 }
 
 function Split-CardText([string]$text, [int]$width) {
@@ -639,6 +645,12 @@ function Invoke-SelfTest {
         # and the scan still has to say what it found on the PC.
         @{ Label = "Spotless mods, autoclicker aimed at MC"; Bands = @("Confirmed"); Raw = @{ total_mods = 25; verified = 25; macro_cheat = 1; mc_running = 1 } }
         @{ Label = "Spotless mods, macro named as technique"; Bands = @("Likely"); Raw = @{ total_mods = 25; verified = 25; macro_named = 1 } }
+        # The hole v3 closes: a behaviour-confirmed cheat reached this model only
+        # through the flagged RATIO, which a large modpack divides away to nothing.
+        @{ Label = "Big pack, ONE behaviour-confirmed cheat"; Bands = @("Confirmed"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_cheat = 1 } }
+        @{ Label = "Big pack, a behaviour-LIKELY mod"; Bands = @("Likely"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_likely = 1 } }
+        # A server-rule finding needs a person, and never more than that.
+        @{ Label = "Server-rule findings only"; Bands = @("Review"); Raw = @{ total_mods = 40; verified = 20; review = 8; server_rule = 8 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {

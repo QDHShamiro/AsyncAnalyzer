@@ -74,7 +74,7 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0 }
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
@@ -941,25 +941,30 @@ function Update-ModelOnline($raw, $label) {
 # from every finished scan, locally and (with team mode) across everyone.
 # Source of truth for the weights: ml/session_model.py -> ml/session_model.json
 # ---------------------------------------------------------------------------
-$script:smModelVersion = 2
-$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client')
+$script:smModelVersion = 3
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat')
 $script:smIntercept = -4.0
 $script:smWeights = @{
-    'flagged_ratio' = 4.0
+    'flagged_ratio' = 4
     'review_ratio' = 1.2
     'unverified_ratio' = 0.8
     'random_ratio' = 1.5
-    'cheatsite_dl' = 3.0
+    'cheatsite_dl' = 3
     'hard_confirmed' = 4.5
     'sys_issues' = 1.2
-    'jvm_inject' = 3.0
-    'bam_deleted' = 1.0
+    'jvm_inject' = 3
+    'bam_deleted' = 1
     'cheat_procs' = 3.5
-    'stray_jars' = 2.0
-    'cheat_folders' = 3.0
+    'stray_jars' = 2
+    'cheat_folders' = 3
     'deleted_jars' = 2.5
-    'mc_running' = 0.0
-    'mem_client' = 5.0
+    'mc_running' = 0
+    'mem_client' = 5
+    'behaviour_cheat' = 4.5
+    'behaviour_likely' = 2
+    'server_rule' = 0.8
+    'hidden_api' = 0.8
+    'macro_cheat' = 4.5
 }
 $script:smBaseWeights = @{}
 foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
@@ -992,6 +997,14 @@ function Get-SessionRaw {
         # trained and versioned, and one cannot be bolted on without retraining.
         macro_cheat    = [int]$ev.MacroCheat
         macro_named    = [int]$ev.MacroNamed
+        # What the BEHAVIOUR rules found. These used to reach this model through
+        # nothing but flagged_ratio, which a big modpack divides away: measured, a
+        # 100-mod pack with ONE behaviour-confirmed aimbot in it scored 3/100 and
+        # read Clean, while the same jar recognised by hash scored 85.
+        behaviour_cheat  = [int]$ev.BehaviourCheat
+        behaviour_likely = [int]$ev.BehaviourLikely
+        server_rule      = [int]$script:ServerRule
+        hidden_api       = [int]$ev.HiddenApi
     }
 }
 
@@ -1015,6 +1028,11 @@ function Get-SessionVector($raw) {
         deleted_jars     = Get-Clip01 ([Math]::Min([double]$raw.deleted_jars, 3.0) / 3.0)
         mc_running       = $(if ($raw.mc_running) { 1.0 } else { 0.0 })
         mem_client       = $(if ($raw.mem_client) { 1.0 } else { 0.0 })
+        behaviour_cheat  = $(if ($raw.behaviour_cheat) { 1.0 } else { 0.0 })
+        behaviour_likely = $(if ($raw.behaviour_likely) { 1.0 } else { 0.0 })
+        server_rule      = Get-Clip01 ([Math]::Min([double]$raw.server_rule, 2.0) / 2.0)
+        hidden_api       = Get-Clip01 ([Math]::Min([double]$raw.hidden_api, 2.0) / 2.0)
+        macro_cheat      = $(if ($raw.macro_cheat) { 1.0 } else { 0.0 })
     }
 }
 
@@ -1037,6 +1055,15 @@ function Get-SessionVerdict($raw) {
     if ($raw.cheatsite_dl)       { $score = [Math]::Max($score, 60); [void]$reasons.Add("A mod was downloaded from a known cheat site") }
     if ($raw.stray_jars -gt 0 -or $raw.cheat_folders -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("Cheat files outside the mods folder: $($raw.stray_jars) jar(s), $($raw.cheat_folders) folder(s)") }
     if ($raw.mem_client -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("A named cheat client was identified inside the RUNNING game's memory $([char]0x2014) it is loaded right now, whatever the mods folder looks like") }
+    # A mod confirmed by its BEHAVIOUR is proof of the same order as a hash match,
+    # and stronger in one way: it survives renaming and string encryption, a hash
+    # does not. Before this rule, one behaviour-confirmed aimbot in a 100-mod pack
+    # left the whole scan reading Clean at 3/100.
+    if ($raw.behaviour_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.behaviour_cheat) mod(s) confirmed as a cheat by what the code DOES $([char]0x2014) forged movement packets, a computed rotation, decrypt-then-load. That reading survives renaming and string encryption") }
+    if ($raw.behaviour_likely -gt 0) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.behaviour_likely) mod(s) whose behaviour matches a cheat pattern without being conclusive on its own") }
+    # A server-rule finding is not an accusation, and this floor is not one either:
+    # it puts the scan in front of a person, which is the whole purpose of the band.
+    if ($raw.server_rule -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("$($raw.server_rule) mod(s) recognised for certain whose legality is YOUR server's rule, not a technical question (ESP-shaped rendering, schematic printer) $([char]0x2014) not an accusation") }
     # An autoclicker is not a mod and never shows up in the mods folder. A script
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
@@ -1066,10 +1093,11 @@ function Get-SessionVerdictCached {
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
     if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0 -or
-        $raw.macro_cheat -gt 0) { return 1 }
+        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
         $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
         $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
+        $raw.behaviour_cheat -eq 0 -and $raw.behaviour_likely -eq 0 -and $raw.server_rule -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }
@@ -2022,18 +2050,22 @@ function Get-ModVerdict($ctx) {
     # Set when a behaviour is recognised for certain but its legality is a server
     # rule rather than a technical fact. It renames the band; it never raises it.
     $policy = $false
+    # The highest score any BEHAVIOUR rule set, kept separate from $score so the
+    # whole-scan model can see it. It used to reach that model only through the
+    # flagged ratio, which a large modpack divides away to nothing.
+    $bhv = 0
     $bc = $ctx.Bytecode
     if ($bc -and $bc.ClassesParsed -gt 0) {
         # The aim / killaura fingerprint, verified against real cheat source: forging your
         # own outgoing movement packet while writing a computed rotation into it. Measured
         # separation on the corpus was total - no legitimate mod fakes its own movement.
         if ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint; normal mods never do this")
         }
         # Loader / dropper: decrypt something, then define a class out of the plaintext.
         if ($bc.cryptoRatio -ge 0.5 -and ($bc.classloadRatio -gt 0 -or $bc.reflectRatio -ge 0.5)) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: decrypts data and defines classes from it at runtime $([char]0x2014) loader/dropper pattern")
         }
         # Forging your own movement is the line between automating the game and
@@ -2041,41 +2073,41 @@ function Get-ModVerdict($ctx) {
         # with a second thing no legitimate mod combines it with. Measured on the
         # corpus at 0 hits across 405 clean jars, 177 of them real libraries.
         if ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement")
         }
         if ($bc.movepacketRatio -gt 0 -and $bc.motionRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match $([char]0x2014) speed / no-fall / blink. The game never produced this movement")
         }
         if ($bc.containerRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
-            $score = [Math]::Max($score, 85)
+            $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
             [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement")
         }
         # Strong, but not the same order of certainty as forging movement, so these
         # flag rather than confirm.
         if ($bc.movepacketRatio -gt 0 -and $bc.inputRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: sends its own movement packets and never reads the keyboard $([char]0x2014) the movement is not coming from the player")
         }
         if ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep $([char]0x2014) killaura / reach / triggerbot pick their target this way")
         }
         if ($bc.attackRatio -gt 0 -and $bc.inputRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: attacks without ever reading a key or mouse button $([char]0x2014) the hits are not coming from the player (autoclicker / triggerbot)")
         }
         if ($bc.pktlistenRatio -gt 0 -and $bc.motionRatio -gt 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back")
         }
         if ($bc.blockbreakRatio -gt 0 -and $bc.inputRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: breaks blocks without reading input $([char]0x2014) nuker. A vein miner breaks blocks too, but only while the player is mining")
         }
         if ($bc.rotationRatio -gt 0 -and $bc.renderRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
-            $score = [Math]::Max($score, 60)
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them")
         }
         # NOT a rule. A jar that locates its own file and deletes it is exactly the
@@ -2114,7 +2146,7 @@ function Get-ModVerdict($ctx) {
             [void]$reasons.Add("Behaviour: the game class it rewrites is named only in its Mixin annotation, so it never appears in the class symbol table $([char]0x2014) read out of the annotation instead")
         }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
-            $score = [Math]::Max($score, 80)
+            $score = [Math]::Max($score, 80); $bhv = [Math]::Max($bhv, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
         }
         # ---- server-rule behaviours ------------------------------------------
@@ -2199,7 +2231,9 @@ function Get-ModVerdict($ctx) {
     # else pushed the same jar to Likely or Confirmed, that finding stands - a printer
     # that also forges movement packets is not a printer.
     if ($policy -and $band -eq "Review") { $band = "ServerRule" }
-    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons; Policy = $policy }
+    return @{ Score = $score; Band = $band; Probability = [int][Math]::Round($p * 100); Reasons = $reasons
+              Policy = $policy; BehaviourScore = $bhv
+              HiddenApi = $(if ($bc -and $bc.hiddenapiRatio -gt 0) { $true } else { $false }) }
 }
 
 function Split-CardText([string]$text, [int]$width) {
@@ -2402,6 +2436,12 @@ function Invoke-SelfTest {
         # and the scan still has to say what it found on the PC.
         @{ Label = "Spotless mods, autoclicker aimed at MC"; Bands = @("Confirmed"); Raw = @{ total_mods = 25; verified = 25; macro_cheat = 1; mc_running = 1 } }
         @{ Label = "Spotless mods, macro named as technique"; Bands = @("Likely"); Raw = @{ total_mods = 25; verified = 25; macro_named = 1 } }
+        # The hole v3 closes: a behaviour-confirmed cheat reached this model only
+        # through the flagged RATIO, which a large modpack divides away to nothing.
+        @{ Label = "Big pack, ONE behaviour-confirmed cheat"; Bands = @("Confirmed"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_cheat = 1 } }
+        @{ Label = "Big pack, a behaviour-LIKELY mod"; Bands = @("Likely"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_likely = 1 } }
+        # A server-rule finding needs a person, and never more than that.
+        @{ Label = "Server-rule findings only"; Bands = @("Review"); Raw = @{ total_mods = 40; verified = 20; review = 8; server_rule = 8 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {
@@ -4806,6 +4846,16 @@ if (-not $SkipModCheck) {
                 Add-ScanGap ("$($jar.Name): declares $($feat.MixinDeclared) mixin(s) in its config but none could be read from the bytecode $([char]0x2014) what it rewrites in the game was NOT checked")
             }
 
+            # What the behaviour rules found, kept separate from the band so the
+            # whole-scan model sees it directly. Only counted where the finding
+            # actually stands: a verified mod is capped safe, and its behaviour is
+            # part of the mod's own function rather than a cheat.
+            if ($verdict.BehaviourScore -ge 85 -and $verdict.Band -eq "Confirmed") {
+                $script:Evidence.BehaviourCheat++
+            } elseif ($verdict.BehaviourScore -ge 60 -and ($verdict.Band -eq "Confirmed" -or $verdict.Band -eq "Likely")) {
+                $script:Evidence.BehaviourLikely++
+            }
+            if ($verdict.HiddenApi -and -not $verified) { $script:Evidence.HiddenApi++ }
             if ($randomName) { $script:Evidence.RandomNamed++ }
             if ($cheatSite)  { $script:Evidence.CheatSiteDl++ }
             if ((-not $verified) -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite -or $mechCheat)) { $script:Evidence.HardConfirmed++ }

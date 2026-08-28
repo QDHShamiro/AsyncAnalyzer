@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (27), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -136,6 +136,38 @@ caught, all 11 legit mixin variants clean. Parity between `ml/bytecode.py` and t
 PowerShell tables is machine-checked in `test_bytecode.py` — a silent drift there
 reopens the hole.
 
+## Session model v3 - the behaviour rules finally reach the whole-scan verdict
+**The bug this fixes was real and quiet.** The whole-scan model saw the behaviour
+rules only through `flagged_ratio`, and a big modpack divides that away. Measured:
+a 100-mod pack containing ONE behaviour-confirmed aimbot scored **3/100, Clean**;
+the same jar recognised by hash scored 85. Backwards - the behaviour reading is the
+stronger of the two, because a hash breaks when one byte changes.
+
+- `Get-ModVerdict` now returns `BehaviourScore` (the highest score any behaviour
+  rule set, tracked in `$bhv` alongside `$score`) and `HiddenApi`. The mod loop
+  turns those into `$script:Evidence.BehaviourCheat` / `.BehaviourLikely` /
+  `.HiddenApi`, counted only where the finding actually stands (a verified mod is
+  capped safe, so its behaviour is part of the mod's own function).
+- Session model **v2 -> v3, 15 -> 20 features**: `behaviour_cheat` (4.5, same as a
+  hash match), `behaviour_likely` (2.0), `server_rule` (0.8), `hidden_api` (0.8),
+  `macro_cheat` (4.5). Hard rules: behaviour-confirmed >=85, behaviour-likely >=60,
+  server-rule floored to Review (30) - a rule question needs a person and nothing more.
+- `$script:smModelVersion = 3` means a stored v2 `learned.json` is discarded on
+  load (the check was already there), so existing users get the new prior rather
+  than a 15-weight model against a 20-feature order.
+- `server.js` and `worker.js` now **reset a stored model whose version is older
+  than the shipped base**. Without it a deployed backend keeps training the old
+  15-feature model forever and the new features are dead for the whole team.
+
+**The invariant that came out of this, now enforced by `test_session.py`:** every
+raw signal that can auto-label a scan as a CHEAT must also be a model FEATURE.
+`label_for` decides what the model trains on; teaching it from evidence the vector
+cannot see pushes the INTERCEPT instead of a weight, so every later scan starts
+closer to "cheat". The macro signals did exactly that when they went in as hard
+rules only. Three checks now guard it: the invariant, that the PS
+`Get-SessionVector` covers every feature (a missing key multiplies by `$null` = 0,
+silently), and that the PS feature ORDER equals the Python one.
+
 ## Autoclickers / macro files (the half that is not a mod)
 - `ml/macro.py` is the source of truth for the patterns; `$script:macroLangs`,
   `$script:macroCheatNames`, `$script:macroDriverPaths` in `src/10-signatures.ps1`
@@ -177,7 +209,7 @@ reopens the hole.
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **71/71**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **74/74**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

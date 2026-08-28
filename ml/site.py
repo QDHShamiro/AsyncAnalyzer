@@ -474,10 +474,18 @@ def build_doc(m, c):
 <section>
   <div class="label">The whole scan, not just the files</div>
   <p class="note">A second model scores the scan as a whole across %s signals &mdash; the mods,
-  the system checks, running processes, what is live in the game's memory, and which programs
-  ran on the PC and were then deleted. It exists because the strongest evidence often is not in
-  the mods folder at all: a ghost client is injected into the running game, and deleting the
-  jar afterwards does not remove it from memory.</p>
+  what the behaviour rules found in them, the system checks, running processes, click macros,
+  what is live in the game's memory, and which programs ran on the PC and were then deleted.
+  It exists because the strongest evidence often is not in the mods folder at all: a ghost
+  client is injected into the running game, and deleting the jar afterwards does not remove
+  it from memory.</p>
+  <p class="note" style="margin-top:10px">It saw the behaviour rules only through the
+  <em>ratio</em> of flagged mods until v3, and a large modpack divides that away: measured, a
+  100-mod pack containing <b>one behaviour-confirmed aimbot</b> scored <b>3/100, Clean</b>,
+  while the same jar recognised by hash scored 85. Backwards, because the behaviour reading is
+  the stronger of the two &mdash; a hash breaks when one byte changes. What the code
+  <em>does</em> now reaches this model directly. A perfectly clean scan is still 2/100, and
+  eight server-rule findings still cannot add up to a flag.</p>
 </section>
 
 <section>

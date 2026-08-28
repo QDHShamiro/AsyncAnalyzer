@@ -292,6 +292,30 @@ an **injected JVM** or a **running cheat process** is proof (→ Likely/Confirme
 "lots of unverified mods" is completely normal and stays **Clean**. Then it *learns
 from that scan* — see below.
 
+**One thing it used to get badly wrong, and now doesn't.** The whole-scan model saw the
+behaviour rules only through the *ratio* of flagged mods — and a big modpack divides that
+away to nothing. Measured: a 100-mod pack containing **one behaviour-confirmed aimbot**
+scored **3/100, Clean**. The same jar recognised by *hash* scored 85. That was exactly
+backwards, because the behaviour reading is the stronger of the two: a hash breaks the
+moment one byte changes, and "forges its own movement packet while writing a computed
+rotation" survives renaming, obfuscation and string encryption.
+
+So the scan model is **v3** and what the code *does* now reaches it directly: a
+behaviour-confirmed mod → **Confirmed**, a behaviour-*likely* one → **Likely**, a
+**server-rule** finding → floored to **Review** (a person has to answer it; it is still
+never an accusation), plus mods that hide the Minecraft API behind reflection, and click
+macros. Same numbers on the other side of the line: a perfectly clean scan is 2/100, a
+140-mod pack with nothing wrong is 2/100, and eight server-rule findings still cannot add
+up to a flag.
+
+There's a rule behind that which the tests now enforce: **every signal that can auto-label
+a scan as a cheat must also be a model feature.** Auto-labelling decides what the model
+*trains* on, so teaching it from evidence the feature vector cannot see pushes the
+intercept instead of a weight — and every scan afterwards starts a little closer to
+"cheat". That is precisely what the click-macro signals did when they went in as hard
+rules only, it would have drifted silently, and `ml/test_session.py` fails the build for
+it now.
+
 ---
 
 ## 🚩 Flags

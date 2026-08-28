@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "feature_order": [
     "flagged_ratio",
     "review_ratio",
@@ -15,7 +15,12 @@
     "cheat_folders",
     "deleted_jars",
     "mc_running",
-    "mem_client"
+    "mem_client",
+    "behaviour_cheat",
+    "behaviour_likely",
+    "server_rule",
+    "hidden_api",
+    "macro_cheat"
   ],
   "intercept": -4.0,
   "weights": {
@@ -33,7 +38,12 @@
     "cheat_folders": 3.0,
     "deleted_jars": 2.5,
     "mc_running": 0.0,
-    "mem_client": 5.0
+    "mem_client": 5.0,
+    "behaviour_cheat": 4.5,
+    "behaviour_likely": 2.0,
+    "server_rule": 0.8,
+    "hidden_api": 0.8,
+    "macro_cheat": 4.5
   },
   "note": "Session / overall-scan model. Source of truth: ml/session_model.py"
 }
