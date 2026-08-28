@@ -479,8 +479,14 @@ function Invoke-CloudUpdate {
         $s = Invoke-RestMethod -Uri "$($script:RepoRaw)/signatures.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($s.knownCheatHashes) { foreach ($h in $s.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
         if ($s.knownGoodHashes)  { foreach ($h in $s.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
-        if ($s.packagePaths)     { $script:cheatPackagePaths = @(@($script:cheatPackagePaths) + @($s.packagePaths) | Select-Object -Unique) }
-        if ($s.clientTokens)     { foreach ($t in $s.clientTokens) { [void]$script:distinctiveClientTokens.Add([string]$t) } }
+        $sigGrew = $false
+        if ($s.packagePaths)     { $script:cheatPackagePaths = @(@($script:cheatPackagePaths) + @($s.packagePaths) | Select-Object -Unique); $sigGrew = $true }
+        if ($s.clientTokens)     { foreach ($t in $s.clientTokens) { [void]$script:distinctiveClientTokens.Add([string]$t) }; $sigGrew = $true }
+        # The log pre-filter is built FROM those two lists, so a signature update
+        # that adds a client without rebuilding it would leave the new name
+        # unsearchable in logs - silently, because a pre-filter miss looks exactly
+        # like a clean file.
+        if ($sigGrew) { Build-LogPreFilter }
         if ($s.downloadDomains)  {
             foreach ($d in $s.downloadDomains) {
                 if ($d.match -and $d.name) {

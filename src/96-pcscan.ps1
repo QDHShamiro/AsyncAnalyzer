@@ -573,34 +573,34 @@ function Show-InstanceScan {
     W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
     Write-Host ""
 
-    $script:SysArea = "Rest of the PC"
+    $script:SysArea = "Launcher, packs & configs"
     if ($inst.Launch.Count -gt 0) {
-        Add-Finding "FAIL" "Rest of the PC" "$($inst.Launch.Count) launcher profile entr(y/ies) that start something other than the game" `
+        Add-Finding "FAIL" "Launcher, packs & configs" "$($inst.Launch.Count) launcher profile entr(y/ies) that start something other than the game" `
             @($inst.Launch | ForEach-Object { "$($_.Kind): $($_.Value)  $([char]0x2014) $($_.File)" }) `
             "Every versions/<v>/<v>.json and launcher_profiles.json was read for the class the launcher starts, the tweaker it passes, and any -javaagent it attaches." `
             "An injected client installs itself as a custom version profile and writes its own class name in there in plain text. A -javaagent line is how a ghost client is attached to the game at launch." `
             "" "This is written down before the game starts, so it is there even if the jar is not." | Out-Null
     }
     if ($inst.Packs.Count -gt 0) {
-        Add-Finding "FAIL" "Rest of the PC" "$($inst.Packs.Count) resource/shader pack(s) containing executable code" `
+        Add-Finding "FAIL" "Launcher, packs & configs" "$($inst.Packs.Count) resource/shader pack(s) containing executable code" `
             @($inst.Packs | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Entries) -join ', ')" }) `
             "Resource and shader packs were opened and their entry names read." `
             "A pack is textures, sounds, json and shader source. Java classes or a jar inside one is a jar in a costume $([char]0x2014) packs are not loaded from the mods folder, so this is a hiding place." | Out-Null
     }
     if ($inst.Configs.Count -gt 0) {
-        Add-Finding "FAIL" "Rest of the PC" "$($inst.Configs.Count) config folder(s) named after a cheat client" `
+        Add-Finding "FAIL" "Launcher, packs & configs" "$($inst.Configs.Count) config folder(s) named after a cheat client" `
             @($inst.Configs) `
             "Folder names under config/ and the instance root were compared, whole and normalised, against the known-client list." `
             "A config folder outlives the jar: it is what is left when somebody deletes the mod and not its settings. The date says when it was last used." | Out-Null
     }
     if ($inst.UnknownMain.Count -gt 0) {
-        Add-Finding "INFO" "Rest of the PC" "$($inst.UnknownMain.Count) launcher profile(s) start a class this tool does not recognise" `
+        Add-Finding "INFO" "Launcher, packs & configs" "$($inst.UnknownMain.Count) launcher profile(s) start a class this tool does not recognise" `
             @($inst.UnknownMain) `
             "The mainClass of every version profile was compared against the ones vanilla, Forge, Fabric and Quilt use." `
             "Not a finding $([char]0x2014) custom launchers and wrappers are ordinary. It is listed because an injected client also looks exactly like this." | Out-Null
     }
     if ($script:InstanceHits -eq 0 -and $inst.Checked -gt 0) {
-        Add-Finding "OK" "Rest of the PC" "Launcher profiles, resource packs and config folders $([char]0x2014) nothing out of place" `
+        Add-Finding "OK" "Launcher, packs & configs" "Launcher profiles, resource packs and config folders $([char]0x2014) nothing out of place" `
             @() "$($inst.Checked) version profile(s), launcher profile(s) and pack(s) were read." | Out-Null
     }
 }
@@ -700,9 +700,16 @@ function Run-LogScan {
                 $txt = Read-LogText $lf
                 if ($null -eq $txt) { continue }
                 $res.Files++
+                # One search over the whole file before any line is looked at
+                # individually. A clean player's logs contain none of these names,
+                # and Test-LogLine costs ~75 string operations per line - over 25
+                # files that is minutes in PowerShell, which is not a scan anyone
+                # can sit through at a screenshare.
+                if (-not $script:logPreFilter.IsMatch($txt)) { continue }
                 $when = try { [System.IO.File]::GetLastWriteTime($lf).ToString('yyyy-MM-dd HH:mm') } catch { "?" }
                 foreach ($line in ($txt -split "`r?`n")) {
                     $res.Lines++
+                    if (-not $script:logPreFilter.IsMatch($line)) { continue }
                     $v = Test-LogLine $line
                     if ($v.Kind -eq "") { continue }
                     $key = "$($v.Kind)|$($v.Evidence)"
@@ -742,15 +749,15 @@ function Show-LogScan {
     W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
     Write-Host ""
 
-    $script:SysArea = "Rest of the PC"
+    $script:SysArea = "Game logs"
     if ($lg.Hits.Count -gt 0) {
-        Add-Finding "FAIL" "Rest of the PC" "$($lg.Hits.Count) cheat name(s) in the game's own logs" `
+        Add-Finding "FAIL" "Game logs" "$($lg.Hits.Count) cheat name(s) in the game's own logs" `
             @($lg.Hits | ForEach-Object { "$($_.Evidence)  $([char]0x2014) $($_.File) ($($_.When)): $($_.Line)" }) `
             "Minecraft's logs and crash reports were read for cheat package paths and known client names, in code contexts only." `
             "This is the evidence that survives deleting the jar. A log line is dated: it says the cheat was LOADED, and when. Chat is excluded before anything is matched, so this cannot be someone typing a cheat name at another player." `
             "" "Keep the log file. It is the strongest thing in this report." | Out-Null
     } elseif ($lg.Files -gt 0) {
-        Add-Finding "OK" "Rest of the PC" "Game logs and crash reports $([char]0x2014) no cheat package or client name loaded" `
+        Add-Finding "OK" "Game logs" "Game logs and crash reports $([char]0x2014) no cheat package or client name loaded" `
             @() `
             "$($lg.Files) log file(s) and crash report(s) were read, chat lines excluded." | Out-Null
     }
@@ -886,7 +893,7 @@ function Show-MacroScan {
     # Runs on EVERY scan, not only the deep one. An autoclicker is not in the mods
     # folder and it does not need the game to be open - closing Minecraft before the
     # screenshare used to hide it completely, which is the opposite of the point.
-    $script:SysArea = "Rest of the PC"
+    $script:SysArea = "Macros & autoclickers"
     W "  Scanning for macro / autoclicker files..." DarkGray
     $macro = Run-MacroScan
     $script:MacroResult = $macro
@@ -921,32 +928,32 @@ function Show-MacroScan {
     W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
 
     if ($macro.Cheat.Count -gt 0) {
-        Add-Finding "FAIL" "Rest of the PC" "$($macro.Cheat.Count) click macro(s) aimed at Minecraft" `
+        Add-Finding "FAIL" "Macros & autoclickers" "$($macro.Cheat.Count) click macro(s) aimed at Minecraft" `
             @($macro.Cheat | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
             "AutoHotkey, AutoIt, mouse-driver Lua and VBScript files were read and checked for input sent in a loop." `
             "An autoclicker does not live in the mods folder. These repeat mouse input automatically AND name Minecraft, the launcher or the technique $([char]0x2014) there is no other reading of that." `
             "" "Note the paths and the modification dates before anything is deleted." | Out-Null
     }
     if ($macro.Named.Count -gt 0) {
-        Add-Finding "FAIL" "Rest of the PC" "$($macro.Named.Count) click macro(s) named after a cheat technique" `
+        Add-Finding "FAIL" "Macros & autoclickers" "$($macro.Named.Count) click macro(s) named after a cheat technique" `
             @($macro.Named | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
             "The same scan; these repeat mouse input in a loop and the file is named after the technique." `
             "Butterfly-click, blockhit, autocrystal and the rest are Minecraft terms. A file with that name containing a click loop IS an autoclicker; what the file does not prove is which game it was used in." | Out-Null
     }
     if ($macro.Macro.Count -gt 0) {
-        Add-Finding "WARN" "Rest of the PC" "$($macro.Macro.Count) click macro(s) with no link to Minecraft in the file" `
+        Add-Finding "WARN" "Macros & autoclickers" "$($macro.Macro.Count) click macro(s) with no link to Minecraft in the file" `
             @($macro.Macro | ForEach-Object { "$($_.Path)  $([char]0x2014) $(@($_.Reasons) -join ", ")" }) `
             "The same scan; these repeat mouse input in a loop but nothing in the file names the game or the technique." `
             "Reported because a click macro is worth a person seeing during a screenshare. It is NOT an accusation: a recoil script for a shooter has exactly this shape and is not a Minecraft cheat." | Out-Null
     }
     if ($macro.Profiles.Count -gt 0) {
-        Add-Finding "INFO" "Rest of the PC" "$($macro.Profiles.Count) mouse/keyboard driver macro store(s) present" `
+        Add-Finding "INFO" "Macros & autoclickers" "$($macro.Profiles.Count) mouse/keyboard driver macro store(s) present" `
             @($macro.Profiles) `
             "The folders and profile databases where gaming mice and keyboards keep their macros were located." `
             "Owning this hardware is not suspicious $([char]0x2014) millions of people do. The dates are here so a macro profile changed just before the screenshare is visible." | Out-Null
     }
     if ($macro.Cheat.Count -eq 0 -and $macro.Named.Count -eq 0 -and $macro.Macro.Count -eq 0) {
-        Add-Finding "OK" "Rest of the PC" "Macro and autoclicker files $([char]0x2014) nothing that repeats mouse input" | Out-Null
+        Add-Finding "OK" "Macros & autoclickers" "Macro and autoclicker files $([char]0x2014) nothing that repeats mouse input" | Out-Null
     }
     # The limit that can never be ruled out from the PC side, so it is stated on
     # every scan rather than only when something was found: a macro burned into a

@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_logscan.py` (21, log evidence + PS parity), `test_instscan.py` (31, launcher profiles / packs / config folders + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_logscan.py` (29, log evidence + pre-filter + PS parity), `test_instscan.py` (31, launcher profiles / packs / config folders + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -256,6 +256,15 @@ silently), and that the PS feature ORDER equals the Python one.
   spells out a cheat package.
 - Session model **v3 -> v4**: new feature `log_cheat` (5.0) + hard rule >=85 +
   auto-label. No logs folder -> `Add-ScanGap`.
+- **`Build-LogPreFilter` is what makes this affordable at all.** `Test-LogLine`
+  costs ~75 string operations per line (15 package paths in two spellings, ~60
+  client tokens); 25 log files of up to 4 MB is on the order of a million lines,
+  which in PowerShell is minutes - not a scan anyone can sit through at a
+  screenshare. One compiled alternation runs over the whole file first, and a clean
+  player's logs contain none of those names, so the per-line pass never runs. Same
+  reasoning as `$script:bcPreFilter`. Rebuilt after a signature update (a new client
+  name that never enters the pre-filter would be unsearchable, silently), and
+  `test_logscan.py` asserts every real hit still survives it.
 
 ## Autoclickers / macro files (the half that is not a mod)
 - `ml/macro.py` is the source of truth for the patterns; `$script:macroLangs`,

@@ -106,10 +106,48 @@ def main():
     print("  [%s] mod ids read out of the loader banner -> %s" % (
         "PASS" if ok else "FAIL", got))
 
+    # ---- the pre-filter must not narrow detection -----------------------------
+    # Run-LogScan skips a whole file, and then each line, unless one compiled
+    # alternation of every cheat name matches it first. That is what makes the log
+    # scan affordable - Test-LogLine costs ~75 string operations per line and there
+    # can be a million of them. But a pre-filter is also the perfect place for a
+    # silent gap: anything it misses is never looked at, and a miss reads exactly
+    # like a clean file. So every line that IS evidence has to survive it.
+    print("\n=== the pre-filter must not hide anything ===")
+    parts = []
+    for pkg in PKGS:
+        parts.append(re.escape(pkg))
+        parts.append(re.escape(pkg.replace("/", ".")))
+    parts += [re.escape(t) for t in TOKS if len(t) >= 5]
+    prefilter = re.compile("|".join(sorted(set(parts))), re.I)
+    for label, want, line in HITS:
+        ok = bool(prefilter.search(line))
+        passed += ok
+        failed += not ok
+        print("  [%s] survives the pre-filter: %s" % ("PASS" if ok else "FAIL", label))
+    # and it must actually reject the ordinary lines, or it buys nothing
+    skipped = sum(1 for _, line in CLEAN if not prefilter.search(line))
+    ok = skipped >= len(CLEAN) - 3
+    passed += ok
+    failed += not ok
+    print("  [%s] pre-filter skips %d of %d ordinary lines outright" % (
+        "PASS" if ok else "FAIL", skipped, len(CLEAN)))
+
     # ---- parity with the shipped PowerShell -----------------------------------
     print("\n=== PowerShell / Python log-reader parity ===")
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ps = open(os.path.join(root, "src", "10-signatures.ps1"), encoding="utf-8").read()
+    # The builder itself lives in PowerShell only (it is assembled from the two
+    # signature lists at load time, and again after a signature update). What can
+    # be checked here is that it IS rebuilt when those lists grow - a new client
+    # name that never enters the pre-filter is unsearchable in logs, silently.
+    rt = open(os.path.join(root, "src", "30-runtime.ps1"), encoding="utf-8").read()
+    grew = re.search(r"if \(\$sigGrew\) \{ Build-LogPreFilter \}", rt)
+    passed += bool(grew)
+    failed += (not grew)
+    print("  [%s] the pre-filter is rebuilt after a signature update" % (
+        "PASS" if grew else "FAIL"))
+
     for name, rx in (("logChatLine", logscan.CHAT),
                      ("logCodeContext", logscan.CODE_CONTEXT)):
         m = re.search(r"\$script:%s\s*=\s*'((?:[^']|'')*)'" % name, ps)

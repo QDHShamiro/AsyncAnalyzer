@@ -446,6 +446,34 @@ function Build-PatternRegex {
 }
 Build-PatternRegex
 
+function Build-LogPreFilter {
+    # One compiled alternation of every cheat package path and client name, run ONCE
+    # over a whole log file before any line is looked at individually.
+    #
+    # This is not an optimisation, it is what makes the log scan usable at all.
+    # Test-LogLine checks ~15 package paths in two spellings plus ~60 client tokens
+    # per line; over 25 log files of up to 4 MB that is on the order of a million
+    # lines and tens of millions of string operations, which in PowerShell is
+    # minutes. A clean player's logs contain none of these names, so one search over
+    # the whole file answers the question and the per-line pass never runs.
+    #
+    # Same reasoning as $script:bcPreFilter: search cheaply everywhere, look
+    # precisely only where something matched. Rebuilt after a signature update,
+    # because the lists it is built from can grow at runtime.
+    $parts = [System.Collections.Generic.List[string]]::new()
+    foreach ($p in $script:cheatPackagePaths) {
+        [void]$parts.Add([regex]::Escape($p))
+        [void]$parts.Add([regex]::Escape(($p -replace '/', '.')))
+    }
+    foreach ($t in $script:distinctiveClientTokens) {
+        if ($t.Length -ge 5) { [void]$parts.Add([regex]::Escape($t)) }
+    }
+    $script:logPreFilter = [regex]::new(
+        (($parts | Select-Object -Unique) -join '|'),
+        ([System.Text.RegularExpressions.RegexOptions]::Compiled -bor
+         [System.Text.RegularExpressions.RegexOptions]::IgnoreCase))
+}
+
 $script:cheatStringSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 foreach ($s in $script:cheatStrings) { [void]$script:cheatStringSet.Add($s) }
 
@@ -626,6 +654,7 @@ $script:macroDriverPaths = @(
 )
 $script:macroExtList = @('.ahk', '.ahk2', '.au3', '.lua', '.vbs')
 
+Build-LogPreFilter
 # ---------------------------------------------------------------------------
 # Reading Minecraft's own logs as evidence
 #
