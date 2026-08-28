@@ -447,18 +447,38 @@ def main():
         if e2e_bad:
             failures.append("%d end-to-end verdict cases wrong" % e2e_bad)
 
-        # every real library must come out Clean through the FULL chain too
-        e2e_fp = []
+        # No real library may reach an ACCUSING band through the full chain.
+        #
+        # "Clean or nothing" was the gate before, and it hid what it was measuring.
+        # Seven libraries failed it - and six of those were Confirmed 90, which is
+        # the tool saying "this is cheating": aspectjweaver, byte-buddy-agent,
+        # opentelemetry-javaagent, spring-instrument, kotlinx-coroutines and
+        # sponge-mixin, all because they declare a Java agent in their manifest.
+        # Mixin is what nearly every Minecraft mod is built on.
+        #
+        # Review is a different statement - "unproven, a human should look" - and a
+        # Java agent sitting in a mods folder has earned that much. So the hard gate
+        # is the accusing bands, and the Review count is reported next to it rather
+        # than folded into a pass.
+        ACCUSING = ("Likely", "Confirmed", "ServerRule")
+        e2e_fp, e2e_review = [], []
         for jp in libs:
-            raw = _f.extract_from_jar(jp)
-            if _v.verdict(raw)["band"] != "Clean":
-                e2e_fp.append(os.path.basename(jp))
-        out("Through the same full chain, **%d of %d** real libraries come out as anything"
+            band = _v.verdict(_f.extract_from_jar(jp))["band"]
+            if band in ACCUSING:
+                e2e_fp.append("%s (%s)" % (os.path.basename(jp), band))
+            elif band != "Clean":
+                e2e_review.append(os.path.basename(jp))
+        out("Through the same full chain, **%d of %d** real libraries reach an accusing"
             % (len(e2e_fp), len(libs)))
-        out("other than Clean%s." % ("" if not e2e_fp else ": " + ", ".join("`%s`" % f for f in e2e_fp[:8])))
+        out("band (Likely / Confirmed / server-rule)%s."
+            % ("" if not e2e_fp else ": " + ", ".join("`%s`" % f for f in e2e_fp[:8])))
+        out()
+        out("**%d** land in Review - shown to a moderator as unproven, never as a finding%s."
+            % (len(e2e_review),
+               "" if not e2e_review else ": " + ", ".join("`%s`" % f for f in e2e_review[:8])))
         out()
         if e2e_fp:
-            failures.append("%d real libraries not Clean end-to-end" % len(e2e_fp))
+            failures.append("%d real libraries reach an accusing band end-to-end" % len(e2e_fp))
 
         # ------------------------------------------------- federated learning ---
         # The team-mode claim is that shared learning makes detection better over
@@ -546,7 +566,7 @@ def main():
         out()
         out("| gate | result |")
         out("|---|:--:|")
-        out("| every real library Clean through the full chain | %s |" % ("pass" if not e2e_fp else "**fail**"))
+        out("| no real library accused through the full chain | %s |" % ("pass" if not e2e_fp else "**fail**"))
         out("| end-to-end verdict cases correct | %s |" % ("pass" if not e2e_bad else "**fail**"))
         out("| team learning improves without drifting | %s |" % ("pass" if learned and worst_clean < 30 else "**fail**"))
         out("| no real library flagged by a cheat rule | %s |" % ("pass" if not cheat_fp else "**fail**"))

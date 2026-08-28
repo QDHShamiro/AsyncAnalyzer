@@ -56,8 +56,52 @@ def verdict(raw):
     # libraries, 1 on the real loader.
     if raw.get("padding_entry", 0) > 0:
         score = max(score, 60)
+    # An agent manifest is how an injected client gets into the game. It is ALSO
+    # how AspectJ, ByteBuddy, OpenTelemetry, spring-instrument, H2,
+    # kotlinx-coroutines and Mixin itself work - and six of those came out
+    # Confirmed 90 against the negative corpus. Mixin is the framework nearly every
+    # Minecraft mod is built on; a copy of it in a mods folder was an accusation.
+    #
+    # Measured across all seven: no loader id, no mixin config, no coremod, no cheat
+    # package, no hidden payload, and every obfuscation metric exactly 0. What a
+    # Minecraft injector cannot avoid is being ABOUT Minecraft, or hiding what it
+    # is. So the accusing floor needs one corroborating fact; without one the jar
+    # is a Java library in the wrong folder - worth a look, not a verdict.
     if raw.get("java_agent"):
-        score = max(score, 90 if raw.get("agent_retransform") else 80)
+        bc = raw.get("bytecode") or {}
+        MC_BC = ("bc_movepacket", "bc_rotation", "bc_attack", "bc_blockplace",
+                 "bc_blockbreak", "bc_container", "bc_motion", "bc_pktlisten",
+                 "bc_entityscan", "bc_render", "bc_input", "bc_mixintarget",
+                 "bc_coretarget")
+        agent_corroborated = (
+            # it says it is a Minecraft mod, or is built as one
+            bool(raw.get("loader_ids"))
+            or raw.get("legit_modid")
+            or raw.get("mixin_configs", 0) > 0
+            or raw.get("core_mod")
+            or bool(bc.get("mixin_areas"))
+            or any(bc.get(k + "_ratio", 0) or bc.get(k, 0) for k in MC_BC)
+            # or it is hiding what it is
+            or raw.get("pkgpath")
+            or raw.get("filename_client")
+            or raw.get("cheatsite")
+            or raw.get("hidden_payload", 0) > 0
+            or raw.get("padding_entry", 0) > 0
+            or raw.get("fake_identity")
+            or raw.get("random_name")
+            or raw.get("singlechar_cls_pct", 0) > 0.15
+            or raw.get("novowel_cls_pct", 0) > 0.15
+            or raw.get("numeric_cls_pct", 0) > 0.15
+            or raw.get("fullwidth_cls_pct", 0) > 0
+            or raw.get("japanese_cls_pct", 0) > 0
+            or raw.get("high_entropy_pct", 0) > 0.20
+        )
+        if agent_corroborated:
+            score = max(score, 90 if raw.get("agent_retransform") else 80)
+        else:
+            # Review, not Clean: mods are not Java agents, and a moderator should
+            # see it. It just is not proof on its own.
+            score = max(score, 35)
     if raw.get("hidden_payload", 0) > 0:
         score = max(score, 75)
     if len(raw.get("loader_ids", []) or []) >= 3:

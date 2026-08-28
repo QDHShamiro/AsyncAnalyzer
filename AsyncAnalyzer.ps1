@@ -2572,9 +2572,52 @@ function Get-ModVerdict($ctx) {
         [void]$reasons.Add("$($ft.PaddingEntry) entr(y/ies) inside this jar are nothing but padding $([char]0x2014) one byte value repeated for kilobytes. Padding has no function; it exists to change the file's size and therefore its SHA1, so a hash taken from someone else's copy will not match this one. Nothing legitimate ships it" + $(if ($ft.PaddingNames.Count -gt 0) { " [" + (@($ft.PaddingNames) -join '; ') + "]" } else { "" }))
     }
     if ($ft.JavaAgent) {
-        $score = [Math]::Max($score, $(if ($ft.AgentRetransform) { 90 } else { 80 }))
+        # An agent manifest is how an injected client gets into the game. It is ALSO
+        # how AspectJ, ByteBuddy, OpenTelemetry, spring-instrument, H2,
+        # kotlinx-coroutines and Mixin itself work - and six of those came out
+        # Confirmed 90 against the 181-library negative corpus. Mixin is the
+        # framework nearly every Minecraft mod is built on; a copy of it in a mods
+        # folder was an accusation.
+        #
+        # Measured across all seven: no loader id, no mixin config, no coremod, no
+        # cheat package, no hidden payload, and every obfuscation metric exactly 0.
+        # What a Minecraft injector cannot avoid is being ABOUT Minecraft, or hiding
+        # what it is. So the accusing floor needs one corroborating fact. Mirrors
+        # ml/verdict.py.
+        $bcA = $ctx.Bytecode
+        $mcBc = $false
+        if ($bcA) {
+            foreach ($k in @('movepacketRatio','rotationRatio','attackRatio','blockplaceRatio',
+                             'blockbreakRatio','containerRatio','motionRatio','pktlistenRatio',
+                             'entityscanRatio','renderRatio','inputRatio','mixintargetRatio',
+                             'coretargetRatio')) {
+                if ($bcA.$k -gt 0) { $mcBc = $true; break }
+            }
+            if (-not $mcBc -and @($bcA.MixinAreas).Count -gt 0) { $mcBc = $true }
+        }
+        $agentCorroborated = (
+            # it says it is a Minecraft mod, or is built as one
+            (@($ft.LoaderIds).Count -gt 0) -or $ctx.LegitModId -or ($ft.MixinConfigs -gt 0) -or
+            $ft.CoreMod -or $mcBc -or
+            # or it is hiding what it is
+            ($ft.PackageHits.Count -gt 0) -or $ctx.FilenameClient -or $ctx.CheatSite -or
+            ($ft.HiddenPayload -gt 0) -or ($ft.PaddingEntry -gt 0) -or $ft.FakeIdentity -or
+            $ctx.RandomName -or
+            ($ft.SingleCharClsPct -gt 0.15) -or ($ft.NoVowelClsPct -gt 0.15) -or
+            ($ft.NumericClsPct -gt 0.15) -or ($ft.FullwidthClsPct -gt 0) -or
+            ($ft.JapaneseClsPct -gt 0) -or ($ft.HighEntropyPct -gt 0.20)
+        )
         $agentWhat = if ($ft.AgentRetransform) { "rewrites game code while it runs" } else { "loads as a Java agent" }
-        [void]$reasons.Add("Injector: this jar $agentWhat ($($ft.AgentClass)) $([char]0x2014) normal mods never do this")
+        if ($agentCorroborated) {
+            $score = [Math]::Max($score, $(if ($ft.AgentRetransform) { 90 } else { 80 }))
+            [void]$reasons.Add("Injector: this jar $agentWhat ($($ft.AgentClass)) $([char]0x2014) normal mods never do this")
+        } else {
+            # Review, not Clean: mods are not Java agents, and a moderator should see
+            # it. It just is not proof on its own - AspectJ and Mixin look the same
+            # from here.
+            $score = [Math]::Max($score, 35)
+            [void]$reasons.Add("This jar $agentWhat ($($ft.AgentClass)), but nothing else about it points at Minecraft or at hiding $([char]0x2014) instrumentation libraries (Mixin, ByteBuddy, AspectJ) look exactly like this. Worth asking why it is in a mods folder; not evidence on its own")
+        }
     }
     if ($ft.HiddenPayload -gt 0) {
         $score = [Math]::Max($score, 75)
@@ -3000,6 +3043,13 @@ function Invoke-SelfTest {
         @{ Label = "1.8.9 killaura (MCP names)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0; entityscanRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "1.8.9 sprint mod (MCP names)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
+        # The other half of the agent rule, and the reason it has two halves:
+        # aspectjweaver, byte-buddy-agent, opentelemetry-javaagent,
+        # spring-instrument, h2, kotlinx-coroutines and sponge-mixin all declare
+        # Premain-Class AND Can-Retransform-Classes, and six of them came out
+        # Confirmed 90. Mixin is what nearly every Minecraft mod is built on.
+        @{ Label = "Instrumentation library, nothing else about it"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.bytebuddy.agent.Installer"; ReflectionCount = 4; AvgEntropy = 5.4 }) } }
+        @{ Label = "...the same jar, with one Minecraft mixin"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "a.b.c"; MixinConfigs = 1; ReflectionCount = 4 }) } }
         @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
         @{ Label = "Verified mod that ships an agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentClass = "org.spongepowered.asm.launch.MixinAgent" }) } }
