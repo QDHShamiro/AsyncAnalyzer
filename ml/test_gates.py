@@ -88,6 +88,32 @@ check("the artifact upload cannot fail the build",
 check("...and the numbers still reach the run summary regardless",
       "GITHUB_STEP_SUMMARY" in WF and "if: always()" in WF)
 
+
+# --- a suite has to fail with a non-zero exit code, and only then -------------
+# test_sysscan.py ended in `return 0 if failed else 1` - inverted. It printed
+# "69 passed, 0 failed" and exited 1, which turned the whole job red for eight
+# pushes and was misread as the artifact-quota failure sitting next to it. The
+# other half is worse: the day one of those 69 checks actually failed, it would
+# have exited 0 and CI would have gone green on a broken detector.
+#
+# The CI loop invokes each suite directly under `set -e`, so the exit code IS the
+# result. Piping it to `tail -1` to read the last line - which is how this was
+# missed by hand - throws that away.
+_BAD_EXIT = re.compile(r"(?:return|sys\.exit\(|SystemExit\()\s*0\s+if\s+(failed|bad|problems)\b(?!\s*==)")
+_HAS_EXIT = re.compile(r"return\s+[01]\s+if\b|sys\.exit\(|SystemExit\(")
+suites = sorted((ROOT / "ml").glob("test_*.py")) + [ROOT / "ml" / "audit.py", ROOT / "ml" / "ps_lint.py"]
+inverted, silent = [], []
+for f in suites:
+    # Comments and the two patterns above are themselves lines containing the shape
+    # they look for, so without this the file reports itself.
+    src = "\n".join(l for l in f.read_text(encoding="utf-8").splitlines()
+                    if not l.lstrip().startswith(("#", "_BAD_EXIT", "_HAS_EXIT")))
+    if _BAD_EXIT.search(src):
+        inverted.append(f.name)
+    if not _HAS_EXIT.search(src):
+        silent.append(f.name)
+check("no suite reports success as a failure (or the reverse)", not inverted, str(inverted))
+check("every suite ends in an exit code at all", not silent, str(silent))
 print("=== gate checks ===")
 failed = 0
 for name, ok, detail in results:
