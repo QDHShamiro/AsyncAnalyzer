@@ -513,7 +513,12 @@ $script:strongPhraseSet = [System.Collections.Generic.HashSet[string]]::new([Sys
 $script:cheatPackagePaths = @(
     "net/ccbluex","meteordevelopment","org/chainlibs","wtf/moonlight","today/opai","cc/novoline",
     "com/alan/clients","club/maxstats","me/zeroeightsix/kami","net/minecraft/injection","xyz/greaj",
-    "com/cheatbreaker","dev/krypton","dev/gambleclient","doomsdayclient"
+    "com/cheatbreaker","dev/krypton","dev/gambleclient","doomsdayclient",
+    # Baritone. A jar that SHIPS baritone/ classes ships Baritone - it is the
+    # pathfinding engine every walk/mine bot is built on, and Impact and Meteor
+    # bundle it. Shamiro's call was that it counts as a cheat rather than a
+    # server-rule question, so it belongs here rather than in the grey band.
+    "baritone/"
 )
 
 $script:distinctiveClientTokens = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -524,7 +529,14 @@ $script:distinctiveClientTokens = [System.Collections.Generic.HashSet[string]]::
     "astolfo","astolfoclient","rusherhack","novaclient","novoline","impactclient","aristois",
     "aristoisclient","moonlightclient","intentclient","prestigeclient","cheatbreaker","kamiblue",
     "fdpclient","vape","vapeclient","vapelite","vapepro","salwyrrclient","nodusclient","wolframclient",
-    "huzuni"
+    "huzuni",
+    # Baritone was in the filename list but not in this one, so a jar called
+    # baritone-standalone-1.10.1.jar got no identity floor at all. It still came out
+    # Likely - but through the FREECAM rule, because Baritone aims the player and
+    # draws its path, which is rotation plus rendering without a forged packet. The
+    # verdict was right and the reason was wrong, which in a document a moderator
+    # shows to somebody is its own kind of wrong.
+    "baritone"
 ) | ForEach-Object { [void]$script:distinctiveClientTokens.Add($_) }
 
 $script:legitModIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)

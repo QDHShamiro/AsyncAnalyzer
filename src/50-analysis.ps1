@@ -427,8 +427,15 @@ function Get-ModVerdict($ctx) {
                    $bc.unsafeRatio -gt 0 -or $bc.execRatio -gt 0 -or $bc.cryptoRatio -gt 0 -or
                    $bc.netRatio -gt 0)
         $usesGameOnly = ($bc.inputRatio -gt 0 -or $bc.containerRatio -gt 0 -or $bc.renderRatio -gt 0)
+        # FilenameClient belongs in this list and was missing from it. The cap exists
+        # so that obfuscated names and alarming STRINGS cannot push an inventory
+        # sorter into Review - it is behaviour beating a text heuristic. A filename
+        # that matches a known cheat client is not a text heuristic, it is identity,
+        # the same kind of thing as a hash or a package path. Without this a file
+        # called wurstclient-7.36.jar that only read the keyboard came out Clean 20.
         if (-not $policy -and -not $forges -and $usesGameOnly -and $bc.ClassesParsed -gt 0 -and
-            -not $ctx.HashKnownCheat -and ($ft.PackageHits.Count -eq 0) -and -not $ctx.CheatSite) {
+            -not $ctx.HashKnownCheat -and ($ft.PackageHits.Count -eq 0) -and -not $ctx.CheatSite -and
+            -not $ctx.FilenameClient) {
             if ($score -gt 20) {
                 [void]$reasons.Add("Behaviour: goes through the game's own input, container and rendering systems and forges nothing $([char]0x2014) no movement packet, no rotation write, no attack, no code loading. Whatever the file looks like, it cannot cheat with this")
             }
@@ -655,6 +662,11 @@ function Invoke-SelfTest {
         @{ Label = "Freecam (writes rotation + renders)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Third-person camera (renders only)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0 }) } }
         @{ Label = "Baritone-style pathing"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        # A real Baritone jar: it ships baritone/ classes, which is an identity
+        # match, so it is flagged for THAT rather than through the freecam rule it
+        # happened to trip on the way past.
+        @{ Label = "A jar that ships Baritone"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{ PackageHits = @("baritone/") }); Bytecode = (New-TestBytecode @{ rotationRatio = 0.3; renderRatio = 0.3; inputRatio = 0.4 }) } }
+        @{ Label = "Baritone by filename, no packages read"; Bands = @("Likely", "Confirmed"); Over = @{ FilenameClient = $true; FilenameToken = "baritone"; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ inputRatio = 1.0 }) } }
         @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Self-deleting jar is measured, not accused"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }

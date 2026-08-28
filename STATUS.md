@@ -300,6 +300,31 @@ silently), and that the PS feature ORDER equals the Python one.
   device and leaves nothing on the PC. `Add-ScanGap` states it unconditionally.
   What IS visible is that a driver macro store exists and when it last changed.
 
+## Baritone, and two bugs it exposed
+Shamiro's call was that Baritone counts as a cheat rather than a server-rule
+question. It WAS coming out Likely already - but through the **freecam** rule,
+because Baritone aims the player and draws its path, which is rotation plus
+rendering without a forged packet. Right verdict, wrong reason, in a document a
+moderator shows to somebody. `baritone` is now a `distinctiveClientToken` (so the
+filename is an identity match) and `baritone/` is a `cheatPackagePath` (so a jar
+that ships those classes is flagged for shipping them).
+
+Two real bugs came out of writing the test cases for it:
+1. **The behavioural clean cap overrode a filename identity match.** The cap
+   exists so obfuscated names and alarming STRINGS cannot push an inventory sorter
+   into Review - behaviour beating a text heuristic. A filename matching a known
+   cheat client is not a text heuristic, it is identity, the same kind of thing as
+   a hash or a package path. Without it in the exclusion list, a file called
+   `wurstclient-7.36.jar` that only read the keyboard came out **Clean 20**.
+   Fixed in `src/50-analysis.ps1` and `ml/verdict.py`; `test_verdict.py` 194 still
+   green, so the guaranteed-clean cases (inventory sorter, reach/CPS display) are
+   unaffected.
+2. **`ml/test_selftest_cases.py` was silently not reading two field kinds.**
+   `FilenameClient` was missing from its flag list and only NUMERIC fields were
+   read out of `New-TestFeatures`, so any self-test case using `PackageHits` or
+   `FilenameClient` was scored by the mirror as if the field were not there -
+   passing or failing for the wrong reason. Both fixed.
+
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
 - CI runs eleven suites now (`test_macro`, `test_logscan`, `test_instscan` added).
@@ -313,7 +338,7 @@ silently), and that the PS feature ORDER equals the Python one.
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **81/81**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **83/83**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

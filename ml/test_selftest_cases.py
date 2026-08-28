@@ -24,13 +24,23 @@ def to_raw(over):
                 continue
             bc["bc_" + k[:-5].lower() + "_ratio"] = float(v)
     raw["bytecode"] = bc
+    # FilenameClient was missing here, which meant every self-test case that used it
+    # was silently unverified on this side: the mirror scored it as if the filename
+    # had never matched, and passed for the wrong reason or failed for one.
     for flag, key in (("Verified", "verified"), ("LegitModId", "legit_modid"),
                       ("HashKnownCheat", "hash_known_cheat"), ("RandomName", "random_name"),
-                      ("CheatSite", "cheatsite")):
+                      ("CheatSite", "cheatsite"), ("FilenameClient", "filename_client")):
         if re.search(r'\b%s = \$true' % flag, over):
             raw[key] = True
     f = re.search(r'Features = \(New-TestFeatures @\{([^}]*)\}\)', over)
     if f:
+        # Same gap on the other side: only NUMERIC fields were read out, so a case
+        # setting PackageHits (a list) looked to the mirror like an empty jar.
+        for lst, key in (("PackageHits", "pkgpath"), ("StrongStrings", "strong_sig"),
+                         ("WeakStrings", "weak_sig")):
+            m2 = re.search(r'%s\s*=\s*@\(([^)]*)\)' % lst, f.group(1))
+            if m2 and re.search(r'["\']', m2.group(1)):
+                raw[key] = len(re.findall(r'["\'][^"\']+["\']', m2.group(1)))
         for k, v in re.findall(r'(\w+)\s*=\s*([\d.]+)', f.group(1)):
             raw[{"SingleCharClsPct": "singlechar_cls_pct", "HighEntropyPct": "high_entropy_pct",
                  "AvgEntropy": "avg_entropy", "ReflectionCount": "reflection_count"}.get(k, k.lower())] = float(v)

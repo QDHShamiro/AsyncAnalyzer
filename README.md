@@ -213,6 +213,7 @@ That gives behaviour instead of text:
 | writes a rotation **and** forges its own movement packet | the aim/killaura fingerprint — no legit mod fakes its own movement | 🔴 **Confirmed** |
 | decrypts data **then** defines a class from it | loader / dropper | 🔴 **Confirmed** |
 | ships Java-agent hooks | can rewrite game code while it runs | 🟠 **Likely** |
+| ships `baritone/` classes | the pathfinding engine every walk/mine bot is built on | 🟠 **Likely** — flagged for *shipping Baritone*, not for a behaviour rule it trips on the way past |
 | mixes into the outgoing move packet **and** names its rotation fields | silent rotations — rewriting what the server is told you are aiming at | 🔴 **Confirmed** |
 | mixes into the player or the renderer | how every ordinary Fabric mod is built | ⚪ recorded as scope, **never** a finding |
 | a class transformer that rewrites the player to spoof the rotation it reports | a coremod cheat — the target is a string it compares against, never a call | 🔴 **Confirmed** |

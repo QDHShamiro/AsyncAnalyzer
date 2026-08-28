@@ -120,9 +120,12 @@ def verdict(raw):
             "bc_crypto_ratio", "bc_net_ratio"))
         uses_game_only = any(bc.get(k, 0) > 0 for k in
                              ("bc_input_ratio", "bc_container_ratio", "bc_render_ratio"))
+        # filename_client belongs in this list and was missing from it. The cap is
+        # behaviour beating a TEXT heuristic; a filename matching a known cheat
+        # client is identity, the same kind of thing as a hash or a package path.
         if (not policy and not forges and uses_game_only
                 and not raw.get("hash_known_cheat") and not raw.get("pkgpath")
-                and not raw.get("cheatsite")):
+                and not raw.get("cheatsite") and not raw.get("filename_client")):
             score = min(score, 20)
 
     # Random / hash-style filename on an unverified mod: floor to Review (never a flag)
