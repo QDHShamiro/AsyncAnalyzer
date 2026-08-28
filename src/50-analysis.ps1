@@ -14,6 +14,10 @@ function Get-JarFeatures([string]$FilePath) {
         ModId = ""; MetaName = ""; FakeIdentity = $false
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""
         HiddenPayload = 0; PaddingEntry = 0
+        # The entries themselves, not just how many. A count is a claim; a name is
+        # something both sides can open the jar and look at.
+        PayloadNames  = [System.Collections.Generic.List[string]]::new()
+        PaddingNames  = [System.Collections.Generic.List[string]]::new()
         LoaderIds = [System.Collections.Generic.List[string]]::new()
         PayloadKinds  = [System.Collections.Generic.List[string]]::new()
         BlankMeta = $false; NativeJna = $false
@@ -76,6 +80,7 @@ function Get-JarFeatures([string]$FilePath) {
                                 }
                                 if ($distinct -le 2) {
                                     $f.PaddingEntry++
+                                    if ($f.PaddingNames.Count -lt 4) { [void]$f.PaddingNames.Add("$n ($([Math]::Round($e.Length / 1KB)) KB of byte 0x$('{0:X2}' -f $slice[0]))") }
                                     if (-not $f.PayloadKinds.Contains("padding")) { [void]$f.PayloadKinds.Add("padding") }
                                 }
                             }
@@ -96,7 +101,11 @@ function Get-JarFeatures([string]$FilePath) {
                             } elseif ($script:textExt -contains $ext) {
                                 if ((Get-ShannonEntropy $slice) -gt 6.2) { $hit = $true; $why = "$ext-entropy" }
                             }
-                            if ($hit) { $f.HiddenPayload++; if (-not $f.PayloadKinds.Contains($why)) { [void]$f.PayloadKinds.Add($why) } }
+                            if ($hit) {
+                                $f.HiddenPayload++
+                                if ($f.PayloadNames.Count -lt 4) { [void]$f.PayloadNames.Add("$n ($why, $([Math]::Round($e.Length / 1KB)) KB, starts $('{0:x2}{1:x2}{2:x2}{3:x2}' -f $slice[0], $slice[1], $slice[2], $slice[3]))") }
+                                if (-not $f.PayloadKinds.Contains($why)) { [void]$f.PayloadKinds.Add($why) }
+                            }
                         }
                     } catch {}
                 }
@@ -281,7 +290,7 @@ function Get-ModVerdict($ctx) {
     }
     if ($ft.PaddingEntry -gt 0) {
         $score = [Math]::Max($score, 60)
-        [void]$reasons.Add("$($ft.PaddingEntry) entr(y/ies) inside this jar are nothing but padding $([char]0x2014) one byte value repeated for kilobytes. Padding has no function; it exists to change the file's size and therefore its SHA1, so a hash taken from someone else's copy will not match this one. Nothing legitimate ships it")
+        [void]$reasons.Add("$($ft.PaddingEntry) entr(y/ies) inside this jar are nothing but padding $([char]0x2014) one byte value repeated for kilobytes. Padding has no function; it exists to change the file's size and therefore its SHA1, so a hash taken from someone else's copy will not match this one. Nothing legitimate ships it" + $(if ($ft.PaddingNames.Count -gt 0) { " [" + (@($ft.PaddingNames) -join '; ') + "]" } else { "" }))
     }
     if ($ft.JavaAgent) {
         $score = [Math]::Max($score, $(if ($ft.AgentRetransform) { 90 } else { 80 }))
@@ -291,7 +300,7 @@ function Get-ModVerdict($ctx) {
     if ($ft.HiddenPayload -gt 0) {
         $score = [Math]::Max($score, 75)
         $pk = if (@($ft.PayloadKinds) -contains 'extensionless' -and @($ft.PayloadKinds).Count -eq 1) { "no extension" } else { "disguised as resources" }
-        [void]$reasons.Add("Hidden payload: $($ft.HiddenPayload) encrypted/class file(s) $pk, decrypted at runtime")
+        [void]$reasons.Add("Hidden payload: $($ft.HiddenPayload) encrypted/class file(s) $pk, decrypted at runtime" + $(if ($ft.PayloadNames.Count -gt 0) { " [" + (@($ft.PayloadNames) -join '; ') + "]" } else { "" }))
     }
     if (@($ft.LoaderIds).Count -ge 3) {
         $score = [Math]::Max($score, 70)
