@@ -260,7 +260,10 @@ def main():
                "" if got == want else "\n        ps=%r\n        py=%r" % (got, want))
 
     print("\n=== RESULT: %d passed, %d failed ===" % (passed, failed))
-    return 0 if failed else 1
+    # 0 means the suite passed. Inverted, this said the opposite: it exited 1
+    # with 69 checks green, which turned the whole CI job red for eight pushes -
+    # and would have exited 0, green, the day a check actually failed.
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":

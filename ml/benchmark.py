@@ -100,10 +100,10 @@ def build_corpus(tmp):
         return None
     made = {}
     for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "Pathing", "Timer",
-                                   "MixinSilentRot", "Legacy18Aura", "Legacy18Fly", "CoreModAura"]),
+                                   "MixinSilentRot", "Legacy18Aura", "Legacy18Fly", "CoreModAura", "SelfWipe"]),
                         ("clean", ["Minimap", "ConfigBinder", "Keybinds", "AutoWalk",
                                    "MixinRender", "MixinFreelook",
-                                   "Legacy18Minimap", "Legacy18Sprint", "CoreModPerf"])):
+                                   "Legacy18Minimap", "Legacy18Sprint", "CoreModPerf", "NativeUnpack"])):
         for nm in names:
             cls = sorted(glob.glob(os.path.join(out, kind, nm + "*.class")))
             if not cls:

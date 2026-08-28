@@ -1,5 +1,6 @@
 {
   "version": 7,
+  "updated": "2026-08-28",
   "note": "Community cheat-intelligence list. AsyncAnalyzer auto-downloads this on start (unless -NoUpdate). knownCheatHashes = confirmed cheat SHA1s. knownGoodHashes = known-legit SHA1s. packagePaths = distinctive cheat Java packages. clientTokens = distinctive cheat-client filename tokens. downloadDomains = cheat download sites. processNames = EXTERNAL ghost clients that run as their own process and never appear in the mods folder. Keep clientTokens and processNames distinctive/compound (e.g. 'ghostclient', never bare 'ghost') so legit mods and normal programs are never false-flagged. moduleNames = cheat MODULE names confirmed in two independent open-source cheat clients (Wurst @4e9fd5a, Meteor @8038a0a) AND checked for collisions with real mods - names like Timer/Step/Reach or VeinMiner/Freecam are deliberately excluded because legit mods use them. scanPaths = extra folders every client should always scan on top of whatever Minecraft is open (a machine-specific list can also go in %APPDATA%\\\\AsyncAnalyzer\\\\paths.txt, one path per line). Everyone who runs the tool then benefits.",
   "telemetry": {
     "enabled": false,

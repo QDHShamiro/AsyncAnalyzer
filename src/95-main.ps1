@@ -187,12 +187,19 @@ if (-not $SkipModCheck) {
         $script:reviewMods  = [System.Collections.Generic.List[object]]::new()
         $script:flaggedMods = [System.Collections.Generic.List[object]]::new()
 
+        # Read every jar first, on as many cores as this PC has. Nothing is decided
+        # here - it is the same three functions the loop below would have called,
+        # just not one after another. A jar missing from $pre (or an empty $pre,
+        # which is what a small folder or a failed pool gives) is read inline in the
+        # loop, exactly as before.
+        $pre = Invoke-JarPrecompute $jarFiles
+
         $idx = 0
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            Invoke-JarAnalysis $jar
+            Invoke-JarAnalysis $jar $pre[$jar.FullName]
         }
         SpinClear
 

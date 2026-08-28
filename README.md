@@ -457,7 +457,7 @@ can be edited afterwards; the console output happening in front of you cannot.
 | `-DeepScan` | Also scan drives, recycle bin and processes for cheat traces. |
 | `-DeepMemory` | Force the live-memory check on. It already turns on by itself whenever Minecraft is running. |
 | `-Share` | Export confirmed cheat hashes locally to contribute them. |
-| `-NoUpdate` | Skip the GitHub model/signature auto-update. |
+| `-NoUpdate` | Skip the GitHub model/signature auto-update (recorded in the report as a coverage gap). |
 | `-NoLearn` | Don't adapt the local model this run. |
 | `-Reset` | Wipe the learned memory and start fresh. |
 | `-Yes` | Kept for compatibility &mdash; the tool decides the depth itself now. |
@@ -509,6 +509,7 @@ Detection gets better **every time you use it** — all on your machine, nothing
 2. **Online learning** — each confirmed verdict does one bounded SGD step on the model weights (anchored to the base model, so it adapts but can never drift into false positives). Stored in `%APPDATA%\AsyncAnalyzer\learned.json`.
 3. **Whole-scan learning** — every *finished scan* also teaches the overall-scan AI, so the tool gets better at reading a **situation**, not just a file. Only unambiguous scans teach it (a hard-confirmed cheat / injected JVM → *cheat*; an all-verified, issue-free scan → *clean*); anything in between teaches it nothing, which is what stops it drifting.
 4. **Cloud auto-update** — on start it pulls the newest models + community signature list from this repo, so improvements reach **everyone** (turn off with `-NoUpdate`).
+   **If that fails it says so.** The repository is private, so `raw.githubusercontent.com` answers 404 to anyone without a token — and a proxy, no network or `-NoUpdate` do the same thing. Every one of those now writes a line into the report's coverage box naming what could not be refreshed and which built-in set the scan used instead (*"used the built-in set v7 from 2026-08-28; a cheat added to the team list after that date was not looked for"*). A scan on an old list must never look like a current one. To get the updates, run the tool from a **local clone you `git pull`** — the clone carries the current `ml/` next to it.
 
 > Proven: after confirming a handful of a *new* cheat family, the model's score for it climbs from **20% → 66%** — while all 37 real clean libraries stay Clean. (`python3 ml/test_selflearn.py`)
 
@@ -545,6 +546,42 @@ cd ml && python3 build_dataset.py && python3 train_model.py
 The **negative class is trained on real libraries** — ASM, ByteBuddy, Javassist, Gson, Netty, Kotlin, log4j, Night-Config… exactly the "scary but legit" code naive scanners false-flag. That's *why* reflection and bytecode manipulation on their own no longer trigger a flag.
 
 ---
+
+## ⏱ Speed — it reads the jars on every core you have
+
+A screenshare has somebody sitting there watching. Measured on 60 real libraries,
+one jar at a time, PowerShell 7.4:
+
+| phase | ms per jar | runs on |
+|---|---:|---|
+| Bytecode behaviour | 840.6 | jars that are **not** verified |
+| CurseForge fingerprint | 583.5 | *(was: every unverified jar. Now: only when a CurseForge API key is set — it is the only thing that can use it, and without a key the number was computed and thrown away.)* |
+| Jar features | 367.9 | every jar |
+| Filename similarity | 15.7 | every jar |
+| Disk packages | 4.5 | every jar |
+| SHA1 | 2.9 | every jar |
+
+Most of a normal modpack is *verified* mods, which skip the bytecode pass — so the
+floor everybody pays is hash + features + packages, about **375 ms a jar**. On a
+78-mod pack that is half a minute of pure file reading.
+
+That reading now happens in a **runspace pool** (PowerShell 5.1 has no
+`ForEach-Object -Parallel`), sized to the machine's cores, capped at 8. Two rules
+keep it honest:
+
+- **The worker only reads.** It computes; it decides nothing. Every verdict is
+  still reached one jar at a time, in the original order, by the same code as
+  before — so a scan cannot come out differently because a PC has more cores.
+- **The worker runs the shipped functions**, plus the transitive closure of
+  everything they call and every table they read, worked out from their own ASTs at
+  runtime. There is no second implementation to drift.
+
+Proven rather than asserted: `-SelfTest` builds real jars on every start, reads
+them both ways and compares hash, features and packages — and a full scan of 40
+libraries run through both paths produced **1113 identical lines** of verdicts,
+scores, counters and bands. Measured speed-up on 4 cores: **2.07×** on the phase
+that was parallelised. If the pool cannot open, or the folder is too small to be
+worth one, every jar is read inline exactly as before.
 
 ## 📊 Benchmarks — measured, public, and rerun on every push
 

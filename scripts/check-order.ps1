@@ -150,6 +150,57 @@ if ($unset.Count -gt 0) {
     exit 1
 }
 
+# ---- 6. cmdlets that may simply not be there ------------------------------
+# -ErrorAction handles errors a cmdlet RAISES. It cannot handle the cmdlet not
+# existing: that is a CommandNotFoundException thrown before the cmdlet is
+# reached, and under $ErrorActionPreference = 'Stop' - which GitHub Actions sets
+# for every pwsh step - it ends the script.
+#
+# Two of these were real rather than theoretical. Get-WmiObject was REMOVED in
+# PowerShell 7, and Run-JVMScan called it unguarded: on a PC where pwsh is the
+# default shell the injected-client check found no java processes and returned an
+# empty result, which reads exactly like "checked, nothing there". And `chcp`,
+# eight lines into the script, killed every CI self-test before one check ran.
+#
+# So: a call to anything on this list has to sit inside a try, where the failure
+# becomes a coverage gap instead of the end of the scan.
+$optional = @(
+    'Get-Service', 'Get-MpPreference', 'Get-ScheduledTask', 'Get-NetFirewallProfile',
+    'Get-NetTCPConnection', 'Get-WinEvent', 'Get-ComputerInfo', 'Get-LocalUser',
+    'Get-Volume', 'Get-Disk', 'Get-AuthenticodeSignature', 'Get-EventLog',
+    'Test-NetConnection', 'Get-WmiObject', 'Get-CimInstance', 'chcp'
+)
+$unguarded = New-Object System.Collections.Generic.List[string]
+foreach ($c in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+    $n = $c.GetCommandName()
+    if ($optional -notcontains $n) { continue }
+    # Inside the helper that exists to probe for them, guarded by Get-Command.
+    if ((Get-Enclosing $c.Extent.StartLineNumber) -eq 'Get-WmiOrCim') { continue }
+    $p = $c.Parent; $ok = $false
+    while ($p) {
+        if ($p -is [System.Management.Automation.Language.TryStatementAst]) {
+            # the TRY block itself - a call inside the catch is not protected
+            if ($p.Body.Extent.StartOffset -le $c.Extent.StartOffset -and
+                $c.Extent.EndOffset -le $p.Body.Extent.EndOffset) { $ok = $true }
+            break
+        }
+        # `if (Get-Command X ...) { X ... }` is the other honest guard
+        if ($p -is [System.Management.Automation.Language.IfStatementAst] -and
+            $p.Clauses[0].Item1.Extent.Text -match "Get-Command\s+$n\b") { $ok = $true; break }
+        $p = $p.Parent
+    }
+    if (-not $ok) { $unguarded.Add(("{0,6}  {1}" -f $c.Extent.StartLineNumber, $n)) }
+}
+if ($unguarded.Count -gt 0) {
+    "CALLED WITHOUT A GUARD, AND MAY NOT EXIST:"
+    $unguarded | ForEach-Object { "  $_" }
+    ""
+    "-ErrorAction cannot suppress a command that is not there. Wrap it in try/catch"
+    "and record a coverage gap, or test for it with Get-Command first."
+    exit 1
+}
+
 "call order: {0} function(s), {1} reachable from top level, none used before it exists" -f $defLine.Count, $runsAt.Count
 "script scope: {0} name(s) read with the prefix, every one of them assigned with it" -f $scriptRead.Count
+"optional cmdlets: every call to one that may not exist is guarded"
 exit 0

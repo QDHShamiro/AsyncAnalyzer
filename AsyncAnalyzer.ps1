@@ -30,7 +30,12 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 }
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$null = chcp 65001
+# chcp is a Windows program, and this tool only ever runs on Windows - but it is
+# also PARSED and SELF-TESTED elsewhere, and a missing external command becomes a
+# TERMINATING error under $ErrorActionPreference = 'Stop', which is what GitHub
+# Actions sets for pwsh by default. The script then died here, on line 33, before
+# one check had run - and the CI self-test could never have passed.
+if (Get-Command chcp -ErrorAction SilentlyContinue) { $null = chcp 65001 }
 $ModPath = ""
 
 $script:Version      = "4.0.0"
@@ -709,9 +714,6 @@ $script:pendingProcessNames = @()
 # loaded from the mods folder - which is the whole point of a ghost client, and the
 # strongest thing a screenshare check can show.
 $script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-# Everything this run could NOT check. An autonomous tool must never report "clean"
-# for a check it silently skipped, so every limitation is collected and shown with
-# the verdict instead of being swallowed.
 # ---------------------------------------------------------------------------
 # Windows system checks - the tables. Mirrors ml/sysscan.py.
 #
@@ -726,6 +728,18 @@ $script:sysAuthHosts = @('sessionserver.mojang.com', 'authserver.mojang.com', 'a
 # replaced matched the substring 'mod', which covers ModernWarfare and \Models\.
 $script:sysMcMarkers = @('\.minecraft', '\.lunarclient', '\badlion', '\feather', '\labymod', '\prismlauncher', '\multimc', '\polymc', '\atlauncher', '\modrinthapp', '\curseforge\minecraft', '\.technic', '\.tlauncher', '\gdlauncher')
 
+# Which signature set is BUILT IN to this copy. It matches ml/signatures.json at
+# the moment this file was written - ml/test_report.py fails the build if the two
+# drift apart - and it is what a scan falls back to when the auto-update cannot be
+# reached. The repository is private, so raw.githubusercontent.com answers 404 to
+# everyone without a token: without these two the fallback is silent and a scan
+# running on a months-old list looks exactly like a current one.
+$script:SigVersion  = 7
+$script:SigDate     = "2026-08-28"
+
+# Everything this run could NOT check. An autonomous tool must never report "clean"
+# for a check it silently skipped, so every limitation is collected and shown with
+# the verdict instead of being swallowed.
 $script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
 # Jars that ran on this PC and are gone now, from BOTH sources: the BAM registry
 # (needs admin, sees executables) and the live JVM's own record of what it loaded
@@ -956,6 +970,35 @@ function Add-ScanGap([string]$What) {
     if (-not $script:ScanGaps.Contains($What)) { [void]$script:ScanGaps.Add($What) }
 }
 
+function Get-WmiOrCim([string]$Class, [string]$Filter = "") {
+    <#
+        Win32_* without caring which PowerShell this is.
+
+        Get-WmiObject was REMOVED in PowerShell 7. On a PC where pwsh is the
+        default shell the call does not fail, it does not exist - a
+        CommandNotFoundException, which -ErrorAction cannot suppress because the
+        cmdlet was never reached. Run-JVMScan then saw no java processes and
+        returned an empty result, so the injected-client check quietly found
+        nothing while the report said it had run. That is the exact failure this
+        tool is built to not have.
+
+        Get-CimInstance is present in both, so it goes first; Get-WmiObject stays
+        as the fallback for a host where CIM is unavailable. Returns nothing if
+        neither works - and the caller says so, rather than reading it as clean.
+    #>
+    foreach ($cmd in @('Get-CimInstance', 'Get-WmiObject')) {
+        if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $args = @{ ClassName = $Class; ErrorAction = 'Stop' }
+            if ($cmd -eq 'Get-WmiObject') { $args = @{ Class = $Class; ErrorAction = 'Stop' } }
+            if ($Filter) { $args['Filter'] = $Filter }
+            $res = @(& $cmd @args)
+            if ($res.Count -gt 0) { return $res }
+        } catch { continue }
+    }
+    return @()
+}
+
 function Test-IsAdmin {
     try {
         return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -976,8 +1019,6 @@ function Invoke-SelfElevate {
     W "    without those checks $([char]0x2014) it is not required. Use -NoElevate to skip asking." DarkGray
     Write-Host ""
     try {
-        # The one-liner has no file on disk, so the elevated process re-fetches the
-        # script. Say so plainly rather than doing it quietly.
         $flags = @()
         if ($script:DeepScan)   { $flags += '-DeepScan' }
         if ($script:Deep)       { $flags += '-Deep' }
@@ -986,8 +1027,32 @@ function Invoke-SelfElevate {
         if ($script:NoLearn)    { $flags += '-NoLearn' }
         if ($script:Share)      { $flags += '-Share' }
         $flags += '-NoElevate'          # the elevated run must never try to elevate again
-        $url = "https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1"
-        $inner = "& ([scriptblock]::Create((irm '$url'))) " + ($flags -join ' ')
+        if ($script:ScanCode) { $flags += @('-Code', ('"' + $script:ScanCode + '"')) }
+        if ($ModPath)         { $flags += @('-Path', ('"' + $ModPath + '"')) }
+
+        # The elevated window runs THIS code, not a fresh download.
+        #
+        # It used to re-fetch the script from GitHub, which is wrong twice over.
+        # It is a different file: whatever is on main at that second, not what the
+        # person watching just read. And it stops working the moment the repo is
+        # private, which it now is - the fetch returns 404 and the elevated window
+        # dies with nothing on screen.
+        #
+        # So the running script writes ITSELF to a temp file and elevates that.
+        # Same bytes, no network, and the temp copy is deleted by the elevated run
+        # before it does anything else.
+        $self = $null
+        if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+            $self = $PSCommandPath
+        } else {
+            # Started with iex, so there is no file. Write the source out.
+            $body = $MyInvocation.MyCommand.ScriptBlock.Ast.Extent.Text
+            if (-not $body) { throw "cannot recover the running script to elevate it" }
+            $self = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_" + $script:ScanId + ".ps1")
+            [System.IO.File]::WriteAllText($self, $body, [System.Text.UTF8Encoding]::new($true))
+            W "  $([char]0x2139) Elevating THIS copy, not a fresh download: $self" DarkGray
+        }
+        $inner = "& '" + ($self -replace "'", "''") + "' " + ($flags -join ' ')
         Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $inner) -ErrorAction Stop
         W "  $([char]0x2713) Continuing in the elevated window." Green
@@ -1453,7 +1518,17 @@ function Test-ServerKey {
 }
 
 function Invoke-CloudUpdate {
-    if ($script:NoUpdate) { return }
+    # Every fetch below can fail: no network on the PC being screenshared, a school
+    # or company proxy, or - as right now - a PRIVATE repository, where
+    # raw.githubusercontent.com answers 404 to everybody without a token. Swallowed,
+    # that turns a scan running on a months-old list into one that looks current,
+    # which is the single thing a report must never do. So each failure is named and
+    # lands in the coverage gaps, next to the verdict.
+    if ($script:NoUpdate) {
+        Add-ScanGap "Signature and model auto-update was switched off with -NoUpdate. This scan used the built-in signature set v$($script:SigVersion) from $($script:SigDate); a cheat added to the team list after that date was not looked for."
+        return
+    }
+    $staleModels = [System.Collections.Generic.List[string]]::new()
     try {
         $m = Invoke-RestMethod -Uri "$($script:RepoRaw)/model.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($m.version -and ([int]$m.version) -gt $script:mlModelVersion -and $m.weights -and $m.feature_order) {
@@ -1466,7 +1541,7 @@ function Invoke-CloudUpdate {
             $script:mlModelVersion = [int]$m.version
             W "  $([char]0x2713) AI model auto-updated to v$($script:mlModelVersion) from GitHub." DarkGray
         }
-    } catch {}
+    } catch { [void]$staleModels.Add("the mod AI model") }
     try {
         $sm = Invoke-RestMethod -Uri "$($script:RepoRaw)/session_model.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($sm.version -and ([int]$sm.version) -gt $script:smModelVersion -and $sm.weights -and $sm.feature_order) {
@@ -1479,7 +1554,7 @@ function Invoke-CloudUpdate {
             $script:smModelVersion = [int]$sm.version
             W "  $([char]0x2713) Overall-scan AI updated to v$($script:smModelVersion) from GitHub." DarkGray
         }
-    } catch {}
+    } catch { [void]$staleModels.Add("the overall-scan AI model") }
     try {
         $s = Invoke-RestMethod -Uri "$($script:RepoRaw)/signatures.json" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
         if ($s.knownCheatHashes) { foreach ($h in $s.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
@@ -1518,17 +1593,29 @@ function Invoke-CloudUpdate {
         # and that one is verified. A block in signatures.json is only a fallback for
         # a copy that somehow got this far without one.
         if ($s.telemetry -and -not $script:Telemetry) { $script:Telemetry = $s.telemetry }
-    } catch {}
+    } catch {
+        Add-ScanGap "The cheat signature list could not be refreshed from GitHub. This scan used the built-in set v$($script:SigVersion) from $($script:SigDate); a cheat added to the team list after that date was not looked for."
+    }
+
+    if ($staleModels.Count -gt 0) {
+        $which = $staleModels -join " and "
+        Add-ScanGap "Could not refresh $which from GitHub, so this scan scored with the copy built into the tool (mod model v$($script:mlModelVersion), overall-scan model v$($script:smModelVersion)). Scores may be older than the team's current ones; the hard rules are unaffected."
+    }
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.pullSignatures -and $script:Telemetry.endpoint) {
         try {
             $ts = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/signatures" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
             if ($ts.knownCheatHashes) { foreach ($h in $ts.knownCheatHashes) { [void]$script:knownCheatHashes.Add([string]$h) } }
             if ($ts.knownGoodHashes)  { foreach ($h in $ts.knownGoodHashes)  { [void]$script:knownGoodHashes.Add([string]$h) } }
-        } catch {}
+        } catch {
+            # The endpoint itself is deliberately not named: this text ends up in a
+            # report the scanned person reads.
+            Add-ScanGap "The team backend could not be reached, so hashes other staff confirmed since this copy was made were not part of this scan."
+        }
     }
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.endpoint) {
+        $teamStale = [System.Collections.Generic.List[string]]::new()
         try {
             $tm = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/model" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
             if ($tm.weights -and $tm.feature_order) {
@@ -1537,7 +1624,7 @@ function Invoke-CloudUpdate {
                 $script:mlIntercept = [double]$tm.intercept; $script:mlBaseIntercept = [double]$tm.intercept
                 W "  $([char]0x2713) Using team-trained AI model $([char]0x2014) learned from $($tm.trainedCount) samples across all team scans." DarkGray
             }
-        } catch {}
+        } catch { [void]$teamStale.Add("mod") }
         try {
             $tsm = Invoke-RestMethod -Uri "$($script:Telemetry.endpoint)/api/smodel" -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
             if ($tsm.weights -and $tsm.feature_order) {
@@ -1546,7 +1633,10 @@ function Invoke-CloudUpdate {
                 $script:smIntercept = [double]$tsm.intercept; $script:smBaseIntercept = [double]$tsm.intercept
                 W "  $([char]0x2713) Overall-scan AI is team-trained $([char]0x2014) $($tsm.trainedCount) whole scans learned from." DarkGray
             }
-        } catch {}
+        } catch { [void]$teamStale.Add("overall-scan") }
+        if ($teamStale.Count -gt 0) {
+            Add-ScanGap "The team-trained AI could not be downloaded, so this scan scored with the model shipped in the tool rather than the one the team has trained since."
+        }
     }
 }
 
@@ -1682,7 +1772,11 @@ $script:bcBehaviour = [ordered]@{
     # A jar working out where its own file is. Ordinary code has no reason to - it
     # is how something finds itself in order to delete itself.
     'selfpath'   = '\.getProtectionDomain|\.getCodeSource|ProtectionDomain|CodeSource'
-    'filedelete' = 'File\.delete|\.deleteOnExit|Files\.delete|Files\.deleteIfExists'
+    # (^|/) so the class name has to BE File/Files, not merely end in it: without
+    # it, Guava's MoreFiles.deleteRecursively (which contains the literal
+    # 'Files.delete') made sponge-mixin - the framework nearly every mod is
+    # built on - read as a jar that deletes itself.
+    'filedelete' = '(?:^|/)File\.delete|\.deleteOnExit|(?:^|/)Files\.delete|(?:^|/)Files\.deleteIfExists'
     # Unpacking a bundled native library and cleaning up the copy afterwards. This
     # is the innocent reason a class locates its own jar and then deletes a file,
     # and naming it is what lets the self-wipe signal exclude it.
@@ -1900,23 +1994,34 @@ function Read-ClassConstantPool([byte[]]$b) {
     return @{ Symbols = $sb.ToString(); Strings = $strings }
 }
 
-function Add-DiskPackages([string]$JarPath) {
+function Get-JarPackages([string]$JarPath) {
     # Entry names only - no decompression, no parsing. Cheap enough to run on every
     # jar including verified ones, which is required: a verified minimap's packages
     # being on disk is exactly what makes an absent package meaningful.
+    #
+    # Returns the names rather than adding them, so it can also run in a worker
+    # thread. $script:DiskPackages is shared, and a set that several threads add to
+    # is a set that quietly loses entries - which here would read as a package with
+    # no jar behind it, which is the injected-client rule.
+    $out = New-Object System.Collections.Generic.List[string]
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
-    } catch { return }
+    } catch { return $out }
     try {
         foreach ($e in $zip.Entries) {
             $fn = $e.FullName
             if (-not $fn.EndsWith('.class')) { continue }
             $parts = $fn.Split('/')
-            if ($parts.Count -ge 2) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1])) }
-            if ($parts.Count -ge 3) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
-            if ($parts.Count -ge 1) { [void]$script:DiskPackages.Add($parts[0]) }
+            if ($parts.Count -ge 2) { [void]$out.Add(($parts[0] + '/' + $parts[1])) }
+            if ($parts.Count -ge 3) { [void]$out.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
+            if ($parts.Count -ge 1) { [void]$out.Add($parts[0]) }
         }
     } finally { $zip.Dispose() }
+    return $out
+}
+
+function Add-DiskPackages([string]$JarPath) {
+    foreach ($p in (Get-JarPackages $JarPath)) { [void]$script:DiskPackages.Add($p) }
 }
 
 function Test-LoadedFromDisk([string]$Token) {
@@ -1964,6 +2069,30 @@ function Get-BcWitness($Bc, [string[]]$Cats, [int]$Max = 2) {
     }
     if ($parts.Count -eq 0) { return "" }
     return " [$($parts -join '; ')]"
+}
+
+# Everything on the disk, not just the mods folder.
+#
+# The injected-client rule below says "this package is loaded and no jar on disk
+# contains it". That claim is only as good as the disk side: if the tool knows
+# the mods folder alone, every launcher library and the game's own code read as
+# injected. So the version jar and the whole libraries tree are walked too -
+# entry names only, no decompression, which is cheap enough for the few hundred
+# jars a Minecraft install carries.
+function Add-InstallPackages([string]$GameDir) {
+    if (-not $GameDir) { return 0 }
+    $n = 0
+    foreach ($sub in @('libraries', 'versions')) {
+        $d = [System.IO.Path]::Combine($GameDir, $sub)
+        if (-not [System.IO.Directory]::Exists($d)) { continue }
+        try {
+            foreach ($j in @([System.IO.Directory]::GetFiles($d, '*.jar', [System.IO.SearchOption]::AllDirectories) | Select-Object -First 1200)) {
+                Add-DiskPackages $j
+                $n++
+            }
+        } catch {}
+    }
+    return $n
 }
 
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
@@ -2546,8 +2675,25 @@ function Get-ModVerdict($ctx) {
         # nothing was ever printed, which the dead-end audit found. A reason line
         # without a score cannot cause a false flag - it does not move the band - and
         # a jar that finds its own file and deletes it is worth a moderator seeing.
+        # A mod that removes itself after it has run. There is no innocent
+        # version of the shape: the class asks the JVM where its OWN jar is
+        # (getProtectionDomain -> getCodeSource) and deletes that exact file.
+        #
+        # This was measured and reported but never SCORED, because the two
+        # halves - find a path, delete a file - also appear in libraries that
+        # unpack a native library to temp and clean up. That exclusion is what
+        # the rule already applies, and there is now a test on both sides of it:
+        # cheat/SelfWipe.java is caught, clean/NativeUnpack.java is not, and the
+        # rule fires on 0 of 179 real libraries.
+        #
+        # Likely rather than Confirmed: the comment this replaces recorded that
+        # an earlier form of the rule hit a real library in CI twice, and that
+        # observation cannot be reproduced here to be ruled out. Likely is
+        # enough to put it on the report's first page, and leaves room for the
+        # one case where a library does something genuinely unusual.
         if ($bc.selfwipeRatio -gt 0) {
-            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes a file $([char]0x2014) the shape of a mod that removes itself after running. NOT scored: this pattern also flagged real bytecode libraries twice, so it is written down for you rather than counted against the file" + (Get-BcWitness $bc @('selfwipe')))
+            $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
+            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes it $([char]0x2014) a mod that removes itself after running. Nothing legitimate uninstalls itself; a cheat that wants the mods folder empty by the time somebody looks does" + (Get-BcWitness $bc @('selfwipe')))
         }
         if ($bc.hiddenapiRatio -gt 0) {
             [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses" + (Get-BcWitness $bc @('hiddenapi')))
@@ -2874,7 +3020,17 @@ function Invoke-SelfTest {
         @{ Label = "Baritone by filename, no packages read"; Bands = @("Likely", "Confirmed"); Over = @{ FilenameClient = $true; FilenameToken = "baritone"; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ inputRatio = 1.0 }) } }
         @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Self-deleting jar is measured, not accused"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        # This case used to expect Clean, and said "measured, not accused". It was
+        # right to be careful and wrong to stop there: the rule was never given a
+        # positive example to be judged against. It has one now
+        # (ml/corpus_src/cheat/SelfWipe.java) and so does its lookalike
+        # (clean/NativeUnpack.java, the library that unpacks a native to temp and
+        # cleans up - the only legitimate shape sharing both halves). Measured:
+        # caught on the first, not on the second, 0 of 179 real libraries.
+        @{ Label = "A jar that deletes its own file is flagged"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        # ...and the library that unpacks a native library is not. The derived
+        # signal excludes it, so selfwipeRatio stays 0 even though both halves fire.
+        @{ Label = "A library unpacking a native is not"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 0.0; filedeleteRatio = 1.0; nativetempRatio = 1.0 }) } }
         # A transformer that only its bytecode declares - no FMLCorePlugin in the
         # manifest - must still be recorded as scope, and must still not be flagged.
         @{ Label = "Transformer the manifest does not declare"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; inputRatio = 1.0 }) } }
@@ -3000,6 +3156,68 @@ function Invoke-SelfTest {
             $ok = ($script:ScanGaps.Count -eq $before + 1)
             while ($script:ScanGaps.Count -gt $before) { $script:ScanGaps.RemoveAt($script:ScanGaps.Count - 1) }
             $ok } }
+        # ---- the parallel read, against the sequential one ------------------
+        # The precompute exists to make a screenshare shorter, and the one thing it
+        # is not allowed to do is change an answer. So the self-test builds real
+        # jars, reads them both ways and compares - on this machine, with these
+        # cores, every time the tool starts.
+        @{ Label = "Parallel read returns exactly what reading inline returns"; Test = {
+            $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_par_" + [guid]::NewGuid().ToString("N").Substring(0,8))
+            $ok = $false
+            try {
+                [void][System.IO.Directory]::CreateDirectory($dir)
+                # Enough jars to get past the "not worth a pool" threshold, each with
+                # different contents so an off-by-one in the result mapping shows up
+                # as a mismatch rather than passing by luck.
+                $made = @()
+                for ($n = 0; $n -lt 8; $n++) {
+                    $jp = Join-Path $dir "probe$n.jar"
+                    $fs = [System.IO.File]::Open($jp, "Create")
+                    $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+                    foreach ($entry in @("com/probe$n/Main.class", "org/example/Helper.class", "fabric.mod.json")) {
+                        $e = $zip.CreateEntry($entry)
+                        $w = New-Object System.IO.StreamWriter($e.Open())
+                        $w.Write(('{"id":"probe' + $n + '","name":"Probe ' + $n + '"}' + ('x' * (200 * ($n + 1)))))
+                        $w.Dispose()
+                    }
+                    $zip.Dispose(); $fs.Dispose()
+                    $made += (Get-Item $jp)
+                }
+                $pre = Invoke-JarPrecompute $made
+                $mismatch = 0
+                foreach ($j in $made) {
+                    $a = $pre[$j.FullName]
+                    if (-not $a) { $mismatch++; continue }
+                    if ($a.Sha1 -ne (Get-FileSHA1 $j.FullName)) { $mismatch++ }
+                    $fb = Get-JarFeatures $j.FullName
+                    if (($a.Features | ConvertTo-Json -Depth 8 -Compress) -ne ($fb | ConvertTo-Json -Depth 8 -Compress)) { $mismatch++ }
+                    $pa = (@($a.Packages) | Sort-Object) -join "|"
+                    $pb = (@(Get-JarPackages $j.FullName) | Sort-Object) -join "|"
+                    if ($pa -ne $pb) { $mismatch++ }
+                }
+                $ok = ($pre.Count -eq $made.Count) -and ($mismatch -eq 0)
+            } catch { $ok = $false } finally {
+                try { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+            }
+            $ok } }
+        @{ Label = "The worker is handed everything those functions need"; Test = {
+            # A helper missing from the closure does not throw in a runspace - the
+            # command is simply not found and the feature comes back unset. So the
+            # closure is checked for the helpers that are reached indirectly, which
+            # are the ones a hand-written list would have missed.
+            $cl = Get-ParallelClosure
+            $need = @('Get-FileSHA1','Get-JarFeatures','Get-JarPackages','Get-ShannonEntropy','Test-SelfIdentifyingBlob')
+            $haveFn = @($need | Where-Object { $cl.Functions.ContainsKey($_) }).Count -eq $need.Count
+            $haveVar = ($cl.Variables -contains 'patternRegex') -and ($cl.Variables -contains 'magicExt')
+            $haveFn -and $haveVar } }
+        @{ Label = "...and never the one set that is shared"; Test = {
+            # $script:DiskPackages is added to while the scan runs. Copied into a
+            # worker, each thread would get its own and the additions would be lost -
+            # and a package that is on disk but missing from the set reads as a class
+            # with no jar behind it, which is the injected-client rule. It has to be
+            # returned and folded in on the main thread, never copied.
+            $cl = Get-ParallelClosure
+            ($cl.Variables -notcontains 'DiskPackages') -and ($script:parNeverCopy -contains 'DiskPackages') } }
         @{ Label = "Full report renders and is written"; Test = {
             # GetTempPath, not $env:TEMP: the variable is not set on every host,
             # and a self-test that fails because it could not find a temp folder
@@ -4226,16 +4444,29 @@ function Get-ScanTargets {
             if ($r.Instance) { W " / $($r.Instance)" White -NoNewline }
             W "  ($($r.JarCount) mods)" DarkGray
         }
+        # An install that is NOT open is scanned too. It used to be reported as a
+        # gap and skipped, which is backwards: the profile somebody is not playing
+        # is exactly where a jar gets parked while the one they ARE playing is
+        # being watched. A second Modrinth profile called "Cheats test" sat right
+        # next to the running one and was listed as "not scanned".
         $idle = @($plain | Where-Object { -not $_.IsRunning })
-        if ($idle.Count -gt 0) {
-            Add-ScanGap "$($idle.Count) other Minecraft install(s) exist but were not open, so they were not scanned"
+        foreach ($i in $idle) {
+            if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
+            W "  $([char]0x2713) Also scanning (not open): " DarkGray -NoNewline
+            W "$($i.Launcher)" Cyan -NoNewline
+            if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
+            W "  ($($i.JarCount) mods)" DarkGray
         }
     } elseif ($plain.Count -gt 0) {
-        [void]$targets.Add($plain[0].Path)
-        W "  $([char]0x2713) Nothing open $([char]0x2014) checking the most likely install: $($plain[0].Launcher)" Yellow
-        if ($plain.Count -gt 1) {
-            Add-ScanGap "$($plain.Count) installs found and none was open $([char]0x2014) only the most likely one was scanned"
+        # Nothing open: scan every install that was found, not the best guess.
+        foreach ($i in $plain) {
+            if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
+            W "  $([char]0x2713) Nothing open $([char]0x2014) scanning: " Yellow -NoNewline
+            W "$($i.Launcher)" Cyan -NoNewline
+            if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
+            W "  ($($i.JarCount) mods)" DarkGray
         }
+        Add-ScanGap "No Minecraft was running, so nothing could be read out of a live game $([char]0x2014) an injected client leaves no file to find"
     }
 
     # An alternative client's mods/addons folder is always scanned, open or not. It
@@ -5099,6 +5330,178 @@ function Invoke-PyScan([string]$FilePath) {
 }
 
 # ---------------------------------------------------------------------------
+# The same analysis, on more than one core.
+#
+# Measured on 60 real libraries from Maven Central, PowerShell 7.4, one jar at a
+# time:
+#
+#     Bytecode      840.6 ms/jar   (only runs for jars that are NOT verified)
+#     Murmur2       583.5 ms/jar   (only for the CurseForge lookup)
+#     JarFeatures   367.9 ms/jar   (every jar)
+#     Filename       15.7 ms/jar
+#     DiskPackages    4.5 ms/jar
+#     SHA1            2.9 ms/jar
+#
+# A normal modpack is mostly VERIFIED mods, which skip the bytecode pass - so the
+# floor everybody pays is SHA1 + features + packages, about 375 ms a jar. On the
+# real 78-mod pack this was measured against, that is half a minute of a
+# screenshare spent waiting, and it is all file reading and parsing with nothing
+# shared between one jar and the next.
+#
+# So those three run in a runspace pool (PowerShell 5.1 has no
+# ForEach-Object -Parallel) and the results are handed to the unchanged
+# per-jar analysis. Two rules make that safe to do to a tool whose whole job is
+# being right:
+#
+#   1. THE WORKER ONLY READS. It computes; it decides nothing. Every verdict is
+#      still reached one jar at a time, in the original order, by the same code as
+#      before - so a scan cannot come out differently because a machine has more
+#      cores. $script:DiskPackages is the one piece of shared state involved, and
+#      the worker returns a list instead of touching it.
+#   2. THE WORKER RUNS THE SHIPPED FUNCTIONS. It is handed Get-JarFeatures itself,
+#      not a copy of it, along with the transitive closure of everything those
+#      functions call and every $script: table they read - all worked out from
+#      their own ASTs at runtime. A second implementation that drifts from the
+#      first is exactly the bug this tool cannot afford.
+#
+# If anything about the pool fails, Invoke-JarAnalysis computes inline as it
+# always did. Same functions, same results, just slower.
+# ---------------------------------------------------------------------------
+
+# What the worker computes. Everything else stays on the main thread.
+$script:parRoots = @('Get-FileSHA1', 'Get-JarFeatures', 'Get-JarPackages')
+
+# Mutable shared state must never be copied into a worker: each runspace would get
+# its own and the additions would be lost, or worse, kept.
+$script:parNeverCopy = @('DiskPackages')
+
+function Get-ParallelClosure {
+    <#
+        Every function the roots reach, and every $script: name they read.
+
+        Derived, not maintained. A hand-written list rots silently here: a helper
+        that is missing from the worker does not throw, it just is not found, and
+        the jar comes back with a feature quietly unset - which is the kind of
+        thing that turns into a wrong verdict rather than an error message.
+    #>
+    if ($script:parClosure) { return $script:parClosure }
+    $funcs = @{}
+    $vars  = @{}
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    foreach ($r in $script:parRoots) { $queue.Enqueue($r) }
+    while ($queue.Count -gt 0) {
+        $name = $queue.Dequeue()
+        if ($funcs.ContainsKey($name)) { continue }
+        $cmd = Get-Command $name -CommandType Function -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        $funcs[$name] = $cmd.ScriptBlock.ToString()
+        $ast = $cmd.ScriptBlock.Ast
+        foreach ($c in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $n = $c.GetCommandName()
+            if ($n -and -not $funcs.ContainsKey($n)) {
+                if (Get-Command $n -CommandType Function -ErrorAction SilentlyContinue) { $queue.Enqueue($n) }
+            }
+        }
+        foreach ($v in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+            $u = $v.VariablePath.UserPath
+            if ($u -like 'script:*') {
+                $vn = $u -replace '^script:', ''
+                if ($script:parNeverCopy -notcontains $vn) { $vars[$vn] = $true }
+            }
+        }
+    }
+    $script:parClosure = @{ Functions = $funcs; Variables = @($vars.Keys) }
+    return $script:parClosure
+}
+
+function New-ParallelPool([int]$Size) {
+    <#
+        A pool whose runspaces already contain the closure. The tables go in as
+        InitialSessionState variables, which land where $script:X inside those
+        functions reads them - verified, not assumed.
+    #>
+    $cl = Get-ParallelClosure
+    $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($n in $cl.Functions.Keys) {
+        $iss.Commands.Add(
+            (New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry $n, $cl.Functions[$n]))
+    }
+    foreach ($n in $cl.Variables) {
+        $val = Get-Variable -Name $n -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+        if ($null -eq $val) { continue }
+        $iss.Variables.Add(
+            (New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry $n, $val, ''))
+    }
+    $pool = [runspacefactory]::CreateRunspacePool(1, $Size, $iss, $Host)
+    $pool.Open()
+    return $pool
+}
+
+# One jar's worth of reading. No decisions, no shared state, no output.
+$script:parWorker = {
+    param([string]$Path)
+    $r = @{ Path = $Path; Sha1 = $null; Features = $null; Packages = @() }
+    try { $r.Sha1     = Get-FileSHA1 $Path }     catch {}
+    try { $r.Features = Get-JarFeatures $Path }  catch {}
+    try { $r.Packages = @(Get-JarPackages $Path) } catch {}
+    return $r
+}
+
+function Invoke-JarPrecompute($Jars) {
+    <#
+        path -> @{ Sha1; Features; Packages } for every jar, computed in parallel.
+
+        Returns an empty table on any failure, and on a job that came back without
+        features: the caller then computes that jar inline, which is what it did
+        before this file existed. Never a partial answer presented as a whole one.
+    #>
+    $out = @{}
+    $list = @($Jars)
+    $cores = [Environment]::ProcessorCount
+    # Below this the pool costs more than it saves - a runspace pool takes a few
+    # hundred milliseconds to stand up, and a four-jar folder is done by then.
+    if ($list.Count -lt 6 -or $cores -lt 2) { return $out }
+    $size = [Math]::Min([Math]::Max(2, $cores), 8)
+
+    $pool = $null
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $pool = New-ParallelPool $size
+        $jobs = New-Object System.Collections.Generic.List[object]
+        foreach ($j in $list) {
+            $ps = [System.Management.Automation.PowerShell]::Create()
+            $ps.RunspacePool = $pool
+            [void]$ps.AddScript($script:parWorker).AddArgument($j.FullName)
+            [void]$jobs.Add([PSCustomObject]@{ PS = $ps; Handle = $ps.BeginInvoke(); Name = $j.Name })
+        }
+        $done = 0
+        foreach ($job in $jobs) {
+            try {
+                $res = $job.PS.EndInvoke($job.Handle)
+                foreach ($r in @($res)) {
+                    if ($r -and $r.Path -and $r.Features) { $out[[string]$r.Path] = $r }
+                }
+            } catch {
+            } finally { $job.PS.Dispose() }
+            $done++
+            Spin "[$done/$($list.Count)] reading $($job.Name)"
+        }
+        SpinClear
+        $sw.Stop()
+        if ($out.Count -gt 0) {
+            W ("  $([char]0x2713) Read $($out.Count) jar(s) on $size cores in " +
+               ("{0:N1}s" -f $sw.Elapsed.TotalSeconds) + " $([char]0x2014) the analysis itself is unchanged.") DarkGray
+        }
+    } catch {
+        # Not a coverage gap: nothing was skipped. The same work happens inline.
+        $out = @{}
+    } finally {
+        if ($pool) { try { $pool.Close(); $pool.Dispose() } catch {} }
+    }
+    return $out
+}
+
+# ---------------------------------------------------------------------------
 # Everything one jar goes through: hash, provenance lookup, features, bytecode,
 # verdict, evidence, and the one-shot online learning step.
 #
@@ -5111,9 +5514,14 @@ function Invoke-PyScan([string]$FilePath) {
 # The four result lists are script-scope, so this appends to the same lists the
 # main loop fills. Counters are $script:-qualified for the same reason.
 # ---------------------------------------------------------------------------
-function Invoke-JarAnalysis($jar) {
+function Invoke-JarAnalysis($jar, $Pre = $null) {
 
-    $hash   = Get-FileSHA1 $jar.FullName
+    # $Pre is the file reading done ahead of time on another core (84-parallel).
+    # It is the SAME functions' output, so this is only a question of when the work
+    # happened, never of what it produced. Absent - a late-scan jar, a small folder,
+    # a machine with one core, a pool that failed to open - everything is read here
+    # exactly as it always was.
+    $hash   = if ($Pre) { $Pre.Sha1 } else { Get-FileSHA1 $jar.FullName }
     $dlObj  = Get-DownloadSource $jar.FullName
     $dlName = if ($dlObj) { $dlObj.Name } else { $null }
     $dlUrl  = if ($dlObj) { $dlObj.RawUrl } else { $null }
@@ -5127,7 +5535,12 @@ function Invoke-JarAnalysis($jar) {
     if ($hash -and -not $verifiedName) {
         $mr = Get-ModrinthMeta $hash
         if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)"; if (-not $verifiedVia) { $verifiedVia = "Modrinth" } }
-        if (-not $verifiedName) {
+        # The fingerprint exists for one caller: CurseForge, which refuses to answer
+        # without an API key. Computing it anyway costs 583 ms a jar - measured, and
+        # the second most expensive thing in the whole scan - for a number that is
+        # then thrown away on every machine that has no key set, which is every
+        # machine unless CURSEFORGE_API_KEY is in the environment.
+        if (-not $verifiedName -and -not [string]::IsNullOrWhiteSpace($script:CurseForgeApiKey)) {
             $fp = Get-FileMurmur2 $jar.FullName
             if ($null -ne $fp) {
                 $cf = Get-CurseForgeMeta $fp
@@ -5141,8 +5554,13 @@ function Invoke-JarAnalysis($jar) {
         if ($verified -and $verifiedName) { $script:goodMeta[$hash] = "$verifiedName|$modUrl" }
     }
 
-    Add-DiskPackages $jar.FullName
-    $feat = Get-JarFeatures $jar.FullName
+    if ($Pre) {
+        foreach ($p in @($Pre.Packages)) { [void]$script:DiskPackages.Add($p) }
+        $feat = $Pre.Features
+    } else {
+        Add-DiskPackages $jar.FullName
+        $feat = Get-JarFeatures $jar.FullName
+    }
     $bcFeat = $null
     if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }
 
@@ -5285,11 +5703,12 @@ function Invoke-LateFolderScan {
     # Remember where each list ended, so only the jars this pass adds get a card.
     $nBefore = @{ flagged = $script:flaggedMods.Count; review = $script:reviewMods.Count }
     $before = $script:Flagged + $script:Review
+    $prel = Invoke-JarPrecompute $extra
     $i = 0
     foreach ($jar in $extra) {
         $i++
         Spin "[$i/$($extra.Count)] $($jar.Name)"
-        Invoke-JarAnalysis $jar
+        Invoke-JarAnalysis $jar $prel[$jar.FullName]
     }
     SpinClear
 
@@ -5342,6 +5761,43 @@ function Invoke-LateFolderScan {
 # list, and that sentence alone was enough to label the scan "Likely" - the more
 # RAM a legitimate modpack used, the more likely it was to be accused.
 # ---------------------------------------------------------------------------
+# An injected client that has no name.
+#
+# The memory scan looks for NAMES - the community client list. An obfuscated
+# loader has none: the real DoomsDay jar's classes are net/java/a, net/java/b,
+# net/java/d. Searching for names cannot see it, and that is the point of
+# obfuscating them.
+#
+# What it cannot hide is that it is LOADED. Every class the JVM holds came from
+# somewhere, and for a mod that somewhere is a jar. A package live in the game's
+# memory that belongs to no jar anywhere on this disk was not loaded from a file,
+# which is what "injected" means.
+#
+# The claim rests entirely on the disk side being complete - see
+# Add-InstallPackages - and it refuses to make any claim at all when that set is
+# too thin to trust. Mirrors injected_packages in ml/histscan.py.
+$script:jvmRuntimeRoots = @('java/', 'javax/', 'jdk/', 'sun/', 'com/sun/', 'oracle/',
+                            'netscape/', 'org/w3c/', 'org/xml/', 'org/ietf/', 'jrt/')
+# Generated at runtime by the JVM, by Mixin or by any bytecode library. They have
+# no file either, and they are not somebody's cheat.
+$script:jvmGenerated = '\$\$|\$Proxy|GeneratedConstructorAccessor|GeneratedMethodAccessor|Lambda\$|/ASM\$|\$\d+$'
+# A real Minecraft install yields thousands of package prefixes. Below this the
+# disk side is not trustworthy enough to call anything injected.
+$script:jvmMinDiskPackages = 200
+
+function Test-InjectedPackage([string]$Package) {
+    if ($script:DiskPackages.Count -lt $script:jvmMinDiskPackages) { return $false }
+    foreach ($r in $script:jvmRuntimeRoots) { if ($Package.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { return $false } }
+    if ($Package -match $script:jvmGenerated) { return $false }
+    # Any PREFIX being on disk means a jar could have supplied it: net/java/a is
+    # accounted for by "net/java" existing in some jar.
+    $parts = $Package.Split('/')
+    for ($i = 1; $i -le $parts.Count; $i++) {
+        if ($script:DiskPackages.Contains(($parts[0..($i-1)] -join '/'))) { return $false }
+    }
+    return $true
+}
+
 function New-JvmScanResult {
     return @{
         Findings = [System.Collections.Generic.List[string]]::new()
@@ -5392,8 +5848,18 @@ function Test-ScannedDir([string]$Dir) {
 function Run-JVMScan {
     $r = New-JvmScanResult
 
-    $javaProcs = Get-WmiObject Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" -ErrorAction SilentlyContinue
-    if (-not $javaProcs) { return $r }
+    $javaProcs = @(Get-WmiOrCim 'Win32_Process' "Name='java.exe' OR Name='javaw.exe'")
+    if ($javaProcs.Count -eq 0) {
+        # No java process is the ordinary case when the game is not open, and it is
+        # not a gap. Not being able to ASK is: without a process list there is
+        # nothing to check for an injected agent, and an empty result would read as
+        # "checked, found nothing".
+        if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) -and
+            -not (Get-Command Get-WmiObject   -ErrorAction SilentlyContinue)) {
+            $r.Gaps.Add("The running processes could not be listed on this PowerShell, so no JVM could be checked for an injected agent.")
+        }
+        return $r
+    }
 
     foreach ($proc in $javaProcs) {
         $where = "$($proc.Name) (PID $($proc.ProcessId))"
@@ -5525,6 +5991,17 @@ function Run-JVMScan {
                 # heap cannot turn this into the thing that runs out of memory.
                 $jarUrls = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
                 $jarUrlRegex = [regex]::new('(?i)file:/{1,3}[A-Za-z]:[/\\][^\s"''<>|*?\r\n]{0,300}?\.jar')
+                # Package paths, for the client that has no name. This regex is
+                # the expensive one - there is no cheap literal to gate it on the
+                # way "file:/" gates the URL scan - so it runs on a bounded
+                # number of chunks. Loaded code puts its package name in many
+                # places, so a sample still finds it; the cap is reported as a
+                # gap when it is reached.
+                $pkgRegex = [regex]::new('\b([a-z][a-z0-9_]{1,20}(?:/[A-Za-z0-9_$]{1,40}){2,6})\b')
+                $pkgHits = @{}
+                $pkgChunks = 0
+                $pkgChunkCap = 600
+                $pkgCapped = $false
                 # Coverage bookkeeping. The time budget stops the READING, not the
                 # walk: VirtualQueryEx costs nothing, so keep enumerating regions to
                 # the end of the address space and learn the real total. That turns
@@ -5565,6 +6042,19 @@ function Run-JVMScan {
                                         [void]$jarUrls.Add($um.Value)
                                     }
                                 }
+                                if ($pkgChunks -lt $pkgChunkCap) {
+                                    $pkgChunks++
+                                    foreach ($pm in $pkgRegex.Matches($str)) {
+                                        $pk = $pm.Groups[1].Value
+                                        # Keep three segments: a package, not a
+                                        # whole inner-class path. net/java/a is
+                                        # the unit that either has a jar or does not.
+                                        $seg = $pk.Split('/')
+                                        if ($seg.Count -gt 3) { $pk = ($seg[0..2] -join '/') }
+                                        if ($pkgHits.ContainsKey($pk)) { $pkgHits[$pk]++ }
+                                        elseif ($pkgHits.Count -lt 20000) { $pkgHits[$pk] = 1 }
+                                    }
+                                } else { $pkgCapped = $true }
                                 foreach ($mm in $memRegex.Matches($str)) {
                                     $term = $mm.Groups[1].Value
                                     $key  = $term.ToLower()
@@ -5658,6 +6148,32 @@ function Run-JVMScan {
                         # yourself with -Path" is advice nobody follows while a
                         # suspect is sitting on the other end of the call.
                         if (-not $script:LateScanDirs.Contains($ld)) { [void]$script:LateScanDirs.Add($ld) }
+                    }
+                }
+
+                # -------------------------------------------------------------
+                # Loaded, and belonging to no jar on this disk. This is the only
+                # check here that does not need to know the client's name.
+                # -------------------------------------------------------------
+                if ($script:DiskPackages.Count -lt $script:jvmMinDiskPackages) {
+                    $r.Gaps.Add("Only $($script:DiskPackages.Count) package(s) are known from the jars on disk $([char]0x2014) too few to tell an injected class from a library that simply was not scanned, so no such claim was made")
+                } else {
+                    $injected = [System.Collections.Generic.List[string]]::new()
+                    foreach ($pk in @($pkgHits.Keys | Sort-Object)) {
+                        # Three or more sightings: loaded code repeats its own
+                        # package name, a stray string does not.
+                        if ($pkgHits[$pk] -lt 3) { continue }
+                        if (-not (Test-InjectedPackage $pk)) { continue }
+                        if ($injected.Count -ge 12) { break }
+                        $injected.Add("$pk  ($($pkgHits[$pk]) sightings, no jar on disk contains it)")
+                    }
+                    if ($injected.Count -gt 0) {
+                        $r.Findings.Add("INJECTED CODE, no name needed: $($injected.Count) package(s) are loaded in $where and belong to NO jar anywhere on this disk $([char]0x2014) $($injected -join '; ')")
+                        $script:Evidence.MemInjectedOnly++
+                        $script:Evidence.MemCheatClient++
+                    }
+                    if ($pkgCapped) {
+                        $r.Gaps.Add("The search for injected code stopped after $pkgChunkCap memory blocks in $where $([char]0x2014) a client loaded only in the part that was not reached would have been missed")
                     }
                 }
 
@@ -6005,7 +6521,12 @@ function Run-ServiceCheck {
 
     $serviceIssues = @()
     $svcNames  = $serviceTable | ForEach-Object { $_.Name }
-    $allSvcs   = Get-Service -Name $svcNames -ErrorAction SilentlyContinue
+    # -ErrorAction handles errors the cmdlet raises; it cannot handle the cmdlet
+    # not existing, which is a CommandNotFoundException raised before it is called
+    # - fatal under $ErrorActionPreference = 'Stop'.
+    $allSvcs = @()
+    try { $allSvcs = @(Get-Service -Name $svcNames -ErrorAction SilentlyContinue) }
+    catch { Add-ScanGap "The Windows services could not be listed, so it was not checked whether Defender or the firewall service had been stopped" }
     $svcLookup = @{}
     foreach ($s in $allSvcs) { $svcLookup[$s.Name] = $s.Status.ToString() }
 
@@ -6755,7 +7276,7 @@ function Run-BamScan {
         return
     }
 
-    $oldestLogon = Get-CimInstance -ClassName Win32_LogonSession -ErrorAction SilentlyContinue |
+    $oldestLogon = Get-WmiOrCim 'Win32_LogonSession' |
         Where-Object { $_.LogonType -eq 2 -or $_.LogonType -eq 10 } |
         Sort-Object -Property StartTime |
         Select-Object -First 1
@@ -6772,7 +7293,7 @@ function Run-BamScan {
     $bamPInvoke.SetCustomAttribute($bamAttr)
     $bamKernel32 = $bamTypeBuilder.CreateType()
     $bamSb = New-Object System.Text.StringBuilder(65536)
-    $bamMappings = Get-WmiObject Win32_Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter } | ForEach-Object {
+    $bamMappings = Get-WmiOrCim 'Win32_Volume' | Where-Object { $_.DriveLetter } | ForEach-Object {
         if ($bamKernel32::QueryDosDevice($_.DriveLetter, $bamSb, 65536)) {
             @{ DriveLetter = $_.DriveLetter; DevicePath = $bamSb.ToString().ToLower() }
         }
@@ -6821,12 +7342,19 @@ function Run-BamScan {
     $existingPaths = $bamRaw | Where-Object { Test-Path $_.Path } | Select-Object -ExpandProperty Path
     $sigMap = @{}
     if ($existingPaths.Count -gt 0) {
-        Get-AuthenticodeSignature -LiteralPath $existingPaths | ForEach-Object {
-            $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
-                if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
-                elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
-                else { "Signed" }
-            } else { "Not signed" }
+        # -ErrorAction cannot save a cmdlet that is not there to be called, and
+        # under $ErrorActionPreference = 'Stop' an unguarded call ends the whole
+        # scan rather than this one lookup.
+        try {
+            Get-AuthenticodeSignature -LiteralPath $existingPaths -ErrorAction Stop | ForEach-Object {
+                $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
+                    if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
+                    elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
+                    else { "Signed" }
+                } else { "Not signed" }
+            }
+        } catch {
+            Add-ScanGap "The signatures of the programs in the BAM history could not be read, so a cheat executable there is listed without saying whether it was signed."
         }
     }
 
@@ -8737,12 +9265,19 @@ if (-not $SkipModCheck) {
         $script:reviewMods  = [System.Collections.Generic.List[object]]::new()
         $script:flaggedMods = [System.Collections.Generic.List[object]]::new()
 
+        # Read every jar first, on as many cores as this PC has. Nothing is decided
+        # here - it is the same three functions the loop below would have called,
+        # just not one after another. A jar missing from $pre (or an empty $pre,
+        # which is what a small folder or a failed pool gives) is read inline in the
+        # loop, exactly as before.
+        $pre = Invoke-JarPrecompute $jarFiles
+
         $idx = 0
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            Invoke-JarAnalysis $jar
+            Invoke-JarAnalysis $jar $pre[$jar.FullName]
         }
         SpinClear
 
@@ -8852,6 +9387,19 @@ if (-not $SkipModCheck) {
         }
     }
 }
+
+    # Before the memory scan, learn what is actually ON the disk: the version jar
+    # and the whole libraries tree, not just the mods folder. The injected-code
+    # rule says "this package belongs to no jar here", and that claim is only as
+    # good as this set - without it every launcher library reads as injected.
+    $instJars = 0
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try { $instJars += Add-InstallPackages ([System.IO.Path]::GetDirectoryName(([string]$t).TrimEnd('\'))) } catch {}
+    }
+    if ($instJars -gt 0) {
+        W "  $([char]0x25CF) Read $instJars library/version jar(s) so injected code can be told from a library" DarkGray
+    }
 
     $jvm = Run-JVMScan
     # ONLY the findings count. A note has an innocent explanation and a gap is

@@ -88,23 +88,34 @@ function Read-ClassConstantPool([byte[]]$b) {
     return @{ Symbols = $sb.ToString(); Strings = $strings }
 }
 
-function Add-DiskPackages([string]$JarPath) {
+function Get-JarPackages([string]$JarPath) {
     # Entry names only - no decompression, no parsing. Cheap enough to run on every
     # jar including verified ones, which is required: a verified minimap's packages
     # being on disk is exactly what makes an absent package meaningful.
+    #
+    # Returns the names rather than adding them, so it can also run in a worker
+    # thread. $script:DiskPackages is shared, and a set that several threads add to
+    # is a set that quietly loses entries - which here would read as a package with
+    # no jar behind it, which is the injected-client rule.
+    $out = New-Object System.Collections.Generic.List[string]
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
-    } catch { return }
+    } catch { return $out }
     try {
         foreach ($e in $zip.Entries) {
             $fn = $e.FullName
             if (-not $fn.EndsWith('.class')) { continue }
             $parts = $fn.Split('/')
-            if ($parts.Count -ge 2) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1])) }
-            if ($parts.Count -ge 3) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
-            if ($parts.Count -ge 1) { [void]$script:DiskPackages.Add($parts[0]) }
+            if ($parts.Count -ge 2) { [void]$out.Add(($parts[0] + '/' + $parts[1])) }
+            if ($parts.Count -ge 3) { [void]$out.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
+            if ($parts.Count -ge 1) { [void]$out.Add($parts[0]) }
         }
     } finally { $zip.Dispose() }
+    return $out
+}
+
+function Add-DiskPackages([string]$JarPath) {
+    foreach ($p in (Get-JarPackages $JarPath)) { [void]$script:DiskPackages.Add($p) }
 }
 
 function Test-LoadedFromDisk([string]$Token) {
@@ -152,6 +163,30 @@ function Get-BcWitness($Bc, [string[]]$Cats, [int]$Max = 2) {
     }
     if ($parts.Count -eq 0) { return "" }
     return " [$($parts -join '; ')]"
+}
+
+# Everything on the disk, not just the mods folder.
+#
+# The injected-client rule below says "this package is loaded and no jar on disk
+# contains it". That claim is only as good as the disk side: if the tool knows
+# the mods folder alone, every launcher library and the game's own code read as
+# injected. So the version jar and the whole libraries tree are walked too -
+# entry names only, no decompression, which is cheap enough for the few hundred
+# jars a Minecraft install carries.
+function Add-InstallPackages([string]$GameDir) {
+    if (-not $GameDir) { return 0 }
+    $n = 0
+    foreach ($sub in @('libraries', 'versions')) {
+        $d = [System.IO.Path]::Combine($GameDir, $sub)
+        if (-not [System.IO.Directory]::Exists($d)) { continue }
+        try {
+            foreach ($j in @([System.IO.Directory]::GetFiles($d, '*.jar', [System.IO.SearchOption]::AllDirectories) | Select-Object -First 1200)) {
+                Add-DiskPackages $j
+                $n++
+            }
+        } catch {}
+    }
+    return $n
 }
 
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {

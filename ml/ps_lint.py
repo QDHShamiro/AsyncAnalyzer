@@ -35,6 +35,10 @@ BUILTIN = {
     "Get-Random", "Get-Command", "Get-Member", "Get-Variable", "Set-Variable",
     "Read-Host", "Get-Host", "Select-String", "Get-FileHash", "Get-ItemProperty",
     "Get-WinEvent", "Get-ScheduledTask", "Get-MpPreference", "Get-NetTCPConnection",
+    # NetSecurity ships with Windows but not with pwsh on Linux, so it is not
+    # discoverable here. The call site guards it with -ErrorAction Stop inside a
+    # try/catch that records a coverage gap, which is what the absence needs.
+    "Get-NetFirewallProfile",
     "Get-Culture", "Set-Location", "Push-Location", "Pop-Location", "Export-Csv",
     "Import-Csv", "Get-Location", "Invoke-Expression", "Invoke-Command",
     "Get-PSDrive", "Get-Volume", "Get-Disk", "Get-ComputerInfo", "Get-LocalUser",

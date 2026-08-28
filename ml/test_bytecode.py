@@ -43,9 +43,10 @@ def build(tmp):
     os.makedirs(jars, exist_ok=True)
     # the mc/ package is the game's own API - it lives in Minecraft, never inside
     # a mod jar. Bundling it would make every jar look like it touches packets.
-    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot", "CoreModAura"]),
+    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot", "CoreModAura", "SelfWipe"]),
                         ("clean", ["Minimap", "ConfigBinder", "Keybinds",
-                                   "MixinRender", "MixinFreelook", "CoreModPerf"])):
+                                   "MixinRender", "MixinFreelook", "CoreModPerf", "NativeUnpack",
+                                   "DebugDecompiler"])):
         for nm in names:
             jp = os.path.join(jars, "%s_%s.jar" % (kind, nm))
             subprocess.run(["jar", "cf", jp] + sorted(glob.glob(
@@ -65,6 +66,10 @@ def rules(r):
         # decrypt-then-define-a-class, across most of the jar
         "dropper": (r["bc_crypto_ratio"] >= 0.5
                     and (r["bc_classload_ratio"] > 0 or r["bc_reflect_ratio"] >= 0.5)),
+        # a class that asks where its OWN jar is and deletes that file. The
+        # derived signal already excludes unpacking a native library to temp,
+        # which is the only legitimate shape that shares both halves.
+        "selfwipe": r["bc_selfwipe_ratio"] > 0,
     }
 
 

@@ -152,8 +152,14 @@ BEHAVIOUR = {
     # it is how something finds itself in order to delete itself.
     "bc_selfpath":   [r"\.getProtectionDomain", r"\.getCodeSource", r"ProtectionDomain",
                       r"CodeSource"],
-    "bc_filedelete": [r"File\.delete", r"\.deleteOnExit", r"Files\.delete",
-                      r"Files\.deleteIfExists"],
+    # The class name has to be File or Files itself, not merely END in it. Without
+    # the (^|/) the pattern matched Guava's MoreFiles.deleteRecursively inside
+    # sponge-mixin - which contains the literal "Files.delete" - and Mixin, the
+    # framework nearly every Minecraft mod is built on, came out as a jar that
+    # deletes itself. A constant-pool ref is "owner/path.member", so requiring a
+    # slash or the start of the string is exactly the "whole class name" test.
+    "bc_filedelete": [r"(?:^|/)File\.delete", r"\.deleteOnExit",
+                      r"(?:^|/)Files\.delete", r"(?:^|/)Files\.deleteIfExists"],
     # Unpacking a bundled native library and cleaning up the copy afterwards. This
     # is the innocent reason a class locates its own jar and then deletes a file,
     # and naming it is what lets the self-wipe signal exclude it.

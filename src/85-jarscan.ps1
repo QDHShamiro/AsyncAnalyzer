@@ -11,9 +11,14 @@
 # The four result lists are script-scope, so this appends to the same lists the
 # main loop fills. Counters are $script:-qualified for the same reason.
 # ---------------------------------------------------------------------------
-function Invoke-JarAnalysis($jar) {
+function Invoke-JarAnalysis($jar, $Pre = $null) {
 
-    $hash   = Get-FileSHA1 $jar.FullName
+    # $Pre is the file reading done ahead of time on another core (84-parallel).
+    # It is the SAME functions' output, so this is only a question of when the work
+    # happened, never of what it produced. Absent - a late-scan jar, a small folder,
+    # a machine with one core, a pool that failed to open - everything is read here
+    # exactly as it always was.
+    $hash   = if ($Pre) { $Pre.Sha1 } else { Get-FileSHA1 $jar.FullName }
     $dlObj  = Get-DownloadSource $jar.FullName
     $dlName = if ($dlObj) { $dlObj.Name } else { $null }
     $dlUrl  = if ($dlObj) { $dlObj.RawUrl } else { $null }
@@ -27,7 +32,12 @@ function Invoke-JarAnalysis($jar) {
     if ($hash -and -not $verifiedName) {
         $mr = Get-ModrinthMeta $hash
         if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)"; if (-not $verifiedVia) { $verifiedVia = "Modrinth" } }
-        if (-not $verifiedName) {
+        # The fingerprint exists for one caller: CurseForge, which refuses to answer
+        # without an API key. Computing it anyway costs 583 ms a jar - measured, and
+        # the second most expensive thing in the whole scan - for a number that is
+        # then thrown away on every machine that has no key set, which is every
+        # machine unless CURSEFORGE_API_KEY is in the environment.
+        if (-not $verifiedName -and -not [string]::IsNullOrWhiteSpace($script:CurseForgeApiKey)) {
             $fp = Get-FileMurmur2 $jar.FullName
             if ($null -ne $fp) {
                 $cf = Get-CurseForgeMeta $fp
@@ -41,8 +51,13 @@ function Invoke-JarAnalysis($jar) {
         if ($verified -and $verifiedName) { $script:goodMeta[$hash] = "$verifiedName|$modUrl" }
     }
 
-    Add-DiskPackages $jar.FullName
-    $feat = Get-JarFeatures $jar.FullName
+    if ($Pre) {
+        foreach ($p in @($Pre.Packages)) { [void]$script:DiskPackages.Add($p) }
+        $feat = $Pre.Features
+    } else {
+        Add-DiskPackages $jar.FullName
+        $feat = Get-JarFeatures $jar.FullName
+    }
     $bcFeat = $null
     if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }
 
@@ -185,11 +200,12 @@ function Invoke-LateFolderScan {
     # Remember where each list ended, so only the jars this pass adds get a card.
     $nBefore = @{ flagged = $script:flaggedMods.Count; review = $script:reviewMods.Count }
     $before = $script:Flagged + $script:Review
+    $prel = Invoke-JarPrecompute $extra
     $i = 0
     foreach ($jar in $extra) {
         $i++
         Spin "[$i/$($extra.Count)] $($jar.Name)"
-        Invoke-JarAnalysis $jar
+        Invoke-JarAnalysis $jar $prel[$jar.FullName]
     }
     SpinClear
 

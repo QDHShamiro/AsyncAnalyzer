@@ -289,7 +289,7 @@ function Run-BamScan {
         return
     }
 
-    $oldestLogon = Get-CimInstance -ClassName Win32_LogonSession -ErrorAction SilentlyContinue |
+    $oldestLogon = Get-WmiOrCim 'Win32_LogonSession' |
         Where-Object { $_.LogonType -eq 2 -or $_.LogonType -eq 10 } |
         Sort-Object -Property StartTime |
         Select-Object -First 1
@@ -306,7 +306,7 @@ function Run-BamScan {
     $bamPInvoke.SetCustomAttribute($bamAttr)
     $bamKernel32 = $bamTypeBuilder.CreateType()
     $bamSb = New-Object System.Text.StringBuilder(65536)
-    $bamMappings = Get-WmiObject Win32_Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter } | ForEach-Object {
+    $bamMappings = Get-WmiOrCim 'Win32_Volume' | Where-Object { $_.DriveLetter } | ForEach-Object {
         if ($bamKernel32::QueryDosDevice($_.DriveLetter, $bamSb, 65536)) {
             @{ DriveLetter = $_.DriveLetter; DevicePath = $bamSb.ToString().ToLower() }
         }
@@ -355,12 +355,19 @@ function Run-BamScan {
     $existingPaths = $bamRaw | Where-Object { Test-Path $_.Path } | Select-Object -ExpandProperty Path
     $sigMap = @{}
     if ($existingPaths.Count -gt 0) {
-        Get-AuthenticodeSignature -LiteralPath $existingPaths | ForEach-Object {
-            $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
-                if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
-                elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
-                else { "Signed" }
-            } else { "Not signed" }
+        # -ErrorAction cannot save a cmdlet that is not there to be called, and
+        # under $ErrorActionPreference = 'Stop' an unguarded call ends the whole
+        # scan rather than this one lookup.
+        try {
+            Get-AuthenticodeSignature -LiteralPath $existingPaths -ErrorAction Stop | ForEach-Object {
+                $sigMap[$_.Path] = if ($_.Status -eq 'Valid') {
+                    if ($_.SignerCertificate.Subject -like "*Manthe Industries*") { "Not signed (vapeclient)" }
+                    elseif ($_.SignerCertificate.Subject -like "*Slinkware*") { "Not signed (slinky)" }
+                    else { "Signed" }
+                } else { "Not signed" }
+            }
+        } catch {
+            Add-ScanGap "The signatures of the programs in the BAM history could not be read, so a cheat executable there is listed without saying whether it was signed."
         }
     }
 
