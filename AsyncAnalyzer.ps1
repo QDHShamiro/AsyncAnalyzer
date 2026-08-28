@@ -93,10 +93,16 @@ $script:SessionVerdict = $null
 $script:SessionSample = $null
 $script:Telemetry    = $null
 $script:CurseForgeApiKey = if ($env:CURSEFORGE_API_KEY) { $env:CURSEFORGE_API_KEY } else { "" }
-$verifiedMods = [System.Collections.Generic.List[object]]::new()
-$unknownMods  = [System.Collections.Generic.List[object]]::new()
-$reviewMods   = [System.Collections.Generic.List[object]]::new()
-$flaggedMods  = [System.Collections.Generic.List[object]]::new()
+# Qualified as $script: on purpose. Invoke-JarAnalysis adds to these from inside
+# a function, as $script:verifiedMods, and an UNQUALIFIED assignment here only
+# happens to land in the same scope when the file is run with -File. The way this
+# tool is actually delivered is iex (irm ...), where it does not - and the scan
+# died with "Es ist nicht moeglich, eine Methode fuer einen Ausdruck aufzurufen,
+# der den NULL hat" on the fourth jar. Assign and read the same way, always.
+$script:verifiedMods = [System.Collections.Generic.List[object]]::new()
+$script:unknownMods  = [System.Collections.Generic.List[object]]::new()
+$script:reviewMods   = [System.Collections.Generic.List[object]]::new()
+$script:flaggedMods  = [System.Collections.Generic.List[object]]::new()
 $script:BamDeleted = @()
 # Every check appends here (see Add-Finding): level, area, what was found, and the
 # WHAT/WHY/HOW/FIX reasoning. The HTML report is built from this list.
@@ -8654,11 +8660,11 @@ if (-not $SkipModCheck) {
         W "  $([char]0x25CF) Found $($script:TotalMods) JAR file(s) to analyze" Cyan
         Write-Host ""
 
-        $verifiedMods   = [System.Collections.Generic.List[object]]::new()
-        $unknownMods    = [System.Collections.Generic.List[object]]::new()
+        $script:verifiedMods   = [System.Collections.Generic.List[object]]::new()
+        $script:unknownMods    = [System.Collections.Generic.List[object]]::new()
 
-        $reviewMods  = [System.Collections.Generic.List[object]]::new()
-        $flaggedMods = [System.Collections.Generic.List[object]]::new()
+        $script:reviewMods  = [System.Collections.Generic.List[object]]::new()
+        $script:flaggedMods = [System.Collections.Generic.List[object]]::new()
 
         $idx = 0
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray

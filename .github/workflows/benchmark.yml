@@ -107,6 +107,27 @@ jobs:
           $out
           if ($out -match 'self-test\(s\) FAILED' -or $out -notmatch 'All \d+ self-tests passed') { exit 1 }
 
+      # Run it the way it is actually DELIVERED. The one-liner is
+      # iex (irm ...), which evaluates in the caller's scope; -File creates a
+      # script scope. A variable assigned unqualified at top level and read as
+      # $script: inside a function lands in the same place under -File and NOT
+      # under iex - so the scan died on the fourth jar with "you cannot call a
+      # method on a null-valued expression" while every test here passed.
+      - name: Runs the way it is delivered (iex, not -File)
+        shell: pwsh
+        run: |
+          $mods = Join-Path ([System.IO.Path]::GetTempPath()) "aa-ci-mods"
+          New-Item -ItemType Directory -Force -Path $mods | Out-Null
+          Get-ChildItem ml/jars_legit -Filter *.jar -ErrorAction SilentlyContinue |
+            Select-Object -First 4 | ForEach-Object { Copy-Item $_.FullName $mods }
+          if (-not (Get-ChildItem $mods -Filter *.jar)) { "no corpus jars - skipping"; exit 0 }
+          $sb = [scriptblock]::Create((Get-Content -Raw ./AsyncAnalyzer.ps1))
+          $out = & $sb -Path $mods -NoUpdate -NoLearn -Yes -NoElevate 2>&1 | Out-String
+          $out
+          if ($out -match 'InvokeMethodOnNull|null-valued expression|CommandNotFoundException') {
+            "a runtime error the -File run would not have shown"; exit 1
+          }
+
       # Two hand-maintained implementations of one API. They had already drifted -
       # the deployed half left scanId out of /api/history, which is the field the
       # report tells moderators to look up - so both are started for real and

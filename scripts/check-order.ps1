@@ -118,5 +118,38 @@ if ($bad.Count -gt 0) {
     exit 1
 }
 
+# ---- 5. $script: read but never $script: assigned --------------------------
+# A variable ASSIGNED at top level without the prefix and READ inside a function
+# WITH it only lands in the same scope when the file is run with -File. This tool
+# is delivered as iex (irm ...), where it does not - and the scan died on the
+# fourth jar with "you cannot call a method on a null-valued expression",
+# because $script:verifiedMods was $null.
+#
+# Running it here could not have caught that: -File creates a script scope and
+# iex does not. So it is checked instead of tested around.
+$scriptRead = @{}
+foreach ($v in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+    $u = $v.VariablePath.UserPath
+    if ($u -like 'script:*') { $scriptRead[($u -replace '^script:', '')] = $true }
+}
+$scriptAssigned = @{}
+foreach ($a in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+    $l = $a.Left
+    if ($l -is [System.Management.Automation.Language.VariableExpressionAst]) {
+        $u = $l.VariablePath.UserPath
+        if ($u -like 'script:*') { $scriptAssigned[($u -replace '^script:', '')] = $true }
+    }
+}
+$unset = @($scriptRead.Keys | Where-Object { -not $scriptAssigned.ContainsKey($_) } | Sort-Object)
+if ($unset.Count -gt 0) {
+    "READ AS `$script: BUT NEVER ASSIGNED AS `$script::"
+    $unset | ForEach-Object { "  $_" }
+    ""
+    "An unqualified top-level assignment lands in the same scope only under -File."
+    "This tool is delivered as iex (irm ...). Assign and read the same way."
+    exit 1
+}
+
 "call order: {0} function(s), {1} reachable from top level, none used before it exists" -f $defLine.Count, $runsAt.Count
+"script scope: {0} name(s) read with the prefix, every one of them assigned with it" -f $scriptRead.Count
 exit 0

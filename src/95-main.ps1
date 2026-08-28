@@ -169,11 +169,11 @@ if (-not $SkipModCheck) {
         W "  $([char]0x25CF) Found $($script:TotalMods) JAR file(s) to analyze" Cyan
         Write-Host ""
 
-        $verifiedMods   = [System.Collections.Generic.List[object]]::new()
-        $unknownMods    = [System.Collections.Generic.List[object]]::new()
+        $script:verifiedMods   = [System.Collections.Generic.List[object]]::new()
+        $script:unknownMods    = [System.Collections.Generic.List[object]]::new()
 
-        $reviewMods  = [System.Collections.Generic.List[object]]::new()
-        $flaggedMods = [System.Collections.Generic.List[object]]::new()
+        $script:reviewMods  = [System.Collections.Generic.List[object]]::new()
+        $script:flaggedMods = [System.Collections.Generic.List[object]]::new()
 
         $idx = 0
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
