@@ -14,7 +14,13 @@ param(
     [switch]$Deep,
     [switch]$NoElevate,
     [string]$Path = "",
-    [string]$HashOnly = ""
+    [string]$HashOnly = "",
+    # A code the staff member says out loud before the scan starts. It appears in
+    # the console, in the report and in the summary file, so a report produced
+    # BEFORE that code was given cannot carry it. It proves freshness, not honesty:
+    # somebody who controls the PC can always fake a local file, and the report says
+    # so in as many words.
+    [string]$Code = ""
 )
 
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
@@ -97,6 +103,13 @@ $script:BamDeleted = @()
 $script:Findings   = [System.Collections.Generic.List[object]]::new()
 $script:LastFinding = $null
 $script:SysArea    = "System"
+# Identity of this one scan. The ID is random per run and is uploaded with the
+# result when team mode is on, so a moderator can open the ID in the dashboard and
+# compare it against what they were shown. The challenge code is whatever the staff
+# member said before the scan started.
+$script:ScanId = ([guid]::NewGuid().ToString('N').Substring(0, 12).ToUpper())
+$script:ScanCode = ($Code -replace '[^A-Za-z0-9 _-]', '').Trim()
+$script:ScanStart = Get-Date
 $script:FlaggedModsList = [System.Collections.Generic.List[string]]::new()
 $script:ReviewModsList  = [System.Collections.Generic.List[string]]::new()
 $script:SpinFrames   = @("$([char]0x28FE)","$([char]0x28FD)","$([char]0x28FB)","$([char]0x28BF)","$([char]0x287F)","$([char]0x28DF)","$([char]0x28EF)","$([char]0x28F7)")
@@ -1281,6 +1294,7 @@ function Save-ScanSummary($v) {
         $out = [System.Collections.Generic.List[string]]::new()
         [void]$out.Add("AsyncAnalyzer $($script:Version)  -  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
         [void]$out.Add("PC: $env:COMPUTERNAME   User: $env:USERNAME")
+        [void]$out.Add("Scan ID: $($script:ScanId)" + $(if ($script:ScanCode) { "   Staff code: $($script:ScanCode)" } else { "   (no staff code was given)" }))
         foreach ($t in @($script:ScanTargets)) { [void]$out.Add("Scanned: $t") }
         [void]$out.Add("")
         if ($v) { [void]$out.Add("OVERALL: $($v.Band)  ($($v.Score)/100)") ; foreach ($r in $v.Reasons) { [void]$out.Add("  - $r") } }
@@ -1477,6 +1491,8 @@ function Send-ScanResult {
             session      = $(if ($script:SessionVerdict) { @{ score = $script:SessionVerdict.Score; band = $script:SessionVerdict.Band; probability = $script:SessionVerdict.Probability; reasons = @($script:SessionVerdict.Reasons) } } else { $null })
             sessionSample = $script:SessionSample
             sessionModelVersion = $script:smModelVersion
+            scanId       = $script:ScanId
+            scanCode      = $script:ScanCode
             toolVersion  = $script:Version
             modelVersion = $script:mlModelVersion
             clientTs     = (Get-Date).ToString("s")
@@ -2906,9 +2922,38 @@ function New-HtmlReport([string]$OutPath = "") {
         @{ k = "Folders scanned";  v = $targetItems }
         @{ k = "Tool";             v = "AsyncAnalyzer $(Enc $script:Version) &mdash; mod model v$($script:mlModelVersion), $($script:mlSamples) examples learned" }
         @{ k = "Report ID";        v = "<span class='mono'>$(Enc $reportId)</span>" }
+        @{ k = "Scan ID";          v = "<span class='mono big'>$(Enc $script:ScanId)</span>" }
+        @{ k = "Code from staff";  v = $(if ($script:ScanCode) { "<span class='mono big yes'>$(Enc $script:ScanCode)</span>" } else { "<span class='no'>none was given</span> &mdash; this report cannot be shown to be fresh" }) }
     )
     $recordRows = ""
     foreach ($r in $recRows) { $recordRows += "<div class='rec'><div class='rk'>$($r.k)</div><div class='rv'>$($r.v)</div></div>" }
+
+    # ---- is this report real? ------------------------------------------------
+    # Worth being exact rather than reassuring. Somebody who controls the PC can
+    # edit an HTML file or take a screenshot and change it, and no amount of
+    # hashing inside that same file fixes it - they control the hash too. What
+    # these two things actually do is narrower and still useful, so say which.
+    $authRows = ""
+    if ($script:ScanCode) {
+        $authRows += "<li><b>Staff code <span class='mono'>$(Enc $script:ScanCode)</span> is in this report.</b> " +
+            "It was said out loud before the scan started, so a report made earlier " +
+            "cannot carry it. That dates this report; it does not prove the contents.</li>"
+    } else {
+        $authRows += "<li><b>No staff code was given.</b> Run the tool again with " +
+            "<span class='mono'>-Code &lt;word&gt;</span> where the word comes from the moderator, " +
+            "and the report can at least be shown to be fresh.</li>"
+    }
+    if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.endpoint) {
+        $authRows += "<li><b>This scan was uploaded as <span class='mono'>$(Enc $script:ScanId)</span>.</b> " +
+            "Look that ID up in the team dashboard: that copy was written by the tool, " +
+            "not by the person being checked, and it is the one to trust if the two disagree.</li>"
+    } else {
+        $authRows += "<li><b>Nothing was uploaded</b> &mdash; team mode is off, so this file is the only copy " +
+            "and it lives on the scanned PC. With team mode on, every scan gets an ID the moderator can open themselves.</li>"
+    }
+    $authRows += "<li>Watch the scan run on the screenshare. A file can be edited afterwards; " +
+        "the console output happening in front of you cannot.</li>"
+    $authBox = "<div class='panel'><div class='eyebrow'>Is this report real?</div><ul class='plain'>$authRows</ul></div>"
 
     # ---- coverage: an area counts as checked only if it actually reported ----
     $areas = @()
@@ -3051,6 +3096,8 @@ body{background:var(--ground);color:var(--ink);font-family:var(--ui);font-size:1
      -webkit-font-smoothing:antialiased;padding-bottom:64px;}
 .wrap{max-width:1080px;margin:0 auto;padding:0 24px;}
 .mono{font-family:var(--mono);font-size:.875em;word-break:break-all;}
+/* the two values a moderator reads off the screen and compares */
+.mono.big{font-size:1.05rem;font-weight:700;letter-spacing:.04em;}
 .dim{color:var(--ink3);}
 .goodfg{color:var(--good);} .warnfg{color:var(--warn);}
 .yes{color:var(--good);font-weight:600;} .no{color:var(--warn);font-weight:600;}
@@ -3226,6 +3273,7 @@ footer a:hover{text-decoration:underline;}
 <section>
   <h2>Scan record</h2>
   <div class="rec-grid">$recordRows</div>
+  $authBox
 </section>
 
 <section>
@@ -3305,6 +3353,9 @@ function New-PlainSummary($sv, $svStyle, $stamp, $reportId, $isAdmin) {
     [void]$o.Add("AsyncAnalyzer $($script:Version) - screenshare report")
     [void]$o.Add("$stamp   PC $env:COMPUTERNAME   user $env:USERNAME   admin: $(if ($isAdmin) { 'yes' } else { 'no' })")
     [void]$o.Add("Report ID: $reportId")
+    # The two things a moderator compares against what they said and what the
+    # dashboard shows. Pasted into a ticket, they are the whole point of the paste.
+    [void]$o.Add("Scan ID:   $($script:ScanId)" + $(if ($script:ScanCode) { "   staff code: $($script:ScanCode)" } else { "   (no staff code was given - this cannot be shown to be fresh)" }))
     [void]$o.Add("")
     [void]$o.Add("VERDICT: $($svStyle.short) - $($sv.Score)/100")
     foreach ($r in @($sv.Reasons)) { [void]$o.Add("  - $r") }
@@ -4992,6 +5043,13 @@ if (-not (Test-IsAdmin)) {
     Add-ScanGap "Ran without Administrator $([char]0x2014) deleted-program history (BAM), Defender exclusions and scheduled tasks were NOT checked"
 }
 
+W "  Scan ID: " DarkGray -NoNewline; W "$($script:ScanId)" Cyan -NoNewline
+if ($script:ScanCode) {
+    W "    Code from staff: " DarkGray -NoNewline; W "$($script:ScanCode)" Yellow
+} else {
+    W "    (no staff code given $([char]0x2014) run with -Code <word> so this report can be dated)" DarkGray
+}
+Write-Host ""
 W "  What this tool does $([char]0x2014) and does not do:" Cyan
 W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green
 W "    $([char]0x2713) Runs fully on your PC. It never uploads your files or your data." Green

@@ -124,6 +124,7 @@ function summary(s) {
     pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion,
     flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length,
     session: s.session || null,
+    scanId: s.scanId || '', scanCode: s.scanCode || '',
   };
 }
 
@@ -154,6 +155,12 @@ const server = http.createServer(async (req, res) => {
       systemIssues: (body.systemIssues || []).slice(0, 200),
       toolVersion: String(body.toolVersion || '').slice(0, 20),
       modelVersion: body.modelVersion || 0,
+      // The ID the tool printed on the scanned PC, and the code the moderator said
+      // out loud before it started. This copy was written here, by the tool, not by
+      // the person being checked - so if the report they show and this row disagree,
+      // this row is the one to believe. That is the whole reason it is stored.
+      scanId: String(body.scanId || '').slice(0, 32).toUpperCase(),
+      scanCode: String(body.scanCode || '').slice(0, 40),
     };
     scans.push(rec);
     if (scans.length > MAX_SCANS) scans = scans.slice(-MAX_SCANS);
@@ -243,7 +250,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname.startsWith('/api/scan/')) {
     if (VIEW_KEY && (url.searchParams.get('key') || req.headers['x-key']) !== VIEW_KEY) return send(res, 401, { error: 'bad view key' });
     const id = url.pathname.split('/').pop();
-    const s = scans.find((x) => x.id === id);
+    // Either key works. The moderator is reading the Scan ID off a screen - that is
+    // the one printed in the report - so looking it up must not require knowing the
+    // server's own row id.
+    const up = String(id || '').toUpperCase();
+    const s = scans.find((x) => x.id === id) || scans.find((x) => (x.scanId || '') === up);
     return s ? send(res, 200, s) : send(res, 404, { error: 'not found' });
   }
 

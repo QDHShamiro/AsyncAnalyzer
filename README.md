@@ -409,11 +409,39 @@ it now.
 
 ---
 
+---
+## 🔐 Is the report real?
+
+A report is a file on the PC of the person being checked, so **they can edit it**, and no
+hash inside that same file fixes it — they control the hash too. Two things narrow it, and
+the report says exactly which:
+
+**A staff code.** The moderator says a word out loud before the scan starts, and the scan
+runs as `-Code banana-42`. It appears in the console, in the report, in the pasteable
+summary and in `last-scan.txt`. A report made *before* that word was chosen cannot carry
+it, so the code **dates** the report. It does not prove the contents. If no code was given,
+the report says so in that field instead of leaving it blank.
+
+**A scan ID.** Every run gets a random ID. With team mode on it is uploaded with the
+result, and the moderator opens that ID in the dashboard — searchable by ID or by code.
+**That copy was written by the tool, not by the person being checked**, so if the two
+disagree, the dashboard is the one to believe.
+
+```powershell
+# the moderator picks a word, the person being checked runs this
+... -Code banana-42
+```
+
+And the oldest one, which still beats both: watch the scan run on the screenshare. A file
+can be edited afterwards; the console output happening in front of you cannot.
+
+---
 ## 🚩 Flags
 
 | Flag | Does |
 |---|---|
 | *(none)* | **Auto-detects** your Minecraft and scans it. Recommended. |
+| `-Code <word>` | Puts the moderator's word in the report, so it can be shown to be fresh. |
 | `-Ask` | Pick the install from a list / paste a path manually. |
 | `-Path "C:\…\mods"` | Scan an exact folder. |
 | `-SelfTest` | Verify the AI + verdict logic on your machine, then exit. |

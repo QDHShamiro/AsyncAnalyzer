@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercon
 # verify the AI + verdict logic in 5 seconds (do this after any change)
 powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1'))) -SelfTest"
 ```
-Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, `-SelfTest`, `-NoUpdate`, `-NoLearn`, `-Reset`, `-Share`.
+Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, `-Code <word>`, `-SelfTest`, `-NoUpdate`, `-NoLearn`, `-Reset`, `-Share`.
 
 ## Editing the script
 `AsyncAnalyzer.ps1` is **assembled** from `src/*.ps1` by `python3 build.py`. Edit the section files, not the shipped one - a build overwrites it, and CI fails on `build.py --check` if the two drift. The build is a plain ordered concatenation (PowerShell runs top to bottom and the file is full of order-dependent top-level code), which is what let the split be proven: the first build was byte-for-byte identical to the file that had been shipping. See `src/README.md` for the section map.
@@ -299,6 +299,27 @@ silently), and that the PS feature ORDER equals the Python one.
   ONBOARD memory (Bloody, A4Tech, onboard Razer/Logitech profiles) runs on the
   device and leaves nothing on the PC. `Add-ScanGap` states it unconditionally.
   What IS visible is that a driver macro store exists and when it last changed.
+
+## Report authenticity: staff code + scan ID
+The gap: a report is a file on the PC of the person being checked, so they can edit
+it, and no hash inside that same file helps - they control the hash too. Shamiro's
+call was to do both of the narrowing options.
+- **`-Code <word>`** - the moderator says a word before the scan; it appears in the
+  console, the HTML report, the pasteable summary and `last-scan.txt`. A report made
+  before that word was chosen cannot carry it, so it DATES the report. It does not
+  prove the contents, and the report says that rather than implying otherwise. No
+  code given -> the field says so instead of being blank.
+- **`$script:ScanId`** - random per run, uploaded with the result. `GET /api/scan/<id>`
+  now resolves EITHER the server's row id or the scan ID printed in the report
+  (the moderator is reading it off a screen, so it must not need the server's id).
+  The dashboard shows and searches both. Tested end to end against `server.js`:
+  POST with a scanId, look it up by the printed ID, and an unknown ID 404s.
+- Both are stored in `server.js` and `worker.js`; the worker matches the scan ID
+  inside the JSON blob, so no schema migration is needed.
+- `ml/test_report.py` (58) pins that both reach all four places, that the
+  "no code was given" wording exists, that the panel is actually rendered and not
+  just assigned, and that the text does not overclaim - the uploaded copy is named
+  as the one to trust.
 
 ## Baritone, and two bugs it exposed
 Shamiro's call was that Baritone counts as a cheat rather than a server-rule

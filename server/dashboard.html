@@ -53,7 +53,7 @@ tr.row{cursor:pointer;}tr.row:hover td{background:var(--surface2);}
     <button onclick="load()">Refresh</button>
   </div>
   <div class="stats" id="stats"></div>
-  <table id="tbl"><thead><tr><th>When</th><th>Scanned by</th><th>Target</th><th>PC</th><th>Overall (AI)</th><th>Verdict</th><th>Flagged</th></tr></thead><tbody id="rows"></tbody></table>
+  <table id="tbl"><thead><tr><th>When</th><th>Scan ID</th><th>Scanned by</th><th>Target</th><th>PC</th><th>Overall (AI)</th><th>Verdict</th><th>Flagged</th></tr></thead><tbody id="rows"></tbody></table>
   <div id="empty" class="empty" style="display:none;">No scans yet. Run AsyncAnalyzer with the team endpoint configured.</div>
 </div>
 
@@ -87,7 +87,9 @@ function render(){
       var hot=(s.verdict==='flagged'||s.verdict==='review'||b==='Confirmed'||b==='Likely'||b==='Review');
       if(!hot) return false;
     }
-    return (s.scanner+' '+s.targetUser+' '+s.pcName).toLowerCase().indexOf(q)>=0;
+    // the Scan ID is searchable because that is what a moderator reads off the
+    // report and types in here to check it against this copy
+    return (s.scanner+' '+s.targetUser+' '+s.pcName+' '+(s.scanId||'')+' '+(s.scanCode||'')).toLowerCase().indexOf(q)>=0;
   });
   var f=DATA.filter(function(s){return s.verdict==='flagged';}).length;
   var rv=DATA.filter(function(s){return s.verdict==='review';}).length;
@@ -98,7 +100,7 @@ function render(){
   document.getElementById('empty').style.display=rows.length?'none':'block';
   document.getElementById('rows').innerHTML=rows.map(function(s){
     return '<tr class="row" onclick="detail(\''+s.id+'\')"><td class="muted">'+esc((s.serverTs||'').replace('T',' ').slice(0,16))+
-      '</td><td>'+esc(s.scanner)+'</td><td><b>'+esc(s.targetUser||'—')+'</b></td><td class="muted">'+esc(s.pcName)+
+      '</td><td class="mono">'+esc(s.scanId||'—')+'</td><td>'+esc(s.scanner)+'</td><td><b>'+esc(s.targetUser||'—')+'</b></td><td class="muted">'+esc(s.pcName)+
       '</td><td>'+overall(s.session)+'</td><td>'+pill(s.verdict)+'</td><td>'+(s.flaggedCount||0)+(s.reviewCount?(' <span class="muted">+'+s.reviewCount+' rev</span>'):'')+'</td></tr>';
   }).join('');
 }
@@ -119,6 +121,9 @@ async function detail(id){
     '<span class="close" onclick="document.getElementById(\'modal\').style.display=\'none\'">&times;</span>'+
     '<h2>'+esc(s.targetUser||s.pcName||'Scan')+' '+pill(s.verdict)+'</h2>'+
     '<div class="muted" style="margin:4px 0 14px">'+esc((s.serverTs||'').replace('T',' ').slice(0,19))+' · scanned by '+esc(s.scanner)+' · PC '+esc(s.pcName)+' · tool v'+esc(s.toolVersion)+'</div>'+
+    // This row was written by the tool, not by the person being checked. If the
+    // report they showed disagrees with it, this is the one to believe.
+    '<div class="muted" style="margin:-8px 0 14px">Scan ID <b>'+esc(s.scanId||'—')+'</b>'+(s.scanCode?' · staff code <b>'+esc(s.scanCode)+'</b>':' · <i>no staff code was given</i>')+'</div>'+
     '<div class="muted mono" style="margin-bottom:12px">'+esc(s.modPath||'')+'</div>'+
     (s.session?('<div class="mod" style="--band:'+bandColor(s.session.band)+';margin-bottom:14px">'+
       '<div class="mod-head"><span class="badge" style="background:'+bandColor(s.session.band)+'">OVERALL SCAN VERDICT</span>'+

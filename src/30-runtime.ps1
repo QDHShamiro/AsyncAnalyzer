@@ -396,6 +396,7 @@ function Save-ScanSummary($v) {
         $out = [System.Collections.Generic.List[string]]::new()
         [void]$out.Add("AsyncAnalyzer $($script:Version)  -  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
         [void]$out.Add("PC: $env:COMPUTERNAME   User: $env:USERNAME")
+        [void]$out.Add("Scan ID: $($script:ScanId)" + $(if ($script:ScanCode) { "   Staff code: $($script:ScanCode)" } else { "   (no staff code was given)" }))
         foreach ($t in @($script:ScanTargets)) { [void]$out.Add("Scanned: $t") }
         [void]$out.Add("")
         if ($v) { [void]$out.Add("OVERALL: $($v.Band)  ($($v.Score)/100)") ; foreach ($r in $v.Reasons) { [void]$out.Add("  - $r") } }
@@ -592,6 +593,8 @@ function Send-ScanResult {
             session      = $(if ($script:SessionVerdict) { @{ score = $script:SessionVerdict.Score; band = $script:SessionVerdict.Band; probability = $script:SessionVerdict.Probability; reasons = @($script:SessionVerdict.Reasons) } } else { $null })
             sessionSample = $script:SessionSample
             sessionModelVersion = $script:smModelVersion
+            scanId       = $script:ScanId
+            scanCode      = $script:ScanCode
             toolVersion  = $script:Version
             modelVersion = $script:mlModelVersion
             clientTs     = (Get-Date).ToString("s")

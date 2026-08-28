@@ -7,6 +7,13 @@ if (-not (Test-IsAdmin)) {
     Add-ScanGap "Ran without Administrator $([char]0x2014) deleted-program history (BAM), Defender exclusions and scheduled tasks were NOT checked"
 }
 
+W "  Scan ID: " DarkGray -NoNewline; W "$($script:ScanId)" Cyan -NoNewline
+if ($script:ScanCode) {
+    W "    Code from staff: " DarkGray -NoNewline; W "$($script:ScanCode)" Yellow
+} else {
+    W "    (no staff code given $([char]0x2014) run with -Code <word> so this report can be dated)" DarkGray
+}
+Write-Host ""
 W "  What this tool does $([char]0x2014) and does not do:" Cyan
 W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green
 W "    $([char]0x2713) Runs fully on your PC. It never uploads your files or your data." Green

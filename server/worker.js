@@ -79,6 +79,11 @@ export default {
         pcName: clip(b.pcName, 80), modPath: clip(b.modPath, 300), verdict: clip(b.verdict || 'clean', 20),
         totals: b.totals || {}, flagged: (b.flagged || []).slice(0, 200), review: (b.review || []).slice(0, 200),
         systemIssues: (b.systemIssues || []).slice(0, 200), toolVersion: clip(b.toolVersion, 20), modelVersion: b.modelVersion || 0, session: b.session || null,
+        // The ID the tool printed on the scanned PC, and the code the moderator said
+        // out loud before it started. This copy was written here, by the tool, not by
+        // the person being checked - so if the report they show and this row disagree,
+        // this row is the one to believe.
+        scanId: clip(b.scanId, 32).toUpperCase(), scanCode: clip(b.scanCode, 40),
       };
       await env.DB.prepare('INSERT INTO scans (id, ts, scanner, target, pc, verdict, data) VALUES (?,?,?,?,?,?,?)')
         .bind(id, rec.serverTs, rec.scanner, rec.targetUser, rec.pcName, rec.verdict, JSON.stringify(rec)).run();
@@ -153,7 +158,15 @@ export default {
     if (req.method === 'GET' && url.pathname.startsWith('/api/scan/')) {
       if (!viewOK()) return json({ error: 'bad view key' }, 401);
       const id = url.pathname.split('/').pop();
-      const row = await env.DB.prepare('SELECT data FROM scans WHERE id = ?').bind(id).first();
+      // Either key works. The moderator is reading the Scan ID off a screen - that
+      // is the one printed in the report - so looking it up must not require knowing
+      // the server's own row id. scanId lives inside the JSON blob, hence the LIKE.
+      let row = await env.DB.prepare('SELECT data FROM scans WHERE id = ?').bind(id).first();
+      if (!row) {
+        row = await env.DB.prepare(
+          "SELECT data FROM scans WHERE data LIKE ? ORDER BY ts DESC LIMIT 1")
+          .bind('%"scanId":"' + String(id || '').toUpperCase() + '"%').first();
+      }
       return row ? json(JSON.parse(row.data)) : json({ error: 'not found' }, 404);
     }
 

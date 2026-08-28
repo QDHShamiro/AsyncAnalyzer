@@ -166,6 +166,39 @@ check("every INFO message explains what could not be done", not bad, f"vague: {b
 check("the no-gap box does not claim more than 'nothing was skipped'",
       "Nothing was skipped." in REPORT)
 
+
+# --------------------------------------------------------------- authenticity ---
+# A report is a file on the PC of the person being checked, so they can edit it.
+# Two things narrow that, and both have to actually reach the places a moderator
+# looks: the Scan ID (which the backend also stores, written by the tool rather
+# than by them) and the staff code (said out loud before the scan, so an older
+# report cannot carry it). If either silently stops being printed, the report
+# still looks complete - which is exactly the failure this file exists for.
+HEADER = (ROOT / "src" / "00-header.ps1").read_text(encoding="utf-8")
+MAIN = (ROOT / "src" / "95-main.ps1").read_text(encoding="utf-8")
+
+check("scan id is generated once per run", "$script:ScanId = " in HEADER)
+check("-Code is a real parameter", re.search(r"\[string\]\$Code = ", HEADER) is not None)
+check("the staff code is stripped of anything odd",
+      "$script:ScanCode = ($Code -replace" in HEADER)
+for where, src, label in (("console", MAIN, "$($script:ScanId)"),
+                          ("HTML report", REPORT, "$(Enc $script:ScanId)"),
+                          ("plain summary", REPORT, "Scan ID:   $($script:ScanId)"),
+                          ("last-scan.txt", RUNTIME, "Scan ID: $($script:ScanId)")):
+    check("scan id reaches the %s" % where, label in src)
+check("the staff code reaches the HTML report", "$(Enc $script:ScanCode)" in REPORT)
+check("the report says so when NO code was given",
+      "none was given" in REPORT and "cannot be shown to be fresh" in REPORT)
+check("the scan id and code are uploaded",
+      "scanId       = $script:ScanId" in RUNTIME and "scanCode      = $script:ScanCode" in RUNTIME)
+# and the panel has to be rendered, not just built - a variable that is assigned
+# and never used is the exact PowerShell mistake this file was written for
+check("the authenticity panel is placed in the page",
+      "$authBox" in REPORT and REPORT.count("$authBox") >= 2)
+# the honest part: it must not claim the local file is tamper-proof
+check("it does not overclaim - the uploaded copy is named as the trusted one",
+      "it is the one to trust if the two disagree" in REPORT)
+
 print("=== report checks ===")
 failed = 0
 for name, ok, detail in results:

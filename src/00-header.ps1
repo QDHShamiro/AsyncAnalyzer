@@ -14,7 +14,13 @@ param(
     [switch]$Deep,
     [switch]$NoElevate,
     [string]$Path = "",
-    [string]$HashOnly = ""
+    [string]$HashOnly = "",
+    # A code the staff member says out loud before the scan starts. It appears in
+    # the console, in the report and in the summary file, so a report produced
+    # BEFORE that code was given cannot carry it. It proves freshness, not honesty:
+    # somebody who controls the PC can always fake a local file, and the report says
+    # so in as many words.
+    [string]$Code = ""
 )
 
 if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
@@ -97,6 +103,13 @@ $script:BamDeleted = @()
 $script:Findings   = [System.Collections.Generic.List[object]]::new()
 $script:LastFinding = $null
 $script:SysArea    = "System"
+# Identity of this one scan. The ID is random per run and is uploaded with the
+# result when team mode is on, so a moderator can open the ID in the dashboard and
+# compare it against what they were shown. The challenge code is whatever the staff
+# member said before the scan started.
+$script:ScanId = ([guid]::NewGuid().ToString('N').Substring(0, 12).ToUpper())
+$script:ScanCode = ($Code -replace '[^A-Za-z0-9 _-]', '').Trim()
+$script:ScanStart = Get-Date
 $script:FlaggedModsList = [System.Collections.Generic.List[string]]::new()
 $script:ReviewModsList  = [System.Collections.Generic.List[string]]::new()
 $script:SpinFrames   = @("$([char]0x28FE)","$([char]0x28FD)","$([char]0x28FB)","$([char]0x28BF)","$([char]0x287F)","$([char]0x28DF)","$([char]0x28EF)","$([char]0x28F7)")

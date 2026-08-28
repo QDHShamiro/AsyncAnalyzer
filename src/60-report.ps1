@@ -73,9 +73,38 @@ function New-HtmlReport([string]$OutPath = "") {
         @{ k = "Folders scanned";  v = $targetItems }
         @{ k = "Tool";             v = "AsyncAnalyzer $(Enc $script:Version) &mdash; mod model v$($script:mlModelVersion), $($script:mlSamples) examples learned" }
         @{ k = "Report ID";        v = "<span class='mono'>$(Enc $reportId)</span>" }
+        @{ k = "Scan ID";          v = "<span class='mono big'>$(Enc $script:ScanId)</span>" }
+        @{ k = "Code from staff";  v = $(if ($script:ScanCode) { "<span class='mono big yes'>$(Enc $script:ScanCode)</span>" } else { "<span class='no'>none was given</span> &mdash; this report cannot be shown to be fresh" }) }
     )
     $recordRows = ""
     foreach ($r in $recRows) { $recordRows += "<div class='rec'><div class='rk'>$($r.k)</div><div class='rv'>$($r.v)</div></div>" }
+
+    # ---- is this report real? ------------------------------------------------
+    # Worth being exact rather than reassuring. Somebody who controls the PC can
+    # edit an HTML file or take a screenshot and change it, and no amount of
+    # hashing inside that same file fixes it - they control the hash too. What
+    # these two things actually do is narrower and still useful, so say which.
+    $authRows = ""
+    if ($script:ScanCode) {
+        $authRows += "<li><b>Staff code <span class='mono'>$(Enc $script:ScanCode)</span> is in this report.</b> " +
+            "It was said out loud before the scan started, so a report made earlier " +
+            "cannot carry it. That dates this report; it does not prove the contents.</li>"
+    } else {
+        $authRows += "<li><b>No staff code was given.</b> Run the tool again with " +
+            "<span class='mono'>-Code &lt;word&gt;</span> where the word comes from the moderator, " +
+            "and the report can at least be shown to be fresh.</li>"
+    }
+    if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.endpoint) {
+        $authRows += "<li><b>This scan was uploaded as <span class='mono'>$(Enc $script:ScanId)</span>.</b> " +
+            "Look that ID up in the team dashboard: that copy was written by the tool, " +
+            "not by the person being checked, and it is the one to trust if the two disagree.</li>"
+    } else {
+        $authRows += "<li><b>Nothing was uploaded</b> &mdash; team mode is off, so this file is the only copy " +
+            "and it lives on the scanned PC. With team mode on, every scan gets an ID the moderator can open themselves.</li>"
+    }
+    $authRows += "<li>Watch the scan run on the screenshare. A file can be edited afterwards; " +
+        "the console output happening in front of you cannot.</li>"
+    $authBox = "<div class='panel'><div class='eyebrow'>Is this report real?</div><ul class='plain'>$authRows</ul></div>"
 
     # ---- coverage: an area counts as checked only if it actually reported ----
     $areas = @()
@@ -218,6 +247,8 @@ body{background:var(--ground);color:var(--ink);font-family:var(--ui);font-size:1
      -webkit-font-smoothing:antialiased;padding-bottom:64px;}
 .wrap{max-width:1080px;margin:0 auto;padding:0 24px;}
 .mono{font-family:var(--mono);font-size:.875em;word-break:break-all;}
+/* the two values a moderator reads off the screen and compares */
+.mono.big{font-size:1.05rem;font-weight:700;letter-spacing:.04em;}
 .dim{color:var(--ink3);}
 .goodfg{color:var(--good);} .warnfg{color:var(--warn);}
 .yes{color:var(--good);font-weight:600;} .no{color:var(--warn);font-weight:600;}
@@ -393,6 +424,7 @@ footer a:hover{text-decoration:underline;}
 <section>
   <h2>Scan record</h2>
   <div class="rec-grid">$recordRows</div>
+  $authBox
 </section>
 
 <section>
@@ -472,6 +504,9 @@ function New-PlainSummary($sv, $svStyle, $stamp, $reportId, $isAdmin) {
     [void]$o.Add("AsyncAnalyzer $($script:Version) - screenshare report")
     [void]$o.Add("$stamp   PC $env:COMPUTERNAME   user $env:USERNAME   admin: $(if ($isAdmin) { 'yes' } else { 'no' })")
     [void]$o.Add("Report ID: $reportId")
+    # The two things a moderator compares against what they said and what the
+    # dashboard shows. Pasted into a ticket, they are the whole point of the paste.
+    [void]$o.Add("Scan ID:   $($script:ScanId)" + $(if ($script:ScanCode) { "   staff code: $($script:ScanCode)" } else { "   (no staff code was given - this cannot be shown to be fresh)" }))
     [void]$o.Add("")
     [void]$o.Add("VERDICT: $($svStyle.short) - $($sv.Score)/100")
     foreach ($r in @($sv.Reasons)) { [void]$o.Add("  - $r") }
