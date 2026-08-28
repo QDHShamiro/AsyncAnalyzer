@@ -110,6 +110,9 @@ $script:SysArea    = "System"
 $script:ScanId = ([guid]::NewGuid().ToString('N').Substring(0, 12).ToUpper())
 $script:ScanCode = ($Code -replace '[^A-Za-z0-9 _-]', '').Trim()
 $script:ScanStart = Get-Date
+# When the running game was started, if one is running. Set in
+# Find-MinecraftModFolders; used as the window for "deleted during this session".
+$script:GameStarted = $null
 $script:FlaggedModsList = [System.Collections.Generic.List[string]]::new()
 $script:ReviewModsList  = [System.Collections.Generic.List[string]]::new()
 $script:SpinFrames   = @("$([char]0x28FE)","$([char]0x28FD)","$([char]0x28FB)","$([char]0x28BF)","$([char]0x287F)","$([char]0x28DF)","$([char]0x28EF)","$([char]0x28F7)")

@@ -59,6 +59,16 @@ function Find-MinecraftModFolders {
 
     $script:javaProcessInfos = [System.Collections.Generic.List[PSCustomObject]]::new()
     if ($runningJava.Count -gt 0) {
+        # When the game started. This is the window the "deleted during this
+        # session" rule uses: the Recycle Bin holds months of history, and
+        # feeding all of it to a rule that says "wiped while the game was
+        # running" would accuse somebody for tidying a modpack in May.
+        foreach ($proc in $runningJava) {
+            try {
+                $st = $proc.StartTime
+                if ($st -and (-not $script:GameStarted -or $st -lt $script:GameStarted)) { $script:GameStarted = $st }
+            } catch {}
+        }
         foreach ($proc in $runningJava) {
             try {
                 $wp = Get-WmiObject Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue

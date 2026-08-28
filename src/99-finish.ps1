@@ -108,6 +108,9 @@ if ($doDeep -or $script:_DevMode) {
 if (-not $script:_DevMode) {
     Run-BamScan
 }
+# What Windows still remembers about files that are already gone. Runs last, so
+# the deletion window can use the game's start time and the mod scan's results.
+Show-HistoryScan
 
 # Every stage has now run (mods, system, JVM, PC, BAM) - so the session AI can
 # finally judge the scan AS A WHOLE, learn from it, and upload it to the team.

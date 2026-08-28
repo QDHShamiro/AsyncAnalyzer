@@ -56,7 +56,7 @@ jobs:
         working-directory: ml
         run: |
           set -e
-          for t in test_verdict test_selflearn test_session test_bytecode test_memory test_autoscan test_report test_macro test_logscan test_instscan test_sysscan test_selftest_cases; do
+          for t in test_verdict test_selflearn test_session test_bytecode test_memory test_autoscan test_report test_macro test_logscan test_instscan test_sysscan test_histscan test_selftest_cases; do
             echo "--- $t ---"
             python3 "$t.py"
           done
