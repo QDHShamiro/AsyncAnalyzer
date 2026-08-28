@@ -167,6 +167,25 @@ the handful of APIs a cheat needs. A compatibility shim that reflects on
 reflectively assembles a movement packet does not. The report also says when an API was
 hidden this way, because no ordinary mod has a reason to.
 
+**Mixins were the second way around it, and that is closed too.** A Mixin is not a mod
+calling Minecraft — the loader compiles it *into* a Minecraft class, and it names its target
+in an **annotation** (`@Mixin(targets = "net.minecraft…")`, `@Inject(method = "aiStep")`)
+rather than calling it. Annotation values are string constants, and everything the mixin
+touches inside the target it reaches through `@Shadow` members declared on *itself*. So the
+target never enters the symbol table. Worked example, and the reason this exists: **silent
+rotations** — mix into `ServerboundMovePlayerPacket`, shadow its `yRot` field, overwrite it
+in the constructor. Your view never turns; the server is told it did. Read through the
+symbol table, that class is two floats and no Minecraft at all.
+
+So mixin annotations are read too, and the target is written into the report — *what* the mod
+compiles itself into: player movement, the network handler, rendering, menus. The technique
+itself is **never** the finding: Sodium, Lithium and the Fabric API are nothing but mixins.
+The **target** is. That distinction is measured, not asserted — the corpus carries a freelook
+mod that shadows exactly the same rotation fields the cheat does, and it stays Clean, because
+a camera mixes into the *player* and a cheat into the *packet that reports your aim*. And
+`*.mixins.json` is read as well: a jar that declares mixins whose classes could not be parsed
+is listed as a **gap in coverage**, not reported as clean.
+
 That gives behaviour instead of text:
 
 | behaviour | meaning | verdict |
@@ -174,6 +193,8 @@ That gives behaviour instead of text:
 | writes a rotation **and** forges its own movement packet | the aim/killaura fingerprint — no legit mod fakes its own movement | 🔴 **Confirmed** |
 | decrypts data **then** defines a class from it | loader / dropper | 🔴 **Confirmed** |
 | ships Java-agent hooks | can rewrite game code while it runs | 🟠 **Likely** |
+| mixes into the outgoing move packet **and** names its rotation fields | silent rotations — rewriting what the server is told you are aiming at | 🔴 **Confirmed** |
+| mixes into the player or the renderer | how every ordinary Fabric mod is built | ⚪ recorded as scope, **never** a finding |
 | renders **and** sweeps every entity | ESP… **or** a mob-radar minimap | 🟡 **Review**, never an accusation |
 
 That last row is the honest part. **ESP and a mob radar genuinely do the same thing** — the

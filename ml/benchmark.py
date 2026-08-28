@@ -99,8 +99,10 @@ def build_corpus(tmp):
         print("javac failed:", r.stderr[-400:], file=sys.stderr)
         return None
     made = {}
-    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "Pathing", "Timer"]),
-                        ("clean", ["Minimap", "ConfigBinder", "Keybinds", "AutoWalk"])):
+    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "Pathing", "Timer",
+                                   "MixinSilentRot"]),
+                        ("clean", ["Minimap", "ConfigBinder", "Keybinds", "AutoWalk",
+                                   "MixinRender", "MixinFreelook"])):
         for nm in names:
             cls = sorted(glob.glob(os.path.join(out, kind, nm + "*.class")))
             if not cls:
@@ -192,6 +194,44 @@ def main():
                 failures.append("%s misclassified" % nm)
             out("| %s (%s) | %s | %s |" % (nm, kind, "yes" if hit else "no",
                                            "flagged" if hit else "clean"))
+        out()
+
+        # ------------------------------------------------------------- mixins ---
+        out("## Mixins — code compiled INTO the game")
+        out()
+        out("A Mixin is not a mod calling Minecraft. It is code the loader compiles into a")
+        out("game class, and it names its target in an **annotation**: a string constant, not")
+        out("a symbol. So a mixin cheat calls nothing. Silent rotations mix into the packet")
+        out("that reports where you are looking, shadow its rotation fields and overwrite")
+        out("them — through the symbol table that class is two floats and no Minecraft at all.")
+        out()
+        out("The catch is that mixins are also how ordinary mods are built. Sodium, Lithium")
+        out("and the Fabric API are nothing but mixins, so reading them has to separate the")
+        out("cheat from the mod rather than flag the technique.")
+        out()
+        out("| jar | what it mixes into | rules tripped | expected |")
+        out("|---|---|---|:--:|")
+        MIX = [("cheat", "MixinSilentRot", "the outgoing movement packet", True),
+               ("clean", "MixinRender", "the level renderer", False),
+               ("clean", "MixinFreelook", "the player — shadows the *same* rotation fields", False)]
+        for kind, nm, what, want in MIX:
+            jp = corpus.get((kind, nm))
+            if not jp:
+                failures.append("mixin corpus jar missing: %s" % nm)
+                continue
+            r = bytecode.extract_jar(jp)
+            tr = rules(r)
+            hit = [k for k in CHEAT_RULES if tr[k]]
+            if bool(hit) != want:
+                failures.append("mixin case %s: expected %s, got %s" % (
+                    nm, "flagged" if want else "clean", "+".join(hit) or "clean"))
+            out("| %s (%s) | %s | %s | %s |" % (
+                nm, kind, what, "+".join(hit) if hit else "—",
+                "flagged" if want else "clean"))
+        out()
+        out("`MixinFreelook` is the negative this exists for: a freelook mod shadows exactly")
+        out("the rotation fields the cheat does. The difference read here is the **target** —")
+        out("a camera mixes into the player, never into the packet that reports your aim.")
         out()
 
         out("## Hiding depth")

@@ -604,13 +604,17 @@ $script:bcBehaviour = [ordered]@{
     # legitimately locates its own jar and deletes files - it is tooling that
     # processes archives for a living. A client deleting itself never opens one.
     'archive'    = 'java/util/jar|java/util/zip|JarFile|ZipFile|JarOutputStream|ZipOutputStream|JarInputStream|ZipInputStream|JarEntry|ZipEntry'
+    # This class is a Mixin - it does not call the game, it is COMPILED INTO it.
+    # Neutral on its own: Sodium, Lithium and the Fabric API itself are nothing but
+    # mixins. It matters for what it does to the evidence, below.
+    'mixin'      = 'org/spongepowered/asm/mixin'
 }
 # Derived per-class signals. Not patterns: combinations that only mean something
 # when ONE class does all of it. Jar-level ratios cannot express that - in a large
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe', 'hiddenapi')
+$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget')
 
 # --- reflective use of the same API ------------------------------------------
 #
@@ -636,6 +640,64 @@ $script:bcReflectiveApi = [ordered]@{
     'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
     'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
     'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+}
+
+# --- what a mixin names, and why the symbol table does not see it -------------
+#
+# A Mixin is not a mod calling the game. It is code the loader COMPILES INTO a
+# game class. That changes where the evidence lives, and it opens the same hole
+# reflection did.
+#
+# A mixin names its target in an ANNOTATION - @Mixin(ServerboundMovePlayerPacket.class)
+# or @Mixin(targets = "net.minecraft...") - and its injection point by method NAME
+# in @Inject(method = "aiStep"). Annotation values are Utf8 constants, not Class
+# entries or member refs, so none of it reaches the symbol table. Everything it
+# touches inside the target it reaches through @Shadow members declared on ITSELF,
+# which resolve to the mixin class rather than to Minecraft.
+#
+# Worked example, and the reason this exists: silent rotations. Mixin into
+# ServerboundMovePlayerPacket, shadow the yRot field, overwrite it in the
+# constructor. Your view never turns; the server is told it did. Read through the
+# symbol table that class calls nothing - movepacket 0, rotation 0 - and every
+# combat rule is blind to it.
+#
+# Same vocabulary as the reflective table, matched against a mixin's strings, plus
+# the movement path a mixin names at its injection point. NOT treated as hiding
+# anything: naming your target in an annotation is how mixins are written.
+$script:bcMixinApi = [ordered]@{
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
+    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b'
+    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b'
+    'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b|\bdeltaMovement\b|\baiStep\b|\bmethod_6091\b'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
+    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
+    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+}
+# Shadowed rotation FIELD names - and only for a mixin that targets an outgoing
+# movement packet.
+#
+# The narrowing is the whole point. Plenty of legitimate mods shadow yRot: any
+# camera, freelook or perspective mod names the same field, and reading a bare
+# 'yRot' as "writes rotation" would accuse all of them. But a mixin whose target
+# is the packet that REPORTS your rotation to the server, naming that packet's
+# rotation fields, is rewriting what the server is told you are looking at. That
+# is silent rotations, and it is the one shape a camera mod never has - a camera
+# mixes into the player or the renderer, never into the outgoing packet.
+$script:bcMixinPacketApi = @{
+    'rotation' = '\byRot\b|\bxRot\b|\bfield_5982\b|\bfield_6031\b'
+}
+# Which part of the game a mixin injects into. Not a rule and not scored - it is
+# for the moderator reading the report, because "rewrites the network handler and
+# the player's movement" and "rewrites the options screen" are different mods and
+# the score alone does not say which one is on the screen.
+$script:bcMixinArea = [ordered]@{
+    'player movement' = 'LocalPlayer|ClientPlayerEntity|class_746|LivingEntity|class_1309|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744'
+    'network handler' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket'
+    'world / blocks'  = 'ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk'
+    'rendering'       = 'LevelRenderer|WorldRenderer|GameRenderer|EntityRenderer|class_761|class_757|RenderSystem|GuiGraphics|class_332'
+    'inventory / containers' = 'AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661'
+    'menus / screens' = 'net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen'
 }
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are

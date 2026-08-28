@@ -16,6 +16,7 @@ function Get-JarFeatures([string]$FilePath) {
         HiddenPayload = 0; LoaderIds = [System.Collections.Generic.List[string]]::new()
         PayloadKinds  = [System.Collections.Generic.List[string]]::new()
         BlankMeta = $false; NativeJna = $false
+        MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
     }
     $reflectionPatterns = @('Class\.forName','getMethod','getDeclaredMethod','getDeclaredField','setAccessible','java/lang/reflect','MethodHandle','sun/misc/Unsafe','defineClass','ByteBuddy','javassist','ASM\d')
     $zip = $null
@@ -105,6 +106,23 @@ function Get-JarFeatures([string]$FilePath) {
                         if ($f.MetaName -eq "" -and $txt -match '"name"\s*:\s*"([^"]{2,60})"') { $f.MetaName = $matches[1] }
                     } elseif ($n -match 'mods\.toml') {
                         if ($f.ModId -eq "" -and $txt -match 'modId\s*=\s*"([^"]{2,60})"') { $f.ModId = $matches[1] }
+                    } elseif ($n -match '\.mixins\.json$|^mixins\.[^/]+\.json$') {
+                        # A mixin config says in plain text how many places in the game
+                        # this mod rewrites, and whether it does so on the client. It
+                        # names the mixin CLASSES, not their targets - the targets live
+                        # in the annotations and are read out of the bytecode - so this
+                        # is counted as scope, never scored. Its second job is honesty:
+                        # a config that declares mixins the bytecode reader never saw is
+                        # a gap in coverage, not a clean result.
+                        $f.MixinConfigs++
+                        foreach ($sec in @('mixins', 'client', 'server')) {
+                            $mm = [regex]::Match($txt, '"' + $sec + '"\s*:\s*\[([^\]]*)\]')
+                            if ($mm.Success) {
+                                $cnt = ([regex]::Matches($mm.Groups[1].Value, '"[^"]+"')).Count
+                                $f.MixinDeclared += $cnt
+                                if ($sec -eq 'client' -and $cnt -gt 0) { $f.MixinClientOnly = $true }
+                            }
+                        }
                     } elseif ($n -match 'MANIFEST\.MF$') {
                         if ($txt -match '(?im)^(Premain-Class|Agent-Class)\s*:\s*(\S+)') {
                             $f.JavaAgent = $true
@@ -312,6 +330,26 @@ function Get-ModVerdict($ctx) {
         if ($bc.hiddenapiRatio -gt 0) {
             [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses")
         }
+        # Mixins. Not an accusation and not scored: a Fabric mod IS mixins - Sodium,
+        # Lithium and the Fabric API are nothing else. What is worth writing down is
+        # WHERE it injects, because "rewrites the network handler and the player's
+        # movement" and "rewrites the options screen" are different mods and the
+        # score alone does not say which one is on the screen.
+        if ($bc.mixinRatio -gt 0 -and @($bc.MixinAreas).Count -gt 0) {
+            # The declared count comes from *.mixins.json, which lists the injection
+            # points in plain text; the areas come from the annotations in the
+            # bytecode, which is where the TARGETS actually are.
+            $mxN = if ($ft.MixinDeclared -gt 0) { " at $($ft.MixinDeclared) declared point(s)" } else { "" }
+            [void]$reasons.Add("Scope: compiles itself into the game's own code (Mixin)$mxN, reaching " +
+                ((@($bc.MixinAreas)) -join ", ") +
+                ". Normal for a mod $([char]0x2014) recorded so it is visible what it can touch")
+        }
+        # A mixin names its target in an annotation, so the target is a string and
+        # never a symbol. Where that is the only way a behaviour above was found,
+        # say so: it explains why the finding is there at all.
+        if ($bc.mixintargetRatio -gt 0) {
+            [void]$reasons.Add("Behaviour: the game class it rewrites is named only in its Mixin annotation, so it never appears in the class symbol table $([char]0x2014) read out of the annotation instead")
+        }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
@@ -487,8 +525,12 @@ function Write-VerdictCard($mod) {
 }
 
 function New-TestBytecode($over) {
-    $b = @{ ClassesParsed = 10; ClassesFailed = 0; ObfNameRatio = 0.0; StrReadableRatio = 0.9; StrEntropy = 0.0 }
+    $b = @{ ClassesParsed = 10; ClassesFailed = 0; ObfNameRatio = 0.0; StrReadableRatio = 0.9; StrEntropy = 0.0
+            MixinAreas = @() }
     foreach ($k in $script:bcBehaviour.Keys) { $b[$k] = 0; $b[$k + 'Ratio'] = 0.0 }
+    # Derived signals belong here too. Left out they read as $null, which compares
+    # false against every threshold - so a broken rule would look like a passing one.
+    foreach ($k in $script:bcDerived) { $b[$k] = 0; $b[$k + 'Ratio'] = 0.0 }
     if ($over) { foreach ($k in $over.Keys) { $b[$k] = $over[$k] } }
     return $b
 }
@@ -501,6 +543,7 @@ function New-TestFeatures($over) {
         HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0
         LoaderIds = @(); BlankMeta = $false; NativeJna = $false; PayloadKinds = @()
+        MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
     }
     if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
     return $f
@@ -528,6 +571,15 @@ function Invoke-SelfTest {
         @{ Label = "Minimap w/ mob radar, verified"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Dropper by behaviour (encrypted)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ cryptoRatio = 1.0; classloadRatio = 1.0; reflectRatio = 1.0; StrReadableRatio = 0.1 }) } }
         @{ Label = "Reflection-heavy lib, no cheat behaviour"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 5 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0 }) } }
+        # Mixins are how ordinary Fabric mods are built - Sodium and the Fabric API
+        # are nothing else - so the technique on its own must never move the band.
+        @{ Label = "Mod built entirely out of mixins"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Mixin into rendering only"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; renderRatio = 1.0 }) } }
+        # Silent rotations: the target is named in the annotation, so movepacket and
+        # rotation are both found in strings rather than in the symbol table. Same
+        # rule, same band - the mixin only changes where the evidence was read from.
+        @{ Label = "Silent rotations via a packet mixin"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        @{ Label = "Mixin that moves the player (jetpack)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
         @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }

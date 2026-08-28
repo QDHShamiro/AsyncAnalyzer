@@ -155,6 +155,10 @@ BEHAVIOUR = {
     "bc_archive":    [r"java/util/jar", r"java/util/zip", r"JarFile", r"ZipFile",
                       r"JarOutputStream", r"ZipOutputStream", r"JarInputStream",
                       r"ZipInputStream", r"JarEntry", r"ZipEntry"],
+    # This class is a Mixin - it does not call the game, it is COMPILED INTO it.
+    # Neutral on its own: Sodium, Lithium and the Fabric API itself are nothing
+    # but mixins. It matters because of what it does to the evidence, below.
+    "bc_mixin":      [r"org/spongepowered/asm/mixin"],
 }
 
 # Derived per-class signals. Not regexes: they are combinations that only mean
@@ -172,6 +176,9 @@ DERIVED = {
     "bc_selfwipe": lambda hits: ("bc_selfpath" in hits and "bc_filedelete" in hits
                                  and "bc_nativetemp" not in hits
                                  and "bc_archive" not in hits),
+    # set when a behaviour was found through a mixin's declared target rather than
+    # through a call - see _MIXIN_API
+    "bc_mixintarget": lambda hits: False,   # set directly, not derived from others
 }
 _COMPILED = {k: re.compile("|".join(v)) for k, v in BEHAVIOUR.items()}
 
@@ -224,6 +231,76 @@ _REFLECTIVE_API = {
 }
 _REFLECTIVE_API = {k: re.compile(v) for k, v in _REFLECTIVE_API.items()}
 
+# --- what a mixin names, and why the symbol table does not see it -------------
+#
+# A Mixin is not a mod calling the game. It is code the loader COMPILES INTO a
+# game class. That changes where the evidence lives, and it opens the same hole
+# reflection did.
+#
+# A mixin names its target in an ANNOTATION - @Mixin(ServerboundMovePlayerPacket.class)
+# or @Mixin(targets = "net.minecraft...") - and its injection point by method NAME
+# in @Inject(method = "aiStep"). Annotation values are Utf8 constants, not Class
+# entries or member refs, so none of it reaches the symbol table. Everything it
+# touches inside the target it reaches through @Shadow members declared on ITSELF,
+# so those resolve to the mixin class, not to Minecraft.
+#
+# Worked example, and the reason this exists: silent rotations. Mixin into
+# ServerboundMovePlayerPacket, shadow the yRot field, overwrite it in the
+# constructor. The player's view never turns, the server is told it did. Read
+# through the symbol table that class calls nothing - bc_movepacket 0,
+# bc_rotation 0 - and every combat rule is blind to it.
+#
+# So the same vocabulary is matched against a mixin's strings, exactly as it is
+# against a reflecting class's strings. Two additions on top of the shared table,
+# both only meaningful inside a mixin: shadowed field names, and the movement
+# methods of the player that an injection point names.
+_MIXIN_MARK = re.compile(rb"org/spongepowered/asm/mixin")
+_MIXIN_API = dict(_REFLECTIVE_API)
+_MIXIN_API.update({
+    # The player's own movement tick. @Inject(method = "aiStep") is where a
+    # movement mixin has to go, and the shadowed field it moves. "tick" alone is
+    # far too common a word to include; these two name the movement path itself.
+    "bc_motion": re.compile(
+        r"\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b"
+        r"|\bmethod_18798\b|\bdeltaMovement\b|\baiStep\b|\bmethod_6091\b"),
+})
+
+# Shadowed rotation FIELD names - and only for a mixin that targets an outgoing
+# movement packet.
+#
+# The narrowing is the whole point. Plenty of legitimate mods shadow yRot: any
+# camera, freelook or perspective mod names the same field, and reading a bare
+# "yRot" as "writes rotation" would accuse all of them. But a mixin whose target
+# is the packet that REPORTS your rotation to the server, naming that packet's
+# rotation fields, is rewriting what the server is told you are looking at. That
+# is silent rotations, and it is the one shape a camera mod never has - a camera
+# mixes into the player or the renderer, never into the outgoing packet.
+_MIXIN_PACKET_API = {
+    "bc_rotation": re.compile(r"\byRot\b|\bxRot\b|\bfield_5982\b|\bfield_6031\b"),
+}
+
+# Which part of the game a mixin injects into. Not a rule and not scored - it is
+# for the moderator reading the report, because "rewrites the network handler and
+# the player's movement" and "rewrites the options screen" are different mods and
+# the score alone does not say which one is on the screen.
+_MIXIN_AREA = [
+    ("player movement", re.compile(
+        r"LocalPlayer|ClientPlayerEntity|class_746|LivingEntity|class_1309"
+        r"|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744")),
+    ("network handler", re.compile(
+        r"ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535"
+        r"|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket")),
+    ("world / blocks", re.compile(
+        r"ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk")),
+    ("rendering", re.compile(
+        r"LevelRenderer|WorldRenderer|GameRenderer|EntityRenderer|class_761|class_757"
+        r"|RenderSystem|GuiGraphics|class_332")),
+    ("inventory / containers", re.compile(
+        r"AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661")),
+    ("menus / screens", re.compile(
+        r"net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen")),
+]
+
 _WORDY = re.compile(rb"^[\x20-\x7e]{4,}$")
 
 # Cheap pre-filter run over the RAW decompressed bytes of every class.
@@ -268,6 +345,7 @@ _PREFILTER = re.compile(b"|".join(
         b"loadLibrary", b"tmpdir", b"java/util/jar", b"java/util/zip", b"JarFile",
         b"ZipFile", b"JarOutputStream", b"ZipOutputStream", b"JarInputStream",
         b"ZipInputStream", b"JarEntry", b"ZipEntry",
+        b"org/spongepowered/asm/mixin",
     ]))
 
 
@@ -295,6 +373,7 @@ def extract_jar(path, max_classes=0):
     short_names = total_names = 0
     readable = total_str = 0
     ent_sum = ent_n = 0.0
+    mixin_areas = set()
 
     try:
         z = zipfile.ZipFile(path)
@@ -341,6 +420,7 @@ def extract_jar(path, max_classes=0):
             for k, rx in _COMPILED.items():
                 if rx.search(blob):
                     hit_here.add(k)
+            sblob = None
             # Reflective use of the same API. Only counts when this class actually
             # reflects - a string alone is a mention, reflection makes it a call.
             if "bc_reflect" in hit_here:
@@ -350,6 +430,30 @@ def extract_jar(path, max_classes=0):
                     if k not in hit_here and rx.search(sblob):
                         hit_here.add(k)
                         hit_here.add("bc_hiddenapi")
+            # A mixin declares its target in an annotation, so the target reaches
+            # the pool as a string and never as a symbol. Same vocabulary, same
+            # treatment - but NOT flagged as hiding anything: naming your target in
+            # an annotation is how mixins are written, not evasion.
+            # The marker is a literal byte sequence in the pool, so the raw head the
+            # pre-filter already read finds it in one search.
+            if "bc_mixin" not in hit_here and _MIXIN_MARK.search(data):
+                hit_here.add("bc_mixin")
+            if "bc_mixin" in hit_here:
+                if sblob is None:
+                    sblob = "\n".join(
+                        x.decode("utf-8", "ignore") for x in strings if len(x) < 200)
+                for k, rx in _MIXIN_API.items():
+                    if k not in hit_here and rx.search(sblob):
+                        hit_here.add(k)
+                        hit_here.add("bc_mixintarget")
+                if "bc_movepacket" in hit_here:
+                    for k, rx in _MIXIN_PACKET_API.items():
+                        if k not in hit_here and rx.search(sblob):
+                            hit_here.add(k)
+                            hit_here.add("bc_mixintarget")
+                for area, rx in _MIXIN_AREA:
+                    if rx.search(sblob):
+                        mixin_areas.add(area)
             for k, fn in DERIVED.items():
                 if fn(hit_here):
                     hit_here.add(k)
@@ -389,6 +493,9 @@ def extract_jar(path, max_classes=0):
         out["str_readable_ratio"] = readable / float(total_str)
     if ent_n:
         out["str_entropy"] = ent_sum / ent_n
+    # Evidence for the report, not a feature: which parts of the game this jar
+    # compiles itself into. Ordered as declared so the line reads the same way twice.
+    out["mixin_areas"] = [a for a, _ in _MIXIN_AREA if a in mixin_areas]
     return out
 
 

@@ -1281,13 +1281,17 @@ $script:bcBehaviour = [ordered]@{
     # legitimately locates its own jar and deletes files - it is tooling that
     # processes archives for a living. A client deleting itself never opens one.
     'archive'    = 'java/util/jar|java/util/zip|JarFile|ZipFile|JarOutputStream|ZipOutputStream|JarInputStream|ZipInputStream|JarEntry|ZipEntry'
+    # This class is a Mixin - it does not call the game, it is COMPILED INTO it.
+    # Neutral on its own: Sodium, Lithium and the Fabric API itself are nothing but
+    # mixins. It matters for what it does to the evidence, below.
+    'mixin'      = 'org/spongepowered/asm/mixin'
 }
 # Derived per-class signals. Not patterns: combinations that only mean something
 # when ONE class does all of it. Jar-level ratios cannot express that - in a large
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe', 'hiddenapi')
+$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget')
 
 # --- reflective use of the same API ------------------------------------------
 #
@@ -1313,6 +1317,64 @@ $script:bcReflectiveApi = [ordered]@{
     'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
     'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
     'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+}
+
+# --- what a mixin names, and why the symbol table does not see it -------------
+#
+# A Mixin is not a mod calling the game. It is code the loader COMPILES INTO a
+# game class. That changes where the evidence lives, and it opens the same hole
+# reflection did.
+#
+# A mixin names its target in an ANNOTATION - @Mixin(ServerboundMovePlayerPacket.class)
+# or @Mixin(targets = "net.minecraft...") - and its injection point by method NAME
+# in @Inject(method = "aiStep"). Annotation values are Utf8 constants, not Class
+# entries or member refs, so none of it reaches the symbol table. Everything it
+# touches inside the target it reaches through @Shadow members declared on ITSELF,
+# which resolve to the mixin class rather than to Minecraft.
+#
+# Worked example, and the reason this exists: silent rotations. Mixin into
+# ServerboundMovePlayerPacket, shadow the yRot field, overwrite it in the
+# constructor. Your view never turns; the server is told it did. Read through the
+# symbol table that class calls nothing - movepacket 0, rotation 0 - and every
+# combat rule is blind to it.
+#
+# Same vocabulary as the reflective table, matched against a mixin's strings, plus
+# the movement path a mixin names at its injection point. NOT treated as hiding
+# anything: naming your target in an annotation is how mixins are written.
+$script:bcMixinApi = [ordered]@{
+    'movepacket' = 'ServerboundMovePlayerPacket|PlayerMoveC2SPacket|class_2828'
+    'rotation' = '\bsetYRot\b|\bsetXRot\b|\bmethod_36456\b|\bmethod_36457\b'
+    'attack' = 'ServerboundInteractPacket|PlayerInteractEntityC2SPacket|class_2824|MultiPlayerGameMode|\bswingHand\b|\bmethod_6104\b'
+    'motion' = '\bsetDeltaMovement\b|\bgetDeltaMovement\b|\bmethod_18800\b|\bmethod_18798\b|\bdeltaMovement\b|\baiStep\b|\bmethod_6091\b'
+    'blockplace' = 'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|\bmethod_2896\b'
+    'blockbreak' = 'ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|\bmethod_2910\b'
+    'container' = 'ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu'
+    'pktlisten' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535'
+}
+# Shadowed rotation FIELD names - and only for a mixin that targets an outgoing
+# movement packet.
+#
+# The narrowing is the whole point. Plenty of legitimate mods shadow yRot: any
+# camera, freelook or perspective mod names the same field, and reading a bare
+# 'yRot' as "writes rotation" would accuse all of them. But a mixin whose target
+# is the packet that REPORTS your rotation to the server, naming that packet's
+# rotation fields, is rewriting what the server is told you are looking at. That
+# is silent rotations, and it is the one shape a camera mod never has - a camera
+# mixes into the player or the renderer, never into the outgoing packet.
+$script:bcMixinPacketApi = @{
+    'rotation' = '\byRot\b|\bxRot\b|\bfield_5982\b|\bfield_6031\b'
+}
+# Which part of the game a mixin injects into. Not a rule and not scored - it is
+# for the moderator reading the report, because "rewrites the network handler and
+# the player's movement" and "rewrites the options screen" are different mods and
+# the score alone does not say which one is on the screen.
+$script:bcMixinArea = [ordered]@{
+    'player movement' = 'LocalPlayer|ClientPlayerEntity|class_746|LivingEntity|class_1309|\baiStep\b|\btravel\b|\bdeltaMovement\b|MovementInput|class_744'
+    'network handler' = 'ClientPacketListener|ClientPlayNetworkHandler|class_634|class_2535|net/minecraft/network|Serverbound|C2SPacket|ClientboundS2CPacket|S2CPacket'
+    'world / blocks'  = 'ClientLevel|ClientWorld|class_638|BlockState|class_2680|ChunkRenderer|LevelChunk'
+    'rendering'       = 'LevelRenderer|WorldRenderer|GameRenderer|EntityRenderer|class_761|class_757|RenderSystem|GuiGraphics|class_332'
+    'inventory / containers' = 'AbstractContainerMenu|ScreenHandler|class_1703|Inventory|class_1661'
+    'menus / screens' = 'net/minecraft/client/gui/screens|client/gui/screen|class_437|OptionsScreen|TitleScreen'
 }
 # Names a dropper reaches REFLECTIVELY, so they land in a string constant rather
 # than a Methodref. Deliberately tiny - broad names like setAccessible are
@@ -1347,7 +1409,8 @@ $script:bcPreFilter = [regex]::new(
      'openStream|sun/misc/Unsafe|jdk/internal/misc/Unsafe|java/lang/instrument|Instrumentation|' +
      'premain|agentmain|retransformClasses|' +
      'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798|' +
-     'getProtectionDomain|getCodeSource|ProtectionDomain|CodeSource|deleteOnExit|deleteIfExists'),
+     'getProtectionDomain|getCodeSource|ProtectionDomain|CodeSource|deleteOnExit|deleteIfExists|' +
+     'org/spongepowered/asm/mixin'),
     [System.Text.RegularExpressions.RegexOptions]::Compiled)
 
 function Read-ClassConstantPool([byte[]]$b) {
@@ -1443,7 +1506,8 @@ function Test-LoadedFromDisk([string]$Token) {
 
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
-            StrReadableRatio = 0.0; StrEntropy = 0.0 }
+            StrReadableRatio = 0.0; StrEntropy = 0.0
+            MixinAreas = [System.Collections.Generic.List[string]]::new() }
     foreach ($k in $script:bcBehaviour.Keys) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     foreach ($k in $script:bcDerived) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     $short = 0; $names = 0; $readable = 0; $totalStr = 0; $entSum = 0.0; $entN = 0
@@ -1504,12 +1568,44 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             }
             # Reflective use of the same API. Only counts when this class actually
             # reflects - a string alone is a mention, reflection makes it a call.
+            $sblob = $null
             if ($hit['reflect']) {
                 $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n"
                 foreach ($rk in $script:bcReflectiveApi.Keys) {
                     if (-not $hit[$rk] -and $sblob -match $script:bcReflectiveApi[$rk]) {
                         $hit[$rk] = $true
                         $hit['hiddenapi'] = $true
+                    }
+                }
+            }
+            # A mixin declares its target in an annotation, so the target reaches the
+            # constant pool as a string and never as a symbol. Same vocabulary, same
+            # treatment - but NOT recorded as hiding anything: naming your target in
+            # an annotation is how mixins are written, not evasion.
+            # The marker is a literal byte sequence in the pool, so the raw head the
+            # pre-filter already read finds it in one search.
+            if (-not $hit['mixin'] -and $head.IndexOf('org/spongepowered/asm/mixin', [System.StringComparison]::Ordinal) -ge 0) {
+                $hit['mixin'] = $true
+            }
+            if ($hit['mixin']) {
+                if ($null -eq $sblob) { $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n" }
+                foreach ($mk in $script:bcMixinApi.Keys) {
+                    if (-not $hit[$mk] -and $sblob -match $script:bcMixinApi[$mk]) {
+                        $hit[$mk] = $true
+                        $hit['mixintarget'] = $true
+                    }
+                }
+                if ($hit['movepacket']) {
+                    foreach ($mk in $script:bcMixinPacketApi.Keys) {
+                        if (-not $hit[$mk] -and $sblob -match $script:bcMixinPacketApi[$mk]) {
+                            $hit[$mk] = $true
+                            $hit['mixintarget'] = $true
+                        }
+                    }
+                }
+                foreach ($ak in $script:bcMixinArea.Keys) {
+                    if (-not $f.MixinAreas.Contains($ak) -and $sblob -match $script:bcMixinArea[$ak]) {
+                        [void]$f.MixinAreas.Add($ak)
                     }
                 }
             }
@@ -1544,6 +1640,13 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
         foreach ($k in $script:bcBehaviour.Keys) { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
         foreach ($k in $script:bcDerived)        { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
     }
+    # Report the areas in the order the table declares them, not in the order the
+    # classes happened to be read, so two scans of the same jar read the same way.
+    if ($f.MixinAreas.Count -gt 1) {
+        $ordered = [System.Collections.Generic.List[string]]::new()
+        foreach ($ak in $script:bcMixinArea.Keys) { if ($f.MixinAreas.Contains($ak)) { [void]$ordered.Add($ak) } }
+        $f.MixinAreas = $ordered
+    }
     if ($names -gt 0)    { $f.ObfNameRatio = [double]$short / [double]$names }
     if ($totalStr -gt 0) { $f.StrReadableRatio = [double]$readable / [double]$totalStr }
     if ($entN -gt 0)     { $f.StrEntropy = $entSum / [double]$entN }
@@ -1568,6 +1671,7 @@ function Get-JarFeatures([string]$FilePath) {
         HiddenPayload = 0; LoaderIds = [System.Collections.Generic.List[string]]::new()
         PayloadKinds  = [System.Collections.Generic.List[string]]::new()
         BlankMeta = $false; NativeJna = $false
+        MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
     }
     $reflectionPatterns = @('Class\.forName','getMethod','getDeclaredMethod','getDeclaredField','setAccessible','java/lang/reflect','MethodHandle','sun/misc/Unsafe','defineClass','ByteBuddy','javassist','ASM\d')
     $zip = $null
@@ -1657,6 +1761,23 @@ function Get-JarFeatures([string]$FilePath) {
                         if ($f.MetaName -eq "" -and $txt -match '"name"\s*:\s*"([^"]{2,60})"') { $f.MetaName = $matches[1] }
                     } elseif ($n -match 'mods\.toml') {
                         if ($f.ModId -eq "" -and $txt -match 'modId\s*=\s*"([^"]{2,60})"') { $f.ModId = $matches[1] }
+                    } elseif ($n -match '\.mixins\.json$|^mixins\.[^/]+\.json$') {
+                        # A mixin config says in plain text how many places in the game
+                        # this mod rewrites, and whether it does so on the client. It
+                        # names the mixin CLASSES, not their targets - the targets live
+                        # in the annotations and are read out of the bytecode - so this
+                        # is counted as scope, never scored. Its second job is honesty:
+                        # a config that declares mixins the bytecode reader never saw is
+                        # a gap in coverage, not a clean result.
+                        $f.MixinConfigs++
+                        foreach ($sec in @('mixins', 'client', 'server')) {
+                            $mm = [regex]::Match($txt, '"' + $sec + '"\s*:\s*\[([^\]]*)\]')
+                            if ($mm.Success) {
+                                $cnt = ([regex]::Matches($mm.Groups[1].Value, '"[^"]+"')).Count
+                                $f.MixinDeclared += $cnt
+                                if ($sec -eq 'client' -and $cnt -gt 0) { $f.MixinClientOnly = $true }
+                            }
+                        }
                     } elseif ($n -match 'MANIFEST\.MF$') {
                         if ($txt -match '(?im)^(Premain-Class|Agent-Class)\s*:\s*(\S+)') {
                             $f.JavaAgent = $true
@@ -1864,6 +1985,26 @@ function Get-ModVerdict($ctx) {
         if ($bc.hiddenapiRatio -gt 0) {
             [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses")
         }
+        # Mixins. Not an accusation and not scored: a Fabric mod IS mixins - Sodium,
+        # Lithium and the Fabric API are nothing else. What is worth writing down is
+        # WHERE it injects, because "rewrites the network handler and the player's
+        # movement" and "rewrites the options screen" are different mods and the
+        # score alone does not say which one is on the screen.
+        if ($bc.mixinRatio -gt 0 -and @($bc.MixinAreas).Count -gt 0) {
+            # The declared count comes from *.mixins.json, which lists the injection
+            # points in plain text; the areas come from the annotations in the
+            # bytecode, which is where the TARGETS actually are.
+            $mxN = if ($ft.MixinDeclared -gt 0) { " at $($ft.MixinDeclared) declared point(s)" } else { "" }
+            [void]$reasons.Add("Scope: compiles itself into the game's own code (Mixin)$mxN, reaching " +
+                ((@($bc.MixinAreas)) -join ", ") +
+                ". Normal for a mod $([char]0x2014) recorded so it is visible what it can touch")
+        }
+        # A mixin names its target in an annotation, so the target is a string and
+        # never a symbol. Where that is the only way a behaviour above was found,
+        # say so: it explains why the finding is there at all.
+        if ($bc.mixintargetRatio -gt 0) {
+            [void]$reasons.Add("Behaviour: the game class it rewrites is named only in its Mixin annotation, so it never appears in the class symbol table $([char]0x2014) read out of the annotation instead")
+        }
         if ($bc.instrumentRatio -gt 0 -and $bc.ClassesParsed -gt 0) {
             $score = [Math]::Max($score, 80)
             [void]$reasons.Add("Behaviour: ships Java-agent instrumentation hooks $([char]0x2014) it can rewrite game code as it runs")
@@ -2039,8 +2180,12 @@ function Write-VerdictCard($mod) {
 }
 
 function New-TestBytecode($over) {
-    $b = @{ ClassesParsed = 10; ClassesFailed = 0; ObfNameRatio = 0.0; StrReadableRatio = 0.9; StrEntropy = 0.0 }
+    $b = @{ ClassesParsed = 10; ClassesFailed = 0; ObfNameRatio = 0.0; StrReadableRatio = 0.9; StrEntropy = 0.0
+            MixinAreas = @() }
     foreach ($k in $script:bcBehaviour.Keys) { $b[$k] = 0; $b[$k + 'Ratio'] = 0.0 }
+    # Derived signals belong here too. Left out they read as $null, which compares
+    # false against every threshold - so a broken rule would look like a passing one.
+    foreach ($k in $script:bcDerived) { $b[$k] = 0; $b[$k + 'Ratio'] = 0.0 }
     if ($over) { foreach ($k in $over.Keys) { $b[$k] = $over[$k] } }
     return $b
 }
@@ -2053,6 +2198,7 @@ function New-TestFeatures($over) {
         HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0
         LoaderIds = @(); BlankMeta = $false; NativeJna = $false; PayloadKinds = @()
+        MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
     }
     if ($over) { foreach ($k in $over.Keys) { $f[$k] = $over[$k] } }
     return $f
@@ -2080,6 +2226,15 @@ function Invoke-SelfTest {
         @{ Label = "Minimap w/ mob radar, verified"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Dropper by behaviour (encrypted)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ cryptoRatio = 1.0; classloadRatio = 1.0; reflectRatio = 1.0; StrReadableRatio = 0.1 }) } }
         @{ Label = "Reflection-heavy lib, no cheat behaviour"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 5 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0 }) } }
+        # Mixins are how ordinary Fabric mods are built - Sodium and the Fabric API
+        # are nothing else - so the technique on its own must never move the band.
+        @{ Label = "Mod built entirely out of mixins"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Mixin into rendering only"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; renderRatio = 1.0 }) } }
+        # Silent rotations: the target is named in the annotation, so movepacket and
+        # rotation are both found in strings rather than in the symbol table. Same
+        # rule, same band - the mixin only changes where the evidence was read from.
+        @{ Label = "Silent rotations via a packet mixin"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        @{ Label = "Mixin that moves the player (jetpack)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
         @{ Label = "Encrypted-payload dropper"; Bands = @("Confirmed", "Likely"); Over = @{ Features = (New-TestFeatures @{ HiddenPayload = 6; SingleCharClsPct = 0.6; AvgEntropy = 6.8 }) } }
         @{ Label = "Multi-loader identity spoof"; Bands = @("Likely"); Over = @{ Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge', 'labymod', 'bukkit', 'modloader') }) } }
@@ -4527,6 +4682,14 @@ if (-not $SkipModCheck) {
             }
             $verdict = Get-ModVerdict $ctx
             $mechCheat = $feat.JavaAgent -or ($feat.HiddenPayload -gt 0)
+
+            # A mixin config lists, in plain text, how many places in the game this
+            # mod rewrites. If it declares mixins and the bytecode reader saw none of
+            # them, the jar was not read - that is a gap in coverage, and a clean
+            # result on an unread jar has to say so rather than look like an answer.
+            if ($feat.MixinDeclared -gt 0 -and $null -ne $bcFeat -and $bcFeat.mixin -eq 0) {
+                Add-ScanGap ("$($jar.Name): declares $($feat.MixinDeclared) mixin(s) in its config but none could be read from the bytecode $([char]0x2014) what it rewrites in the game was NOT checked")
+            }
 
             if ($randomName) { $script:Evidence.RandomNamed++ }
             if ($cheatSite)  { $script:Evidence.CheatSiteDl++ }

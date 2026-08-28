@@ -53,6 +53,71 @@ public class MC {
 }
 '''
 
+# The Mixin annotations, declared in their real package. Nothing is imported from
+# the actual Mixin library - it is not needed and this repo does not vendor it.
+# What the detector reads is the constant pool, and javac writes exactly the same
+# Utf8 constants for these as for the real ones: the annotation descriptor
+# Lorg/spongepowered/asm/mixin/Mixin; and the target named as a string. Same
+# reasoning as the MC stub - reconstructed source, real compiler, genuine shape.
+MIXIN_STUB = {
+    "org/spongepowered/asm/mixin/Mixin.java":
+        "package org.spongepowered.asm.mixin;\n"
+        "import java.lang.annotation.*;\n"
+        "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)\n"
+        "public @interface Mixin { String[] targets() default {}; }\n",
+    "org/spongepowered/asm/mixin/Shadow.java":
+        "package org.spongepowered.asm.mixin;\n"
+        "import java.lang.annotation.*;\n"
+        "@Retention(RetentionPolicy.RUNTIME) @Target({ElementType.FIELD, ElementType.METHOD})\n"
+        "public @interface Shadow { }\n",
+    "org/spongepowered/asm/mixin/injection/Inject.java":
+        "package org.spongepowered.asm.mixin.injection;\n"
+        "import java.lang.annotation.*;\n"
+        "@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)\n"
+        "public @interface Inject { String[] method() default {}; String at() default \"\"; }\n",
+}
+
+# Mixin-shaped variants: kind -> (target class, injection point, shadow fields).
+# A mixin is not a mod calling the game, it is code compiled INTO a game class,
+# so its target and its injection point are annotation VALUES - strings - and
+# never reach the symbol table. That is why these are declared here rather than
+# written as statements: the point of each one is what it does NOT call.
+MIXIN = {
+    # --- cheats ---------------------------------------------------------------
+    # Silent rotations. Mixin into the packet that reports where you are looking,
+    # shadow its rotation fields, overwrite them. Your view never turns; the server
+    # is told it did. Through the symbol table this class calls nothing at all.
+    "mixrot":  ("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket",
+                "<init>", ["private float yRot;", "private float xRot;"]),
+    # Anti-knockback as a mixin: injected into the network handler, zeroing the
+    # motion the server just applied.
+    "mixvel":  ("net.minecraft.client.multiplayer.ClientPacketListener",
+                "handleSetEntityMotion", ["private double deltaMovement;"]),
+    # Scaffold as a mixin: the move packet is the target, the block-place packet is
+    # named at the injection point.
+    "mixscaf": ("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket",
+                "net.minecraft.network.protocol.game.ServerboundUseItemOnPacket",
+                ["private float yRot;"]),
+    # --- legitimate mixins ----------------------------------------------------
+    # These exist to be NOT flagged. Every one of them is how an ordinary mod is
+    # built; mixins are not a cheat technique, they are how Fabric mods work at all.
+    "mixhud":  ("net.minecraft.client.gui.GuiGraphics", "renderHotbar", []),
+    "mixtitle": ("net.minecraft.client.gui.screens.TitleScreen", "init", []),
+    "mixperf": ("net.minecraft.client.renderer.LevelRenderer", "renderLevel", []),
+    # protocol translation hooks the connection itself, not the packet records
+    "mixvia":  ("net.minecraft.network.Connection", "channelRead0", []),
+    # The negative the narrowing exists for: a freelook / perspective mod shadows
+    # exactly the same rotation fields the silent-rotation cheat does, and renders.
+    # It targets the player, not the outgoing packet - which is the difference, and
+    # if that difference ever stops working, this jar is what says so.
+    "mixfree": ("net.minecraft.client.player.LocalPlayer", "turn",
+                ["private float yRot;", "private float xRot;"]),
+    # sprint / elytra / jetpack mods live in aiStep and move the player
+    "mixsprint": ("net.minecraft.client.player.LocalPlayer", "aiStep",
+                  ["private double deltaMovement;"]),
+}
+
+
 def enc_str(n):
     """opaque blob standing in for an encrypted string constant"""
     return "".join(random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
@@ -335,6 +400,18 @@ def body(kind, obf):
         return '''    if (bind.isPressed()) { MC.RenderSystem.setShader(); stack.pushPose(); stack.popPose(); }'''
     if kind == "net":
         return '''    try { ((java.net.HttpURLConnection) new java.net.URL("https://api/x").openConnection()).getInputStream().close(); } catch (Exception e) {}'''
+    if kind in MIXIN:
+        # A mixin body reaches the game through its own @Shadow members, so it
+        # calls nothing outside itself. That is not a shortcut in the model - it
+        # is the entire reason a mixin cheat is invisible to the symbol table.
+        _t, _m, shadows = MIXIN[kind]
+        w = []
+        for d in shadows:
+            var = d.rstrip(";").rsplit(" ", 1)[-1]
+            cast = "float" if "float" in d else "double"
+            w.append("    this.%s = (%s) (hit %% 3);" % (var, cast))
+        w.append("    hit++;")
+        return "\n".join(w)
     return "    hit++;"
 
 # Declaring every field on every class was silently ruining the corpus. A field's
@@ -375,10 +452,33 @@ def gen_class(pkg, name, kinds, obf, nstr):
                       if re.search(r"\b%s\b" % re.escape(var), stmts))
     if decls:
         decls += "\n"
+    # A mixin declares what it rewrites in ANNOTATIONS, which is the whole point:
+    # the target class and the injected method are string constants, so nothing
+    # about them reaches the symbol table the behaviour rules normally read.
+    head, inj = "", ""
+    mixed = [k for k in kinds if k in MIXIN]
+    if mixed:
+        targets = []
+        shadows = []
+        points = []
+        for k in mixed:
+            tgt, point, sh = MIXIN[k]
+            if tgt not in targets:
+                targets.append(tgt)
+            if point not in points:
+                points.append(point)
+            for d in sh:
+                if d not in shadows:
+                    shadows.append(d)
+        head = "@org.spongepowered.asm.mixin.Mixin(targets = {%s})\n" % ", ".join(
+            '"%s"' % t for t in targets)
+        inj = "  @org.spongepowered.asm.mixin.injection.Inject(method = {%s})\n" % ", ".join(
+            '"%s"' % m for m in points)
+        decls += "".join("  @org.spongepowered.asm.mixin.Shadow %s\n" % d for d in shadows)
     return f'''package {pkg};
 import mc.MC;
-public class {name} {{
-{decls}{strs}  public void go() {{
+{head}public class {name} {{
+{decls}{strs}{inj}  public void go() {{
 {stmts}
   }}
 }}
@@ -406,6 +506,10 @@ def variants():
         # the same cheats, reaching Minecraft reflectively so their API names
         # never enter the symbol table
         ["reflaim"], ["reflspeed"], ["reflaim", "esp"], ["reflspeed", "nofall"],
+        # the same cheats written as MIXINS, where the target is an annotation
+        # value and so never reaches the symbol table at all
+        ["mixrot"], ["mixvel"], ["mixscaf"], ["mixrot", "esp"],
+        ["mixrot", "mixvel"], ["mixscaf", "nofall"],
         # a ghost client is a bundle, not one module
         ["aim", "scaffold", "velocity"], ["reach", "nofall", "freecam"],
         ["httpcfg", "load", "invmove"],
@@ -439,6 +543,12 @@ def variants():
         ["resourceclean"], ["modloader"], ["modloader", "cfg"],
         ["jetpack", "grapple", "elytraboost"],
         ["compat"], ["compat", "cfg"], ["compat", "updatecheck"],
+        # Ordinary mods built the ordinary way. Mixins are not a cheat technique -
+        # Sodium, Lithium and the Fabric API are nothing but mixins - so every one
+        # of these has to stay clean or the mixin reading is worse than useless.
+        ["mixhud"], ["mixtitle"], ["mixperf"], ["mixvia"],
+        ["mixfree"], ["mixfree", "zoom"], ["mixsprint"], ["mixsprint", "key"],
+        ["mixperf", "mixhud"], ["mixvia", "cfg"], ["mixfree", "shoulder"],
         # realistic packs: several legit utilities in one jar
         ["printer", "invsort", "key"], ["radar", "reachdisp", "zoom"],
         ["shoulder", "sprint", "map"], ["veinmine", "invsort", "cfg"],
@@ -454,6 +564,10 @@ def build(tmp):
     for d in (src, out, jars): os.makedirs(d, exist_ok=True)
     os.makedirs(os.path.join(src, "mc"), exist_ok=True)
     open(os.path.join(src, "mc", "MC.java"), "w").write(MC_STUB)
+    for rel, text in MIXIN_STUB.items():
+        fp = os.path.join(src, *rel.split("/"))
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        open(fp, "w").write(text)
     meta = []
     for vi, (label, mix, obf, n) in enumerate(variants()):
         pkg = "v%d" % vi

@@ -43,8 +43,9 @@ def build(tmp):
     os.makedirs(jars, exist_ok=True)
     # the mc/ package is the game's own API - it lives in Minecraft, never inside
     # a mod jar. Bundling it would make every jar look like it touches packets.
-    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader"]),
-                        ("clean", ["Minimap", "ConfigBinder", "Keybinds"])):
+    for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot"]),
+                        ("clean", ["Minimap", "ConfigBinder", "Keybinds",
+                                   "MixinRender", "MixinFreelook"])):
         for nm in names:
             jp = os.path.join(jars, "%s_%s.jar" % (kind, nm))
             subprocess.run(["jar", "cf", jp] + sorted(glob.glob(
@@ -188,6 +189,46 @@ def parity_test():
         failed += 1
         print("  FAIL  no reflective table found in the PowerShell source")
 
+    # The mixin tables are the second way the symbol table can be bypassed, and
+    # they drift the same way the reflective one does.
+    for ps_name, py_tbl in (("bcMixinApi", bytecode._MIXIN_API),
+                            ("bcMixinPacketApi", bytecode._MIXIN_PACKET_API)):
+        m = re.search(r"\$script:%s = (?:\[ordered\])?@\{(.*?)\n\}" % ps_name, ps, re.S)
+        if not m:
+            failed += 1
+            print("  FAIL  no %s table found in the PowerShell source" % ps_name)
+            continue
+        ps_t = dict(re.findall(r"^\s*'(\w+)'\s*=\s*'(.*)'\s*$", m.group(1), re.M))
+        py_t = {k[3:]: v.pattern for k, v in py_tbl.items()}
+        bad = [k for k in py_t if ps_t.get(k) != py_t[k]]
+        passed += len(py_t) - len(bad)
+        failed += len(bad)
+        if set(ps_t) != set(py_t):
+            failed += 1
+            print("  FAIL  %s categories differ: ps=%s py=%s" % (ps_name, sorted(ps_t), sorted(py_t)))
+        print("  %s: %d categories, %d mismatch(es)%s"
+              % (ps_name, len(py_t), len(bad), (" -> " + ", ".join(bad)) if bad else ""))
+
+    m = re.search(r"\$script:bcMixinArea = \[ordered\]@\{(.*?)\n\}", ps, re.S)
+    ps_area = dict(re.findall(r"^\s*'([^']+)'\s*=\s*'(.*)'\s*$", m.group(1), re.M)) if m else {}
+    py_area = {a: rx.pattern for a, rx in bytecode._MIXIN_AREA}
+    ok = ps_area == py_area
+    passed += ok
+    failed += (not ok)
+    print("  %s  mixin area table matches (%d areas)%s" % (
+        "PASS" if ok else "FAIL", len(py_area),
+        "" if ok else " -> ps=%s py=%s" % (sorted(ps_area), sorted(py_area))))
+
+    # The derived list is the one that fails SILENTLY: a signal missing from it
+    # reads as "this rule catches nothing" rather than as an error.
+    m = re.search(r"\$script:bcDerived = @\(([^)]*)\)", ps)
+    ps_der = set(re.findall(r"'(\w+)'", m.group(1))) if m else set()
+    py_der = {k[3:] for k in bytecode.DERIVED}
+    ok = ps_der == py_der
+    passed += ok
+    failed += (not ok)
+    print("  %s  derived signals match: %s" % ("PASS" if ok else "FAIL", sorted(py_der)))
+
     # An aim cheat that reaches Minecraft reflectively used to score Clean at
     # 3/100 - every behaviour rule was evadable with one refactor. Pin the close.
     for sym, want in (("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket", True),
@@ -253,6 +294,23 @@ def main():
         n = len(glob.glob(os.path.join(HERE, "jars_legit", "*.jar")))
         print("  %d real jars, %d tripped a rule%s" % (
             n, len(worst), (": " + ", ".join(worst)) if worst else " -> none"))
+
+        # Mixins: the target is an annotation value, so it never reaches the symbol
+        # table. Silent rotations must be caught; the freelook mod that shadows the
+        # SAME rotation fields must not be.
+        print("\n=== Mixins (target named in an annotation, not called) ===")
+        for kind, nm, want in (("cheat", "MixinSilentRot", True),
+                               ("clean", "MixinRender", False),
+                               ("clean", "MixinFreelook", False)):
+            jp = os.path.join(jars, "%s_%s.jar" % (kind, nm))
+            r = bytecode.extract_jar(jp)
+            got = rules(r)["aim"]
+            ok = (got == want) and r["bc_mixin"] > 0
+            passed += ok
+            failed += (not ok)
+            print("  [%s] %-16s mixin=%d target=%d areas=%s -> aim=%s (want %s)" % (
+                "PASS" if ok else "FAIL", nm, r["bc_mixin"], r["bc_mixintarget"],
+                ",".join(r["mixin_areas"]) or "-", got, want))
 
         cp, cf = coverage_test()
         passed += cp

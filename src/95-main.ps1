@@ -213,6 +213,14 @@ if (-not $SkipModCheck) {
             $verdict = Get-ModVerdict $ctx
             $mechCheat = $feat.JavaAgent -or ($feat.HiddenPayload -gt 0)
 
+            # A mixin config lists, in plain text, how many places in the game this
+            # mod rewrites. If it declares mixins and the bytecode reader saw none of
+            # them, the jar was not read - that is a gap in coverage, and a clean
+            # result on an unread jar has to say so rather than look like an answer.
+            if ($feat.MixinDeclared -gt 0 -and $null -ne $bcFeat -and $bcFeat.mixin -eq 0) {
+                Add-ScanGap ("$($jar.Name): declares $($feat.MixinDeclared) mixin(s) in its config but none could be read from the bytecode $([char]0x2014) what it rewrites in the game was NOT checked")
+            }
+
             if ($randomName) { $script:Evidence.RandomNamed++ }
             if ($cheatSite)  { $script:Evidence.CheatSiteDl++ }
             if ((-not $verified) -and ($hashKnownCheat -or $feat.PackageHits.Count -gt 0 -or $cheatSite -or $mechCheat)) { $script:Evidence.HardConfirmed++ }

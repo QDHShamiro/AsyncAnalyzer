@@ -12,7 +12,8 @@ $script:bcPreFilter = [regex]::new(
      'openStream|sun/misc/Unsafe|jdk/internal/misc/Unsafe|java/lang/instrument|Instrumentation|' +
      'premain|agentmain|retransformClasses|' +
      'ServerboundUseItemOnPacket|PlayerInteractBlockC2SPacket|class_2885|useItemOn|interactBlock|method_2896|ServerboundPlayerActionPacket|PlayerActionC2SPacket|class_2846|startDestroyBlock|destroyBlock|method_2910|ServerboundContainerClickPacket|ClickSlotC2SPacket|class_2813|AbstractContainerMenu|ScreenHandler|class_1703|setDeltaMovement|getDeltaMovement|setVelocity|method_18800|method_18798|' +
-     'getProtectionDomain|getCodeSource|ProtectionDomain|CodeSource|deleteOnExit|deleteIfExists'),
+     'getProtectionDomain|getCodeSource|ProtectionDomain|CodeSource|deleteOnExit|deleteIfExists|' +
+     'org/spongepowered/asm/mixin'),
     [System.Text.RegularExpressions.RegexOptions]::Compiled)
 
 function Read-ClassConstantPool([byte[]]$b) {
@@ -108,7 +109,8 @@ function Test-LoadedFromDisk([string]$Token) {
 
 function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     $f = @{ ClassesParsed = 0; ClassesFailed = 0; ObfNameRatio = 0.0
-            StrReadableRatio = 0.0; StrEntropy = 0.0 }
+            StrReadableRatio = 0.0; StrEntropy = 0.0
+            MixinAreas = [System.Collections.Generic.List[string]]::new() }
     foreach ($k in $script:bcBehaviour.Keys) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     foreach ($k in $script:bcDerived) { $f[$k] = 0; $f[$k + 'Ratio'] = 0.0 }
     $short = 0; $names = 0; $readable = 0; $totalStr = 0; $entSum = 0.0; $entN = 0
@@ -169,12 +171,44 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             }
             # Reflective use of the same API. Only counts when this class actually
             # reflects - a string alone is a mention, reflection makes it a call.
+            $sblob = $null
             if ($hit['reflect']) {
                 $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n"
                 foreach ($rk in $script:bcReflectiveApi.Keys) {
                     if (-not $hit[$rk] -and $sblob -match $script:bcReflectiveApi[$rk]) {
                         $hit[$rk] = $true
                         $hit['hiddenapi'] = $true
+                    }
+                }
+            }
+            # A mixin declares its target in an annotation, so the target reaches the
+            # constant pool as a string and never as a symbol. Same vocabulary, same
+            # treatment - but NOT recorded as hiding anything: naming your target in
+            # an annotation is how mixins are written, not evasion.
+            # The marker is a literal byte sequence in the pool, so the raw head the
+            # pre-filter already read finds it in one search.
+            if (-not $hit['mixin'] -and $head.IndexOf('org/spongepowered/asm/mixin', [System.StringComparison]::Ordinal) -ge 0) {
+                $hit['mixin'] = $true
+            }
+            if ($hit['mixin']) {
+                if ($null -eq $sblob) { $sblob = ($cp.Strings | Where-Object { $_.Length -lt 200 }) -join "`n" }
+                foreach ($mk in $script:bcMixinApi.Keys) {
+                    if (-not $hit[$mk] -and $sblob -match $script:bcMixinApi[$mk]) {
+                        $hit[$mk] = $true
+                        $hit['mixintarget'] = $true
+                    }
+                }
+                if ($hit['movepacket']) {
+                    foreach ($mk in $script:bcMixinPacketApi.Keys) {
+                        if (-not $hit[$mk] -and $sblob -match $script:bcMixinPacketApi[$mk]) {
+                            $hit[$mk] = $true
+                            $hit['mixintarget'] = $true
+                        }
+                    }
+                }
+                foreach ($ak in $script:bcMixinArea.Keys) {
+                    if (-not $f.MixinAreas.Contains($ak) -and $sblob -match $script:bcMixinArea[$ak]) {
+                        [void]$f.MixinAreas.Add($ak)
                     }
                 }
             }
@@ -208,6 +242,13 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
     if ($f.ClassesParsed -gt 0) {
         foreach ($k in $script:bcBehaviour.Keys) { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
         foreach ($k in $script:bcDerived)        { $f[$k + 'Ratio'] = [double]$f[$k] / [double]$f.ClassesParsed }
+    }
+    # Report the areas in the order the table declares them, not in the order the
+    # classes happened to be read, so two scans of the same jar read the same way.
+    if ($f.MixinAreas.Count -gt 1) {
+        $ordered = [System.Collections.Generic.List[string]]::new()
+        foreach ($ak in $script:bcMixinArea.Keys) { if ($f.MixinAreas.Contains($ak)) { [void]$ordered.Add($ak) } }
+        $f.MixinAreas = $ordered
     }
     if ($names -gt 0)    { $f.ObfNameRatio = [double]$short / [double]$names }
     if ($totalStr -gt 0) { $f.StrReadableRatio = [double]$readable / [double]$totalStr }

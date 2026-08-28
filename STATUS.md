@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (192), `test_bytecode.py` (198), `test_session.py` (27), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (35), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (258), `test_session.py` (27), `test_memory.py` (9), `test_autoscan.py` (16), `test_report.py` (46), `test_selftest_cases.py` (34, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -109,6 +109,33 @@ Proven: `ml/test_session.py` 27/27; live backend test learned a novel whole-scan
 - **`$script:ScanGaps`** records everything that could not be checked (no admin, game closed, idle installs skipped, memory budget hit, unreadable folder) and prints it with the verdict.
 - Mirrored + pinned in `ml/test_autoscan.py` (16 cases), including that escalation changes only search breadth.
 
+## Bypassing the symbol table — the two holes, both closed
+The behaviour rules read each class's **constant pool symbol table**: to call a
+Minecraft method you must name it there. Twice now that turned out to be avoidable,
+and both times the fix was the same shape — read the vocabulary out of the string
+constants too, under a gate narrow enough that ordinary code cannot trip it.
+
+1. **Reflection.** `Class.forName("net.minecraft…")` + `getDeclaredMethod("setYRot")`
+   moves every API name into strings. Measured before the fix: an aim cheat rewritten
+   that way scored **Clean 3/100** — one refactor, all twelve rules blind. Gate: the
+   class must actually reflect. Reported as *hiding*, because no ordinary mod does it.
+2. **Mixins** (`$script:bcMixinApi`, `$script:bcMixinPacketApi`, `$script:bcMixinArea`).
+   A mixin does not call the game — the loader compiles it *into* a game class, and the
+   target is an **annotation value**: a string. Silent rotations mix into
+   `ServerboundMovePlayerPacket`, shadow `yRot` and overwrite it; through the symbol
+   table that class calls nothing. Gate: the class must be a mixin. **Not** reported as
+   hiding — every Fabric mod is mixins. The bare shadow-field names (`yRot`/`xRot`) are
+   narrower still: they only count for a mixin that targets an outgoing **move packet**,
+   because a camera or freelook mod shadows the same fields and mixes into the *player*.
+   `ml/corpus_src/clean/MixinFreelook.java` exists purely to fail if that stops holding.
+   `*.mixins.json` is read as well: a jar declaring mixins the reader could not parse is
+   recorded as a **coverage gap**, not reported clean.
+
+Measured after both: **0 false flags on 179 real libraries**, all mixin cheat variants
+caught, all 11 legit mixin variants clean. Parity between `ml/bytecode.py` and the four
+PowerShell tables is machine-checked in `test_bytecode.py` — a silent drift there
+reopens the hole.
+
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
 - **CI owns both generated files.** Run the benchmark locally as much as you like, but do NOT commit the regenerated files - the bot writes them on every push to main, and committing your own copy produces a merge conflict every time (it already did once). If you do hit that conflict: resolve it by regenerating rather than hand-editing, and for the history take the UNION of both sides keyed by commit.
@@ -121,7 +148,7 @@ Proven: `ml/test_session.py` 27/27; live backend test learned a novel whole-scan
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **42/42**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **69/69**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

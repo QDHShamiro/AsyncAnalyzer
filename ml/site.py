@@ -440,6 +440,20 @@ def build_doc(m, c):
     detection.</li>
     <li><b>Instrumentation vs. injection.</b> Plenty of real libraries attach to a running
     JVM &mdash; that is their job. A jar sitting in a mods folder doing it is not.</li>
+    <li><b>Calling the game vs. being compiled into it.</b> A <b>Mixin</b> does not call
+    Minecraft; the loader compiles it <em>into</em> a Minecraft class, and it names its
+    target in an annotation instead of calling it. So the target never reaches the symbol
+    table: silent rotations mix into the packet that reports where you are looking and
+    overwrite its rotation fields, and read through the symbol table that class calls
+    nothing at all. The same vocabulary is read out of the annotation. Mixins themselves
+    are never the finding &mdash; ordinary Fabric mods are built out of nothing else &mdash;
+    the <em>target</em> is: a camera mod mixes into the player, a cheat into the packet.</li>
+    <li><b>Naming the API vs. hiding it.</b> The same hole exists for reflection.
+    <span class="mono">Class.forName("net.minecraft&hellip;")</span> plus
+    <span class="mono">getDeclaredMethod("setYRot")</span> moves every API name out of the
+    symbol table and into string constants. Measured before it was closed: an aim cheat
+    rewritten that way scored <b>Clean, 3/100</b>. Strings are read too now, and unlike a
+    mixin, hiding which API you call is itself written into the report.</li>
   </ul>
 </section>
 
