@@ -40,7 +40,13 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
   - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_logscan.py` (29, log evidence + pre-filter + PS parity), `test_instscan.py` (31, launcher profiles / packs / config folders + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
-- `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
+- `server/` — the public product on one Cloudflare Worker: `worker.js` (router + API), `auth.js`
+  (sessions, passwords, OAuth, mail), `tenancy.js` (users, servers, ranks), `schema.sql`,
+  `wrangler.toml`, `README.md`. The Node copy of the API and its parity test are gone: once the
+  Worker grew accounts they could only drift.
+- `site/` — everything the browser sees. `index.html`, `how-it-works.html` and `benchmarks.html`
+  are generated (`ml/site.py`, `ml/benchmark.py`); the login, application, dashboard and admin
+  pages are plain files. One stylesheet, one runtime module, no framework and no build step.
 
 ## AI / verdict (how it decides)
 - 22 numeric features per jar (package paths, class-name obfuscation %, entropy, reflection, http/runtime, sigs, verified/legit…).

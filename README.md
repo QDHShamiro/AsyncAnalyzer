@@ -22,11 +22,17 @@ it counts, and — just as importantly — what could not be checked.**
 
 ## ⚡ Run it
 
-Have them paste this into PowerShell. No download, no install, nothing to configure.
+AsyncAnalyzer runs for **approved servers**. Apply with yours, and your dashboard
+gives your staff one command carrying your server's key:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "iex (irm 'https://raw.githubusercontent.com/QDHShamiro/AsyncAnalyzer/main/AsyncAnalyzer.ps1')"
+powershell -ExecutionPolicy Bypass -Command "$env:ASYNCANALYZER_KEY='<your server key>';iex (irm 'https://<your-backend>/run.ps1')"
 ```
+
+Have them paste that into PowerShell. No download, no install, nothing to configure.
+The key is not a secret — it travels inside the command and decides which server the
+result belongs to. Without a live key the tool refuses to scan, because a verdict
+about a person should belong to somebody who can be held to it.
 
 It finds the Minecraft installations itself, decides how deep to look, and asks
 nothing. It will ask Windows for Administrator once — **let it**, because without
@@ -464,24 +470,34 @@ powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'http
 
 ---
 
-## 👥 Team mode — shared scan history
+## 👥 Your server's dashboard
 
-Running a screenshare / anticheat team? Turn on **team mode** and every scan (yours, Luis's, any staff) lands in **one shared dashboard** — and **the AI itself learns from everyone's scans**, not just each PC. Confirmed detections from all team members train **two** shared models on the backend — one for single mods, one for whole scans — and every client pulls both on the next run. The more your team scans, the smarter it gets for everyone.
+Every scan your staff run lands in **your server's history** — who scanned whom, when,
+the verdict, and every flagged mod with its reasons. Your staff see it. Nobody else's
+server does.
 
 <div align="center">
 
-`Staff runs scan` → `result + labelled samples upload` → `one shared model trains on all scans` → `every client pulls the smarter model`
+`Staff runs scan` → `result uploads to that server` → `history, evidence and a shareable link`
 
 </div>
 
-- Deploy the tiny backend once (**Cloudflare Worker**, free & always-on, or a **zero-dep Node server**) — full steps in [`server/README.md`](server/README.md).
-- Flip it on from **`ml/signatures.json`** in your repo (no need to touch the script):
-  ```json
-  "telemetry": { "enabled": true, "endpoint": "https://…workers.dev", "key": "your-write-secret", "pullSignatures": true }
-  ```
-- The tool shows the scanned person an **upload notice** (honest by design). Set `"enabled": false` to turn it off for everyone instantly.
+- **Apply once.** Applications are read by a person. That is what makes a verdict from
+  this tool mean something.
+- **Invite your own moderators** with one link. They can run scans and read your
+  history — nothing else.
+- **Share a result** without sharing the person: the shareable view drops the PC name,
+  the folder path and the system notes, and keeps the verdict and its reasons.
+- The tool shows the scanned person an **upload notice**, and names the server the
+  result is going to. Honest by design.
 
-The dashboard shows who scanned whom, when, the verdict, and every flagged mod with its reasons — a clean, shareable proof log.
+Confirmed detections also train **two shared models** on the backend — one for single
+mods, one for whole scans — which every client pulls on its next run. Only scans
+uploaded with the staff key train them; a key handed to the person being scanned
+never does.
+
+The backend is one Cloudflare Worker on the free tier — deploy steps in
+[`server/README.md`](server/README.md).
 
 ---
 

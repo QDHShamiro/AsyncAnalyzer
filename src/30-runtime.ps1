@@ -448,6 +448,56 @@ function Write-SessionCard($v, $raw) {
     Write-Host ""
 }
 
+# The gate. A copy without a live server key does not scan.
+#
+# The key is not a secret - it travels inside the command the suspect runs, and it
+# is meant to. What it decides is which approved server a scan belongs to, and a
+# copy that belongs to no server has nobody to be accountable to for the verdict
+# it prints about somebody.
+#
+# The scanner is open source, so this is a gate and not a lock: anyone determined
+# can delete these lines. That is fine. It stops the tool being pointed at people
+# by nobody in particular, which is what it is for.
+function Test-ServerKey {
+    $key = if ($env:ASYNCANALYZER_KEY) { [string]$env:ASYNCANALYZER_KEY } else { "" }
+    $endpoint = if ($env:ASYNCANALYZER_ENDPOINT) { [string]$env:ASYNCANALYZER_ENDPOINT } else { $script:HomeEndpoint }
+    $endpoint = ([string]$endpoint).TrimEnd('/')
+
+    if (-not $key) {
+        W "  This copy is not linked to a server." Red
+        W "  Ask the moderator running the screenshare for their server's command $([char]0x2014) it" DarkGray
+        W "  carries the key that decides where the result goes. Server owners get theirs" DarkGray
+        W "  from $endpoint" DarkGray
+        Write-Host ""
+        return $false
+    }
+
+    try {
+        $r = Invoke-RestMethod -Uri "$endpoint/api/verify?key=$([uri]::EscapeDataString($key))" -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+    } catch {
+        # A network that cannot reach the backend also cannot receive the result,
+        # so there is nothing to be gained by scanning anyway - and saying which
+        # of the two failed is the difference between a fixable problem and a
+        # mystery.
+        W "  Could not reach $endpoint to check this copy's key." Red
+        W "  Check the connection and run it again." DarkGray
+        Write-Host ""
+        return $false
+    }
+    if (-not $r.ok) {
+        W "  This key is not valid: $($r.error)" Red
+        W "  Get a fresh command from $endpoint" DarkGray
+        Write-Host ""
+        return $false
+    }
+
+    $script:ServerName = if ($r.server -and $r.server.name) { [string]$r.server.name } else { "" }
+    # Telemetry is not optional once a key is in play: the whole point of the key
+    # is that the result lands in that server's history.
+    $script:Telemetry = @{ enabled = $true; endpoint = $endpoint; key = $key; pullSignatures = $true }
+    return $true
+}
+
 function Invoke-CloudUpdate {
     if ($script:NoUpdate) { return }
     try {
@@ -510,7 +560,10 @@ function Invoke-CloudUpdate {
             }
             if ($added) { Build-PatternRegex }
         }
-        if ($s.telemetry -and -not $env:ASYNCANALYZER_ENDPOINT) { $script:Telemetry = $s.telemetry }
+        # Test-ServerKey has already set this from the key the run was started with,
+        # and that one is verified. A block in signatures.json is only a fallback for
+        # a copy that somehow got this far without one.
+        if ($s.telemetry -and -not $script:Telemetry) { $script:Telemetry = $s.telemetry }
     } catch {}
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.pullSignatures -and $script:Telemetry.endpoint) {

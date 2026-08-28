@@ -1,6 +1,20 @@
 if ($SelfTest) { Invoke-SelfTest; return }
 if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
+# Before anything else, and before asking Windows for Administrator: a copy that
+# belongs to no server is refused, and there is no reason to put a UAC prompt in
+# front of somebody first.
+#
+# Set ASYNCANALYZER_ENDPOINT to point a run at your own backend (self-hosting, local
+# development). Without it the key is checked against the one this build belongs to.
+if (-not (Test-ServerKey)) { return }
+if ($script:ServerName) {
+    W "  Scanning for " DarkGray -NoNewline
+    W "$($script:ServerName)" Cyan -NoNewline
+    W " $([char]0x2014) the result goes to that server's history, and nowhere else." DarkGray
+    Write-Host ""
+}
+
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
 [void](Set-AutoDepth)
 if (-not (Test-IsAdmin)) {
@@ -16,7 +30,9 @@ if ($script:ScanCode) {
 Write-Host ""
 W "  What this tool does $([char]0x2014) and does not do:" Cyan
 W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green
-W "    $([char]0x2713) Runs fully on your PC. It never uploads your files or your data." Green
+W "    $([char]0x2713) The analysis runs fully on your PC. Your files never leave it." Green
+W "    $([char]0x2139) The RESULT $([char]0x2014) mod names, hashes and the verdict $([char]0x2014) is sent to the" DarkGray
+W "      server whose moderator gave you this command. Nothing else is." DarkGray
 W "    $([char]0x2713) Network use is limited to looking mods up by hash on Modrinth /" DarkGray
 W "      CurseForge / Megabase $([char]0x2014) only the file hash is sent, never the file." DarkGray
 W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud, no key)." Green
@@ -52,10 +68,6 @@ W ("$([char]0x2501)" * 76) DarkCyan
 Write-Host ""
 
 Load-LearnState
-# Self-hosters / testing: point the tool at your own backend without publishing the key.
-if ($env:ASYNCANALYZER_ENDPOINT) {
-    $script:Telemetry = @{ enabled = $true; endpoint = $env:ASYNCANALYZER_ENDPOINT; key = $env:ASYNCANALYZER_KEY; pullSignatures = $true }
-}
 Invoke-CloudUpdate
 if ($script:mlSamples -gt 0 -or $script:knownGoodHashes.Count -gt 0 -or $script:knownCheatHashes.Count -gt 0) {
     W "  $([char]0x25CF) AI memory: " DarkGray -NoNewline

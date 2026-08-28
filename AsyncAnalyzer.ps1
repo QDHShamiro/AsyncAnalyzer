@@ -92,6 +92,12 @@ $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
 $script:Telemetry    = $null
+# Where a copy of this tool belongs. A scan is a judgement about a person, so it
+# is made for a server that was let in by hand and not by whoever downloaded the
+# file - the key in the command decides which one. Overridden by
+# ASYNCANALYZER_ENDPOINT for local development and self-hosting.
+$script:HomeEndpoint = "https://asyncanalyzer.qdhshamiro.workers.dev"
+$script:ServerName   = $null
 $script:CurseForgeApiKey = if ($env:CURSEFORGE_API_KEY) { $env:CURSEFORGE_API_KEY } else { "" }
 # Qualified as $script: on purpose. Invoke-JarAnalysis adds to these from inside
 # a function, as $script:verifiedMods, and an UNQUALIFIED assignment here only
@@ -1396,6 +1402,56 @@ function Write-SessionCard($v, $raw) {
     Write-Host ""
 }
 
+# The gate. A copy without a live server key does not scan.
+#
+# The key is not a secret - it travels inside the command the suspect runs, and it
+# is meant to. What it decides is which approved server a scan belongs to, and a
+# copy that belongs to no server has nobody to be accountable to for the verdict
+# it prints about somebody.
+#
+# The scanner is open source, so this is a gate and not a lock: anyone determined
+# can delete these lines. That is fine. It stops the tool being pointed at people
+# by nobody in particular, which is what it is for.
+function Test-ServerKey {
+    $key = if ($env:ASYNCANALYZER_KEY) { [string]$env:ASYNCANALYZER_KEY } else { "" }
+    $endpoint = if ($env:ASYNCANALYZER_ENDPOINT) { [string]$env:ASYNCANALYZER_ENDPOINT } else { $script:HomeEndpoint }
+    $endpoint = ([string]$endpoint).TrimEnd('/')
+
+    if (-not $key) {
+        W "  This copy is not linked to a server." Red
+        W "  Ask the moderator running the screenshare for their server's command $([char]0x2014) it" DarkGray
+        W "  carries the key that decides where the result goes. Server owners get theirs" DarkGray
+        W "  from $endpoint" DarkGray
+        Write-Host ""
+        return $false
+    }
+
+    try {
+        $r = Invoke-RestMethod -Uri "$endpoint/api/verify?key=$([uri]::EscapeDataString($key))" -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+    } catch {
+        # A network that cannot reach the backend also cannot receive the result,
+        # so there is nothing to be gained by scanning anyway - and saying which
+        # of the two failed is the difference between a fixable problem and a
+        # mystery.
+        W "  Could not reach $endpoint to check this copy's key." Red
+        W "  Check the connection and run it again." DarkGray
+        Write-Host ""
+        return $false
+    }
+    if (-not $r.ok) {
+        W "  This key is not valid: $($r.error)" Red
+        W "  Get a fresh command from $endpoint" DarkGray
+        Write-Host ""
+        return $false
+    }
+
+    $script:ServerName = if ($r.server -and $r.server.name) { [string]$r.server.name } else { "" }
+    # Telemetry is not optional once a key is in play: the whole point of the key
+    # is that the result lands in that server's history.
+    $script:Telemetry = @{ enabled = $true; endpoint = $endpoint; key = $key; pullSignatures = $true }
+    return $true
+}
+
 function Invoke-CloudUpdate {
     if ($script:NoUpdate) { return }
     try {
@@ -1458,7 +1514,10 @@ function Invoke-CloudUpdate {
             }
             if ($added) { Build-PatternRegex }
         }
-        if ($s.telemetry -and -not $env:ASYNCANALYZER_ENDPOINT) { $script:Telemetry = $s.telemetry }
+        # Test-ServerKey has already set this from the key the run was started with,
+        # and that one is verified. A block in signatures.json is only a fallback for
+        # a copy that somehow got this far without one.
+        if ($s.telemetry -and -not $script:Telemetry) { $script:Telemetry = $s.telemetry }
     } catch {}
 
     if ($script:Telemetry -and $script:Telemetry.enabled -and $script:Telemetry.pullSignatures -and $script:Telemetry.endpoint) {
@@ -8492,6 +8551,20 @@ if (-not $SkipMemoryCheck) {
 if ($SelfTest) { Invoke-SelfTest; return }
 if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
+# Before anything else, and before asking Windows for Administrator: a copy that
+# belongs to no server is refused, and there is no reason to put a UAC prompt in
+# front of somebody first.
+#
+# Set ASYNCANALYZER_ENDPOINT to point a run at your own backend (self-hosting, local
+# development). Without it the key is checked against the one this build belongs to.
+if (-not (Test-ServerKey)) { return }
+if ($script:ServerName) {
+    W "  Scanning for " DarkGray -NoNewline
+    W "$($script:ServerName)" Cyan -NoNewline
+    W " $([char]0x2014) the result goes to that server's history, and nowhere else." DarkGray
+    Write-Host ""
+}
+
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
 [void](Set-AutoDepth)
 if (-not (Test-IsAdmin)) {
@@ -8507,7 +8580,9 @@ if ($script:ScanCode) {
 Write-Host ""
 W "  What this tool does $([char]0x2014) and does not do:" Cyan
 W "    $([char]0x2713) Read-only. It never changes, deletes, or quarantines your files." Green
-W "    $([char]0x2713) Runs fully on your PC. It never uploads your files or your data." Green
+W "    $([char]0x2713) The analysis runs fully on your PC. Your files never leave it." Green
+W "    $([char]0x2139) The RESULT $([char]0x2014) mod names, hashes and the verdict $([char]0x2014) is sent to the" DarkGray
+W "      server whose moderator gave you this command. Nothing else is." DarkGray
 W "    $([char]0x2713) Network use is limited to looking mods up by hash on Modrinth /" DarkGray
 W "      CurseForge / Megabase $([char]0x2014) only the file hash is sent, never the file." DarkGray
 W "    $([char]0x2713) The cheat verdict is scored by a local AI model (no cloud, no key)." Green
@@ -8543,10 +8618,6 @@ W ("$([char]0x2501)" * 76) DarkCyan
 Write-Host ""
 
 Load-LearnState
-# Self-hosters / testing: point the tool at your own backend without publishing the key.
-if ($env:ASYNCANALYZER_ENDPOINT) {
-    $script:Telemetry = @{ enabled = $true; endpoint = $env:ASYNCANALYZER_ENDPOINT; key = $env:ASYNCANALYZER_KEY; pullSignatures = $true }
-}
 Invoke-CloudUpdate
 if ($script:mlSamples -gt 0 -or $script:knownGoodHashes.Count -gt 0 -or $script:knownCheatHashes.Count -gt 0) {
     W "  $([char]0x25CF) AI memory: " DarkGray -NoNewline
