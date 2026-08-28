@@ -9,7 +9,10 @@ able to quietly report "clean" for a check it skipped.
 
 Run:  python3 test_autoscan.py
 """
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 passed = failed = 0
 
@@ -88,8 +91,62 @@ def scan_targets(installs, configured, explicit_path=None):
     return targets, gaps
 
 
+# ---------------------------------------------------------------------------
+# The bug this closes: every launcher root the discovery knows is anchored to
+# %APPDATA% / %LOCALAPPDATA% / %USERPROFILE%, all on C:. With two instances
+# open under E:\ModrinthApp\profiles\, the scan printed "Nothing open" and fell
+# back to C:\Users\...\.minecraft\mods - which was not the install being played.
+MODRINTH_A = (r'"E:\ModrinthApp\meta\java\bin\javaw.exe" -Xmx4G '
+              r'-Djava.library.path=E:\ModrinthApp\meta\natives\1.21 '
+              r'net.minecraft.client.main.Main --username X '
+              r'--gameDir "E:\ModrinthApp\profiles\Cheats test" '
+              r'--assetsDir E:\ModrinthApp\meta\assets')
+MODRINTH_B = (r'javaw.exe -cp E:\ModrinthApp\profiles\1.21.11\mods\sodium.jar;lib.jar '
+              r'net.minecraft.client.main.Main --gameDir E:\ModrinthApp\profiles\1.21.11')
+VANILLA = (r'"C:\Program Files\Java\bin\javaw.exe" -Xmx2G net.minecraft.client.main.Main '
+           r'--gameDir C:\Users\s\AppData\Roaming\.minecraft')
+PRISM = r'javaw.exe --gameDir=D:\PrismLauncher\instances\1.8.9\.minecraft'
+
+
+def running_instance_cases():
+    """(label, got, want) for the running-instance reader."""
+    import autoscan as A
+    dirs = A.running_game_dirs([MODRINTH_A, MODRINTH_B])
+    yield ("both open instances are found",
+           [d for d in dirs if "profiles" in d],
+           [r"E:\ModrinthApp\profiles\Cheats test", r"E:\ModrinthApp\profiles\1.21.11"])
+    yield ("a path with a space survives",
+           r"E:\ModrinthApp\profiles\Cheats test" in dirs, True)
+    yield ("the classpath alone names an instance",
+           r"E:\ModrinthApp\profiles\1.21.11" in A.running_game_dirs([MODRINTH_B]), True)
+    yield ("--gameDir= with an equals sign works too",
+           A.running_game_dirs([PRISM]), [r"D:\PrismLauncher\instances\1.8.9\.minecraft"])
+    yield ("vanilla on C: is still found",
+           A.running_game_dirs([VANILLA]), [r"C:\Users\s\AppData\Roaming\.minecraft"])
+    yield ("nothing running yields nothing", A.running_game_dirs(["", None]), [])
+    # The natives path is a fallback, and in Modrinth's layout it points at
+    # meta\natives rather than at the profile. It is a CANDIDATE: the caller
+    # keeps only directories that really contain a mods folder.
+    yield ("the natives fallback is only a candidate",
+           r"E:\ModrinthApp\meta\natives" in dirs, True)
+    # A running instance means its siblings are instances too - and the one that
+    # is NOT open is exactly where a jar gets parked while the open one is watched.
+    yield ("siblings of a profile are found",
+           A.sibling_instances(r"E:\ModrinthApp\profiles\Cheats test"),
+           r"E:\ModrinthApp\profiles")
+    yield ("...and of an instances folder",
+           A.sibling_instances(r"D:\PrismLauncher\instances\1.8.9"),
+           r"D:\PrismLauncher\instances")
+    yield ("vanilla stands alone",
+           A.sibling_instances(r"C:\Users\s\AppData\Roaming\.minecraft"), "")
+
+
 def main():
-    print("=== Depth decided without any flag ===")
+    print("=== Finding the instances that are actually OPEN ===")
+    for label, got, want in running_instance_cases():
+        check(label, got, want)
+
+    print("\n=== Depth decided without any flag ===")
     check("game running -> full depth", auto_depth(True)["deep"], True)
     check("game running -> all classes parsed", auto_depth(True)["bc_classes"], 400)
     check("game closed -> quick", auto_depth(False)["deep"], False)

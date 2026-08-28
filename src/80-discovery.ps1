@@ -54,6 +54,53 @@ function Find-AltClientModDirs([string]$Root, [int]$MaxDepth = 4) {
     return $out
 }
 
+# --gameDir "E:\ModrinthApp\profiles\Cheats test"  or  --gameDir E:\mc\inst
+# The natives path and a classpath jar under \mods\ name the same install, and
+# are used when --gameDir is absent. Mirrors running_game_dirs in ml/autoscan.py.
+function Get-RunningGameDirs {
+    $out = [System.Collections.Generic.List[string]]::new()
+    $pats = @(
+        @{ Rx = '(?i)--gameDir(?:\s+|=)(?:"([^"]+)"|([^\s"]+))';           Trim = 0 },
+        @{ Rx = '(?i)([A-Za-z]:\\(?:[^\s";]+\\)?mods)\\[^\s";\\]+\.jar'; Trim = 1 },
+        @{ Rx = '(?i)-Djava\.library\.path=(?:"([^"]+)"|([^\s"]+))';       Trim = 1 }
+    )
+    foreach ($info in $script:javaProcessInfos) {
+        $cl = $info.CommandLine
+        if (-not $cl) { continue }
+        foreach ($p in $pats) {
+            foreach ($m in [regex]::Matches($cl, $p.Rx)) {
+                $v = ""
+                for ($g = 1; $g -lt $m.Groups.Count; $g++) { if ($m.Groups[$g].Success -and $m.Groups[$g].Value) { $v = $m.Groups[$g].Value; break } }
+                if (-not $v) { continue }
+                $v = $v.TrimEnd('\').Trim()
+                # \...\mods\x.jar -> the instance is the mods folder's parent;
+                # \...\natives\1.21 -> its parent as well.
+                if ($p.Trim -eq 1) {
+                    if ($v.LastIndexOf('\') -lt 3) { continue }
+                    $v = $v.Substring(0, $v.LastIndexOf('\'))
+                }
+                if ($v.Length -gt 3 -and -not $out.Contains($v)) { [void]$out.Add($v) }
+            }
+        }
+    }
+    return $out
+}
+
+# E:\ModrinthApp\profiles\1.21.11  ->  E:\ModrinthApp\profiles
+# A vanilla .minecraft stands alone and returns "".
+function Get-SiblingInstanceRoot([string]$GameDir) {
+    if (-not $GameDir -or $GameDir.LastIndexOf('\') -lt 3) { return "" }
+    $parent = $GameDir.Substring(0, $GameDir.LastIndexOf('\'))
+    # Split on the separator rather than using Path::GetFileName. That method
+    # uses the CURRENT platform's separator, so on anything but Windows it hands
+    # a backslash path straight back - which means this code could not be
+    # verified anywhere except Windows. Splitting explicitly behaves the same
+    # everywhere, and a Windows path always uses backslashes whoever reads it.
+    $leaf = ($parent -split '\\')[-1].ToLower()
+    if (@('profiles','instances','modpacks') -contains $leaf) { return $parent }
+    return ""
+}
+
 function Find-MinecraftModFolders {
     $runningJava = @(Get-Process javaw,java -ErrorAction SilentlyContinue)
 
@@ -95,6 +142,44 @@ function Find-MinecraftModFolders {
             if ($info.WorkingDir -and $info.WorkingDir.StartsWith($dirNorm, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         }
         return $false
+    }
+
+    # ---- where a RUNNING game actually is ---------------------------------
+    # Every launcher root below is anchored to %APPDATA%, %LOCALAPPDATA% or
+    # %USERPROFILE% - all on C:. An install on another drive cannot be found by
+    # that list at all: with two instances open under E:\ModrinthApp\profiles\,
+    # this printed "Nothing open" and fell back to C:\Users\...\.minecraft\mods,
+    # which was not the install being played.
+    #
+    # The running process carries the answer. Minecraft is launched with
+    # --gameDir, and the classpath and natives path name the same install. So
+    # ask the processes instead of guessing at locations. See ml/autoscan.py.
+    foreach ($gd in @(Get-RunningGameDirs)) {
+        $md = [System.IO.Path]::Combine($gd, "mods")
+        # A candidate only counts if it really holds a mods folder. The natives
+        # fallback in particular points at meta\natives in Modrinth's layout,
+        # which is not an instance.
+        if (-not [System.IO.Directory]::Exists($md)) { continue }
+        if (-not $seen.Add($md)) { continue }
+        $jars  = @([System.IO.Directory]::GetFiles($md, "*.jar"))
+        $lastW = if ($jars.Count -gt 0) { ($jars | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($md) }
+        [void]$results.Add([PSCustomObject]@{ Path=$md; Launcher="Running"; Instance=($gd -split '\\')[-1]; JarCount=$jars.Count; LastWrite=$lastW; IsRunning=$true })
+
+        # A running instance means its siblings are instances too - and the one
+        # that is NOT open is exactly where a jar gets parked while the open one
+        # is being watched.
+        $sib = Get-SiblingInstanceRoot $gd
+        if (-not $sib) { continue }
+        foreach ($other in @([System.IO.Directory]::GetDirectories($sib) | Select-Object -First 60)) {
+            foreach ($cand in @([System.IO.Path]::Combine($other, "mods"),
+                                [System.IO.Path]::Combine($other, ".minecraft", "mods"))) {
+                if (-not [System.IO.Directory]::Exists($cand)) { continue }
+                if (-not $seen.Add($cand)) { continue }
+                $j = @([System.IO.Directory]::GetFiles($cand, "*.jar"))
+                $lw = if ($j.Count -gt 0) { ($j | ForEach-Object { [System.IO.File]::GetLastWriteTime($_) } | Sort-Object -Descending | Select-Object -First 1) } else { [System.IO.Directory]::GetLastWriteTime($cand) }
+                [void]$results.Add([PSCustomObject]@{ Path=$cand; Launcher="Beside a running instance"; Instance=($other -split '\\')[-1]; JarCount=$j.Count; LastWrite=$lw; IsRunning=(IsJavaRunningIn $other) })
+            }
+        }
     }
 
     $directMods = @(
