@@ -572,6 +572,11 @@ $script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System
 # for a check it silently skipped, so every limitation is collected and shown with
 # the verdict instead of being swallowed.
 $script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
+# Jars that ran on this PC and are gone now, from BOTH sources: the BAM registry
+# (needs admin, sees executables) and the live JVM's own record of what it loaded
+# (needs no admin, sees mods). One set rather than two counters, because the two
+# sources overlap and because whichever ran last used to overwrite the other.
+$script:DeletedJarPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:ScanTargets = @()
 $script:NoElevate   = [bool]$NoElevate
 $script:Escalated   = $false

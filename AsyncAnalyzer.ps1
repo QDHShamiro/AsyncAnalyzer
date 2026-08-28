@@ -689,6 +689,11 @@ $script:DiskPackages = [System.Collections.Generic.HashSet[string]]::new([System
 # for a check it silently skipped, so every limitation is collected and shown with
 # the verdict instead of being swallowed.
 $script:ScanGaps    = [System.Collections.Generic.List[string]]::new()
+# Jars that ran on this PC and are gone now, from BOTH sources: the BAM registry
+# (needs admin, sees executables) and the live JVM's own record of what it loaded
+# (needs no admin, sees mods). One set rather than two counters, because the two
+# sources overlap and because whichever ran last used to overwrite the other.
+$script:DeletedJarPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:ScanTargets = @()
 $script:NoElevate   = [bool]$NoElevate
 $script:Escalated   = $false
@@ -4744,6 +4749,45 @@ function New-JvmScanResult {
     }
 }
 
+# A running JVM keeps the URL of every jar it loaded, as a plain string, in its
+# own memory. That record is not a file, so deleting the jar does not remove it -
+# which makes it the one place a screenshare can still see a mod that was wiped
+# thirty seconds before the call. It also names folders the file scan never
+# visited, so the live game can say where else to look.
+function Resolve-JarUrl([string]$Url) {
+    # file:/C:/Users/... , file:///C:/... , jar:file:/C:/...!/foo - all reduce to
+    # a Windows path. Percent-escapes have to be undone or a player whose name is
+    # "Muller" spelled with an umlaut looks like a deleted file.
+    try {
+        $m = [regex]::Match($Url, '(?i)file:/{1,3}([A-Za-z]:[/\\][^\s"''<>|*?\r\n]{0,300}?\.jar)')
+        if (-not $m.Success) { return $null }
+        $p = [System.Uri]::UnescapeDataString($m.Groups[1].Value)
+        $p = $p -replace '/', '\'
+        while ($p -match '\\\\') { $p = $p -replace '\\\\', '\' }
+        if ($p.Length -lt 6) { return $null }
+        return $p
+    } catch { return $null }
+}
+
+# Places a launcher does not put mods. Not proof of anything - a Note - but no
+# launcher on earth loads a mod out of the Downloads folder.
+$script:jarOddDirs = @('\temp\', '\tmp\', '\downloads\', '\desktop\', '\recycle')
+
+function Test-OddJarLocation([string]$Path) {
+    $lp = $Path.ToLower()
+    foreach ($d in $script:jarOddDirs) { if ($lp.Contains($d)) { return $true } }
+    return $false
+}
+
+function Test-ScannedDir([string]$Dir) {
+    $d = $Dir.TrimEnd('\').ToLower()
+    foreach ($t in $script:ScanTargetDirs) {
+        $td = ([string]$t).TrimEnd('\').ToLower()
+        if ($td -eq $d -or $d.StartsWith($td + '\')) { return $true }
+    }
+    return $false
+}
+
 function Run-JVMScan {
     $r = New-JvmScanResult
 
@@ -4876,6 +4920,10 @@ function Run-JVMScan {
                 $memRegex = [regex]::new("($memAlt)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                 $memHits = @{}
                 $scanLimit = 0
+                # Every jar URL the JVM is holding on to. Capped so a pathological
+                # heap cannot turn this into the thing that runs out of memory.
+                $jarUrls = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                $jarUrlRegex = [regex]::new('(?i)file:/{1,3}[A-Za-z]:[/\\][^\s"''<>|*?\r\n]{0,300}?\.jar')
                 # Coverage bookkeeping. The time budget stops the READING, not the
                 # walk: VirtualQueryEx costs nothing, so keep enumerating regions to
                 # the end of the address space and learn the real total. That turns
@@ -4906,6 +4954,16 @@ function Run-JVMScan {
                                 if (-not ([Win32.MemAPI]::ReadProcessMemory($handle, $rAddr, $buf, $take, [ref]$read)) -or $read -le 0) { break }
                                 $memRead += $read
                                 $str = [System.Text.Encoding]::ASCII.GetString($buf, 0, $read)
+                                # Pre-filter: an ordinal IndexOf over a megabyte costs a
+                                # fraction of what a second regex pass would, and the time
+                                # budget is the thing that decides how much of the heap
+                                # gets looked at at all.
+                                if ($jarUrls.Count -lt 4000 -and $str.IndexOf('file:/', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                                    foreach ($um in $jarUrlRegex.Matches($str)) {
+                                        if ($jarUrls.Count -ge 4000) { break }
+                                        [void]$jarUrls.Add($um.Value)
+                                    }
+                                }
                                 foreach ($mm in $memRegex.Matches($str)) {
                                     $term = $mm.Groups[1].Value
                                     $key  = $term.ToLower()
@@ -4935,6 +4993,67 @@ function Run-JVMScan {
                     $pct = if ($memTotal -gt 0) { [Math]::Round(100.0 * $memRead / $memTotal, 1) } else { 0 }
                     $mb  = [Math]::Round($memTotal / 1MB)
                     $r.Gaps.Add("Live-memory check read $pct% of $mb MB in $where before its $memBudget s budget ran out $([char]0x2014) the rest was not looked at. Run with -Deep for a longer sweep.")
+                }
+
+                # -------------------------------------------------------------
+                # What the live game says it loaded, checked against what is on
+                # disk right now. Deliberately narrow: only jars under a mods
+                # folder are judged, because .minecraft\libraries is full of
+                # jars whose lifecycle belongs to the launcher, not the player.
+                # -------------------------------------------------------------
+                $missingMods = [System.Collections.Generic.List[string]]::new()
+                $oddMods     = [System.Collections.Generic.List[string]]::new()
+                $loadedDirs  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                $unsureMods  = 0
+                foreach ($u in $jarUrls) {
+                    $jp = Resolve-JarUrl $u
+                    if (-not $jp) { continue }
+                    $isMod = $jp.ToLower().Contains('\mods\')
+                    $exists = $false
+                    try { $exists = [System.IO.File]::Exists($jp) } catch {}
+                    if ($isMod) {
+                        if ($exists) {
+                            try { [void]$loadedDirs.Add([System.IO.Path]::GetDirectoryName($jp)) } catch {}
+                        } else {
+                            # Only claim a file is GONE if its folder is still
+                            # there. If the folder is missing too, the more likely
+                            # explanation is a path this code decoded wrongly or a
+                            # drive that is no longer plugged in - and an accusation
+                            # built on a decoding bug is exactly what must not ship.
+                            $parentOk = $false
+                            try { $parentOk = [System.IO.Directory]::Exists([System.IO.Path]::GetDirectoryName($jp)) } catch {}
+                            # Every launcher worth the name turns a mod off by
+                            # renaming it to .jar.disabled. The jar the running
+                            # game loaded is then "missing" without anything
+                            # having been wiped, so look for the twin first.
+                            $disabled = $false
+                            try { $disabled = [System.IO.File]::Exists($jp + '.disabled') } catch {}
+                            if ($disabled) {
+                                $oddMods.Add("$jp $([char]0x2014) turned off (renamed to .disabled) while the game had it loaded")
+                            } elseif ($parentOk) { $missingMods.Add($jp) } else { $unsureMods++ }
+                        }
+                    } elseif ($exists -and (Test-OddJarLocation $jp)) {
+                        $oddMods.Add("$jp $([char]0x2014) loaded from a folder no launcher keeps mods in. Installers and dev setups do use these paths, so read the file name before drawing a conclusion.")
+                    }
+                }
+                foreach ($mp in $missingMods) {
+                    [void]$script:DeletedJarPaths.Add($mp)
+                    $r.Findings.Add("Mod loaded, then deleted while the game ran: $mp $([char]0x2014) $where is still running with this jar loaded, and the file is no longer on disk. The game's own memory still holds where it came from, which is why deleting it did not remove the trace.")
+                }
+                $script:Evidence.DeletedJars = $script:DeletedJarPaths.Count
+                foreach ($op in $oddMods) {
+                    $r.Notes.Add("Jar the running game loaded: $op")
+                }
+                if ($unsureMods -gt 0) {
+                    $r.Gaps.Add("$unsureMods jar path(s) from $where could not be checked against the disk $([char]0x2014) their folder no longer exists, so whether the file is missing could not be decided either way.")
+                }
+                # The live game names the folders it is actually reading. Anything
+                # in that list the file scan never opened is a hole in THIS scan,
+                # and saying so is the difference between "clean" and "I looked".
+                foreach ($ld in $loadedDirs) {
+                    if (-not (Test-ScannedDir $ld)) {
+                        $r.Gaps.Add("The running game is loading mods from $ld, which this scan did not look at $([char]0x2014) re-run with -Path '$ld' to include it.")
+                    }
                 }
 
                 # Report WHAT was found, WHERE, and whether it is a cheat.
@@ -5998,7 +6117,10 @@ function Run-BamScan {
     $script:BamDeleted = @($deletedEntries)
     # .jar specifically: a mod that ran on this PC and is now gone is a much sharper
     # signal than any deleted .exe, so the session AI scores it separately.
-    $script:Evidence.DeletedJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' }).Count
+    foreach ($de in @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' })) {
+        [void]$script:DeletedJarPaths.Add([string]$de.Path)
+    }
+    $script:Evidence.DeletedJars = $script:DeletedJarPaths.Count
     if ($deletedEntries.Count -gt 0) {
         $delJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' })
         $lvl = if ($delJars.Count -gt 0) { "FAIL" } else { "WARN" }

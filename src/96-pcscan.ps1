@@ -371,7 +371,10 @@ function Run-BamScan {
     $script:BamDeleted = @($deletedEntries)
     # .jar specifically: a mod that ran on this PC and is now gone is a much sharper
     # signal than any deleted .exe, so the session AI scores it separately.
-    $script:Evidence.DeletedJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' }).Count
+    foreach ($de in @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' })) {
+        [void]$script:DeletedJarPaths.Add([string]$de.Path)
+    }
+    $script:Evidence.DeletedJars = $script:DeletedJarPaths.Count
     if ($deletedEntries.Count -gt 0) {
         $delJars = @($deletedEntries | Where-Object { $_.FileName -match '\.jar$' })
         $lvl = if ($delJars.Count -gt 0) { "FAIL" } else { "WARN" }

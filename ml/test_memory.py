@@ -97,6 +97,105 @@ JVM_CASES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# What the live game says it loaded, checked against what is on disk now.
+#
+# A running JVM keeps the URL of every jar it opened as a plain string in its own
+# memory. That record is not a file, so deleting the jar does not delete it - it
+# is the one place a screenshare can still see a mod that was wiped a minute
+# before the call, and it needs no administrator rights, unlike the BAM registry.
+#
+# Mirrors Resolve-JarUrl / Test-OddJarLocation / Test-ScannedDir in src/90-jvm.ps1.
+# ---------------------------------------------------------------------------
+_JAR_URL = re.compile(r"(?i)file:/{1,3}([A-Za-z]:[/\\][^\s\"'<>|*?\r\n]{0,300}?\.jar)")
+
+ODD_DIRS = ("\\temp\\", "\\tmp\\", "\\downloads\\", "\\desktop\\", "\\recycle")
+
+
+def resolve_jar_url(url):
+    """file:/C:/... , file:///C:/... , jar:file:/C:/...!/x  ->  a Windows path."""
+    m = _JAR_URL.search(url)
+    if not m:
+        return None
+    from urllib.parse import unquote
+    p = unquote(m.group(1)).replace("/", "\\")
+    while "\\\\" in p:
+        p = p.replace("\\\\", "\\")
+    return p if len(p) >= 6 else None
+
+
+def odd_jar_location(path):
+    lp = path.lower()
+    return any(d in lp for d in ODD_DIRS)
+
+
+def scanned_dir(directory, scan_targets):
+    d = directory.rstrip("\\").lower()
+    for t in scan_targets:
+        td = t.rstrip("\\").lower()
+        if d == td or d.startswith(td + "\\"):
+            return True
+    return False
+
+
+def classify_jar(path, on_disk, parent_on_disk, disabled_twin=False):
+    """finding / note / gap / None for one jar the live game loaded."""
+    if "\\mods\\" in path.lower():
+        if on_disk:
+            return None                       # normal: it is where it should be
+        # Every launcher turns a mod off by renaming it to .jar.disabled, so the
+        # jar the running game loaded goes "missing" with nothing wiped.
+        if disabled_twin:
+            return NOTE
+        # Only claim a file is GONE if its folder is still there. A missing folder
+        # more likely means this code decoded the path wrongly, or the drive was
+        # unplugged - and an accusation built on a decoding bug must not ship.
+        return FINDING if parent_on_disk else GAP
+    if on_disk and odd_jar_location(path):
+        return NOTE
+    return None                               # libraries, the JDK, launcher jars
+
+
+URL_CASES = [
+    ("file:/C:/Users/s/AppData/Roaming/.minecraft/mods/sodium.jar",
+     "C:\\Users\\s\\AppData\\Roaming\\.minecraft\\mods\\sodium.jar", "plain file: URL"),
+    ("jar:file:///C:/mc/mods/jei.jar!/META-INF/MANIFEST.MF",
+     "C:\\mc\\mods\\jei.jar", "nested jar: URL, outer jar wins"),
+    ("file:/C:/Users/M%C3%BCller/mods/xaero.jar",
+     "C:\\Users\\M\u00fcller\\mods\\xaero.jar", "percent-escaped umlaut must decode"),
+    ("file:/C:/Program%20Files/Java/lib/rt.jar",
+     "C:\\Program Files\\Java\\lib\\rt.jar", "percent-escaped space"),
+    ("garbage \x00\x01 not a url at all", None, "heap noise is not a path"),
+    ("file:/mods/foo.jar", None, "no drive letter - not trusted"),
+]
+
+JAR_CASES = [
+    ("C:\\mc\\mods\\sodium.jar",            True,  True,  None,
+     "a mod that is where it should be"),
+    ("C:\\mc\\mods\\gzfjalsrvp.jar",        False, True,  FINDING,
+     "loaded by the running game, deleted since"),
+    ("C:\\mc\\mods\\sodium.jar",            False, True,  NOTE,
+     "turned off in the launcher (.jar.disabled twin), not wiped", True),
+    ("E:\\pack\\mods\\thing.jar",           False, False, GAP,
+     "folder gone too - decoding or an unplugged drive, not proof"),
+    ("C:\\Users\\s\\Downloads\\vape.jar",  True,  True,  NOTE,
+     "no launcher loads a mod from Downloads"),
+    ("C:\\Users\\s\\AppData\\Local\\Temp\\x.jar", True, True, NOTE,
+     "temp is where installers work - worth a look, not proof"),
+    ("C:\\mc\\libraries\\org\\ow2\\asm\\asm.jar", False, True, None,
+     "a library the launcher manages is not the player's business"),
+]
+
+SCANNED_CASES = [
+    ("C:\\mc\\mods", ["C:\\mc\\mods"], True, "exactly the folder that was scanned"),
+    ("C:\\mc\\mods\\1.20", ["C:\\mc\\mods"], True, "below a scanned folder"),
+    ("D:\\alt\\mods", ["C:\\mc\\mods"], False, "a second instance nobody looked at"),
+    ("C:\\mc\\mods", ["C:\\mc\\mods\\"], True, "trailing slash must not matter"),
+    ("C:\\MC\\Mods", ["c:\\mc\\mods"], True, "Windows paths are case-insensitive"),
+    ("C:\\mc\\modsold", ["C:\\mc\\mods"], False, "prefix match must not span a name"),
+]
+
+
 def jvm_inject_count(observations):
     """What Evidence.JvmInject is set to. Only findings count."""
     return sum(1 for k, kw in observations if classify_jvm(k, **kw) == FINDING)
@@ -163,6 +262,38 @@ def main():
     failed += not ok
     print("  [%s] injected loader + live client + slow sweep -> jvm_inject=%d (want 2)"
           % ("PASS" if ok else "FAIL", got))
+
+    print()
+    print("=== Jar URLs recovered from the live game's own memory ===")
+    for url, want, why in URL_CASES:
+        got = resolve_jar_url(url)
+        ok = got == want
+        passed += ok
+        failed += not ok
+        # repr(), not the raw string: the heap-noise case really does contain NUL
+        # bytes, and printing them makes grep call this test's output a binary file.
+        print("  [%s] %-54s -> %s" % ("PASS" if ok else "FAIL", repr(url)[:54], why))
+
+    print()
+    print("=== ...checked against what is on disk right now ===")
+    for case in JAR_CASES:
+        path, on_disk, parent, want, why = case[:5]
+        got = classify_jar(path, on_disk, parent, len(case) > 5 and case[5])
+        ok = got == want
+        passed += ok
+        failed += not ok
+        print("  [%s] %-44s -> %-8s %s" % (
+            "PASS" if ok else "FAIL", path[:44], got or "-", why))
+
+    print()
+    print("=== ...and which folders the scan never opened ===")
+    for d, targets, want, why in SCANNED_CASES:
+        got = scanned_dir(d, targets)
+        ok = got == want
+        passed += ok
+        failed += not ok
+        print("  [%s] %-24s in %-22s -> %-5s %s" % (
+            "PASS" if ok else "FAIL", d, str(targets)[:22], got, why))
 
     print("\n=== RESULT: %d passed, %d failed ===" % (passed, failed))
     return 0 if failed == 0 else 1
