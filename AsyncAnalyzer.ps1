@@ -1897,23 +1897,34 @@ function Read-ClassConstantPool([byte[]]$b) {
     return @{ Symbols = $sb.ToString(); Strings = $strings }
 }
 
-function Add-DiskPackages([string]$JarPath) {
+function Get-JarPackages([string]$JarPath) {
     # Entry names only - no decompression, no parsing. Cheap enough to run on every
     # jar including verified ones, which is required: a verified minimap's packages
     # being on disk is exactly what makes an absent package meaningful.
+    #
+    # Returns the names rather than adding them, so it can also run in a worker
+    # thread. $script:DiskPackages is shared, and a set that several threads add to
+    # is a set that quietly loses entries - which here would read as a package with
+    # no jar behind it, which is the injected-client rule.
+    $out = New-Object System.Collections.Generic.List[string]
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
-    } catch { return }
+    } catch { return $out }
     try {
         foreach ($e in $zip.Entries) {
             $fn = $e.FullName
             if (-not $fn.EndsWith('.class')) { continue }
             $parts = $fn.Split('/')
-            if ($parts.Count -ge 2) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1])) }
-            if ($parts.Count -ge 3) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
-            if ($parts.Count -ge 1) { [void]$script:DiskPackages.Add($parts[0]) }
+            if ($parts.Count -ge 2) { [void]$out.Add(($parts[0] + '/' + $parts[1])) }
+            if ($parts.Count -ge 3) { [void]$out.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
+            if ($parts.Count -ge 1) { [void]$out.Add($parts[0]) }
         }
     } finally { $zip.Dispose() }
+    return $out
+}
+
+function Add-DiskPackages([string]$JarPath) {
+    foreach ($p in (Get-JarPackages $JarPath)) { [void]$script:DiskPackages.Add($p) }
 }
 
 function Test-LoadedFromDisk([string]$Token) {
@@ -3048,6 +3059,68 @@ function Invoke-SelfTest {
             $ok = ($script:ScanGaps.Count -eq $before + 1)
             while ($script:ScanGaps.Count -gt $before) { $script:ScanGaps.RemoveAt($script:ScanGaps.Count - 1) }
             $ok } }
+        # ---- the parallel read, against the sequential one ------------------
+        # The precompute exists to make a screenshare shorter, and the one thing it
+        # is not allowed to do is change an answer. So the self-test builds real
+        # jars, reads them both ways and compares - on this machine, with these
+        # cores, every time the tool starts.
+        @{ Label = "Parallel read returns exactly what reading inline returns"; Test = {
+            $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_par_" + [guid]::NewGuid().ToString("N").Substring(0,8))
+            $ok = $false
+            try {
+                [void][System.IO.Directory]::CreateDirectory($dir)
+                # Enough jars to get past the "not worth a pool" threshold, each with
+                # different contents so an off-by-one in the result mapping shows up
+                # as a mismatch rather than passing by luck.
+                $made = @()
+                for ($n = 0; $n -lt 8; $n++) {
+                    $jp = Join-Path $dir "probe$n.jar"
+                    $fs = [System.IO.File]::Open($jp, "Create")
+                    $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+                    foreach ($entry in @("com/probe$n/Main.class", "org/example/Helper.class", "fabric.mod.json")) {
+                        $e = $zip.CreateEntry($entry)
+                        $w = New-Object System.IO.StreamWriter($e.Open())
+                        $w.Write(('{"id":"probe' + $n + '","name":"Probe ' + $n + '"}' + ('x' * (200 * ($n + 1)))))
+                        $w.Dispose()
+                    }
+                    $zip.Dispose(); $fs.Dispose()
+                    $made += (Get-Item $jp)
+                }
+                $pre = Invoke-JarPrecompute $made
+                $mismatch = 0
+                foreach ($j in $made) {
+                    $a = $pre[$j.FullName]
+                    if (-not $a) { $mismatch++; continue }
+                    if ($a.Sha1 -ne (Get-FileSHA1 $j.FullName)) { $mismatch++ }
+                    $fb = Get-JarFeatures $j.FullName
+                    if (($a.Features | ConvertTo-Json -Depth 8 -Compress) -ne ($fb | ConvertTo-Json -Depth 8 -Compress)) { $mismatch++ }
+                    $pa = (@($a.Packages) | Sort-Object) -join "|"
+                    $pb = (@(Get-JarPackages $j.FullName) | Sort-Object) -join "|"
+                    if ($pa -ne $pb) { $mismatch++ }
+                }
+                $ok = ($pre.Count -eq $made.Count) -and ($mismatch -eq 0)
+            } catch { $ok = $false } finally {
+                try { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+            }
+            $ok } }
+        @{ Label = "The worker is handed everything those functions need"; Test = {
+            # A helper missing from the closure does not throw in a runspace - the
+            # command is simply not found and the feature comes back unset. So the
+            # closure is checked for the helpers that are reached indirectly, which
+            # are the ones a hand-written list would have missed.
+            $cl = Get-ParallelClosure
+            $need = @('Get-FileSHA1','Get-JarFeatures','Get-JarPackages','Get-ShannonEntropy','Test-SelfIdentifyingBlob')
+            $haveFn = @($need | Where-Object { $cl.Functions.ContainsKey($_) }).Count -eq $need.Count
+            $haveVar = ($cl.Variables -contains 'patternRegex') -and ($cl.Variables -contains 'magicExt')
+            $haveFn -and $haveVar } }
+        @{ Label = "...and never the one set that is shared"; Test = {
+            # $script:DiskPackages is added to while the scan runs. Copied into a
+            # worker, each thread would get its own and the additions would be lost -
+            # and a package that is on disk but missing from the set reads as a class
+            # with no jar behind it, which is the injected-client rule. It has to be
+            # returned and folded in on the main thread, never copied.
+            $cl = Get-ParallelClosure
+            ($cl.Variables -notcontains 'DiskPackages') -and ($script:parNeverCopy -contains 'DiskPackages') } }
         @{ Label = "Full report renders and is written"; Test = {
             # GetTempPath, not $env:TEMP: the variable is not set on every host,
             # and a self-test that fails because it could not find a temp folder
@@ -5160,6 +5233,178 @@ function Invoke-PyScan([string]$FilePath) {
 }
 
 # ---------------------------------------------------------------------------
+# The same analysis, on more than one core.
+#
+# Measured on 60 real libraries from Maven Central, PowerShell 7.4, one jar at a
+# time:
+#
+#     Bytecode      840.6 ms/jar   (only runs for jars that are NOT verified)
+#     Murmur2       583.5 ms/jar   (only for the CurseForge lookup)
+#     JarFeatures   367.9 ms/jar   (every jar)
+#     Filename       15.7 ms/jar
+#     DiskPackages    4.5 ms/jar
+#     SHA1            2.9 ms/jar
+#
+# A normal modpack is mostly VERIFIED mods, which skip the bytecode pass - so the
+# floor everybody pays is SHA1 + features + packages, about 375 ms a jar. On the
+# real 78-mod pack this was measured against, that is half a minute of a
+# screenshare spent waiting, and it is all file reading and parsing with nothing
+# shared between one jar and the next.
+#
+# So those three run in a runspace pool (PowerShell 5.1 has no
+# ForEach-Object -Parallel) and the results are handed to the unchanged
+# per-jar analysis. Two rules make that safe to do to a tool whose whole job is
+# being right:
+#
+#   1. THE WORKER ONLY READS. It computes; it decides nothing. Every verdict is
+#      still reached one jar at a time, in the original order, by the same code as
+#      before - so a scan cannot come out differently because a machine has more
+#      cores. $script:DiskPackages is the one piece of shared state involved, and
+#      the worker returns a list instead of touching it.
+#   2. THE WORKER RUNS THE SHIPPED FUNCTIONS. It is handed Get-JarFeatures itself,
+#      not a copy of it, along with the transitive closure of everything those
+#      functions call and every $script: table they read - all worked out from
+#      their own ASTs at runtime. A second implementation that drifts from the
+#      first is exactly the bug this tool cannot afford.
+#
+# If anything about the pool fails, Invoke-JarAnalysis computes inline as it
+# always did. Same functions, same results, just slower.
+# ---------------------------------------------------------------------------
+
+# What the worker computes. Everything else stays on the main thread.
+$script:parRoots = @('Get-FileSHA1', 'Get-JarFeatures', 'Get-JarPackages')
+
+# Mutable shared state must never be copied into a worker: each runspace would get
+# its own and the additions would be lost, or worse, kept.
+$script:parNeverCopy = @('DiskPackages')
+
+function Get-ParallelClosure {
+    <#
+        Every function the roots reach, and every $script: name they read.
+
+        Derived, not maintained. A hand-written list rots silently here: a helper
+        that is missing from the worker does not throw, it just is not found, and
+        the jar comes back with a feature quietly unset - which is the kind of
+        thing that turns into a wrong verdict rather than an error message.
+    #>
+    if ($script:parClosure) { return $script:parClosure }
+    $funcs = @{}
+    $vars  = @{}
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    foreach ($r in $script:parRoots) { $queue.Enqueue($r) }
+    while ($queue.Count -gt 0) {
+        $name = $queue.Dequeue()
+        if ($funcs.ContainsKey($name)) { continue }
+        $cmd = Get-Command $name -CommandType Function -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        $funcs[$name] = $cmd.ScriptBlock.ToString()
+        $ast = $cmd.ScriptBlock.Ast
+        foreach ($c in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $n = $c.GetCommandName()
+            if ($n -and -not $funcs.ContainsKey($n)) {
+                if (Get-Command $n -CommandType Function -ErrorAction SilentlyContinue) { $queue.Enqueue($n) }
+            }
+        }
+        foreach ($v in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+            $u = $v.VariablePath.UserPath
+            if ($u -like 'script:*') {
+                $vn = $u -replace '^script:', ''
+                if ($script:parNeverCopy -notcontains $vn) { $vars[$vn] = $true }
+            }
+        }
+    }
+    $script:parClosure = @{ Functions = $funcs; Variables = @($vars.Keys) }
+    return $script:parClosure
+}
+
+function New-ParallelPool([int]$Size) {
+    <#
+        A pool whose runspaces already contain the closure. The tables go in as
+        InitialSessionState variables, which land where $script:X inside those
+        functions reads them - verified, not assumed.
+    #>
+    $cl = Get-ParallelClosure
+    $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($n in $cl.Functions.Keys) {
+        $iss.Commands.Add(
+            (New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry $n, $cl.Functions[$n]))
+    }
+    foreach ($n in $cl.Variables) {
+        $val = Get-Variable -Name $n -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+        if ($null -eq $val) { continue }
+        $iss.Variables.Add(
+            (New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry $n, $val, ''))
+    }
+    $pool = [runspacefactory]::CreateRunspacePool(1, $Size, $iss, $Host)
+    $pool.Open()
+    return $pool
+}
+
+# One jar's worth of reading. No decisions, no shared state, no output.
+$script:parWorker = {
+    param([string]$Path)
+    $r = @{ Path = $Path; Sha1 = $null; Features = $null; Packages = @() }
+    try { $r.Sha1     = Get-FileSHA1 $Path }     catch {}
+    try { $r.Features = Get-JarFeatures $Path }  catch {}
+    try { $r.Packages = @(Get-JarPackages $Path) } catch {}
+    return $r
+}
+
+function Invoke-JarPrecompute($Jars) {
+    <#
+        path -> @{ Sha1; Features; Packages } for every jar, computed in parallel.
+
+        Returns an empty table on any failure, and on a job that came back without
+        features: the caller then computes that jar inline, which is what it did
+        before this file existed. Never a partial answer presented as a whole one.
+    #>
+    $out = @{}
+    $list = @($Jars)
+    $cores = [Environment]::ProcessorCount
+    # Below this the pool costs more than it saves - a runspace pool takes a few
+    # hundred milliseconds to stand up, and a four-jar folder is done by then.
+    if ($list.Count -lt 6 -or $cores -lt 2) { return $out }
+    $size = [Math]::Min([Math]::Max(2, $cores), 8)
+
+    $pool = $null
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $pool = New-ParallelPool $size
+        $jobs = New-Object System.Collections.Generic.List[object]
+        foreach ($j in $list) {
+            $ps = [System.Management.Automation.PowerShell]::Create()
+            $ps.RunspacePool = $pool
+            [void]$ps.AddScript($script:parWorker).AddArgument($j.FullName)
+            [void]$jobs.Add([PSCustomObject]@{ PS = $ps; Handle = $ps.BeginInvoke(); Name = $j.Name })
+        }
+        $done = 0
+        foreach ($job in $jobs) {
+            try {
+                $res = $job.PS.EndInvoke($job.Handle)
+                foreach ($r in @($res)) {
+                    if ($r -and $r.Path -and $r.Features) { $out[[string]$r.Path] = $r }
+                }
+            } catch {
+            } finally { $job.PS.Dispose() }
+            $done++
+            Spin "[$done/$($list.Count)] reading $($job.Name)"
+        }
+        SpinClear
+        $sw.Stop()
+        if ($out.Count -gt 0) {
+            W ("  $([char]0x2713) Read $($out.Count) jar(s) on $size cores in " +
+               ("{0:N1}s" -f $sw.Elapsed.TotalSeconds) + " $([char]0x2014) the analysis itself is unchanged.") DarkGray
+        }
+    } catch {
+        # Not a coverage gap: nothing was skipped. The same work happens inline.
+        $out = @{}
+    } finally {
+        if ($pool) { try { $pool.Close(); $pool.Dispose() } catch {} }
+    }
+    return $out
+}
+
+# ---------------------------------------------------------------------------
 # Everything one jar goes through: hash, provenance lookup, features, bytecode,
 # verdict, evidence, and the one-shot online learning step.
 #
@@ -5172,9 +5417,14 @@ function Invoke-PyScan([string]$FilePath) {
 # The four result lists are script-scope, so this appends to the same lists the
 # main loop fills. Counters are $script:-qualified for the same reason.
 # ---------------------------------------------------------------------------
-function Invoke-JarAnalysis($jar) {
+function Invoke-JarAnalysis($jar, $Pre = $null) {
 
-    $hash   = Get-FileSHA1 $jar.FullName
+    # $Pre is the file reading done ahead of time on another core (84-parallel).
+    # It is the SAME functions' output, so this is only a question of when the work
+    # happened, never of what it produced. Absent - a late-scan jar, a small folder,
+    # a machine with one core, a pool that failed to open - everything is read here
+    # exactly as it always was.
+    $hash   = if ($Pre) { $Pre.Sha1 } else { Get-FileSHA1 $jar.FullName }
     $dlObj  = Get-DownloadSource $jar.FullName
     $dlName = if ($dlObj) { $dlObj.Name } else { $null }
     $dlUrl  = if ($dlObj) { $dlObj.RawUrl } else { $null }
@@ -5188,7 +5438,12 @@ function Invoke-JarAnalysis($jar) {
     if ($hash -and -not $verifiedName) {
         $mr = Get-ModrinthMeta $hash
         if ($mr.Slug) { $verified = $true; $verifiedName = $mr.Name; $modUrl = "https://modrinth.com/mod/$($mr.Slug)"; if (-not $verifiedVia) { $verifiedVia = "Modrinth" } }
-        if (-not $verifiedName) {
+        # The fingerprint exists for one caller: CurseForge, which refuses to answer
+        # without an API key. Computing it anyway costs 583 ms a jar - measured, and
+        # the second most expensive thing in the whole scan - for a number that is
+        # then thrown away on every machine that has no key set, which is every
+        # machine unless CURSEFORGE_API_KEY is in the environment.
+        if (-not $verifiedName -and -not [string]::IsNullOrWhiteSpace($script:CurseForgeApiKey)) {
             $fp = Get-FileMurmur2 $jar.FullName
             if ($null -ne $fp) {
                 $cf = Get-CurseForgeMeta $fp
@@ -5202,8 +5457,13 @@ function Invoke-JarAnalysis($jar) {
         if ($verified -and $verifiedName) { $script:goodMeta[$hash] = "$verifiedName|$modUrl" }
     }
 
-    Add-DiskPackages $jar.FullName
-    $feat = Get-JarFeatures $jar.FullName
+    if ($Pre) {
+        foreach ($p in @($Pre.Packages)) { [void]$script:DiskPackages.Add($p) }
+        $feat = $Pre.Features
+    } else {
+        Add-DiskPackages $jar.FullName
+        $feat = Get-JarFeatures $jar.FullName
+    }
     $bcFeat = $null
     if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }
 
@@ -5346,11 +5606,12 @@ function Invoke-LateFolderScan {
     # Remember where each list ended, so only the jars this pass adds get a card.
     $nBefore = @{ flagged = $script:flaggedMods.Count; review = $script:reviewMods.Count }
     $before = $script:Flagged + $script:Review
+    $prel = Invoke-JarPrecompute $extra
     $i = 0
     foreach ($jar in $extra) {
         $i++
         Spin "[$i/$($extra.Count)] $($jar.Name)"
-        Invoke-JarAnalysis $jar
+        Invoke-JarAnalysis $jar $prel[$jar.FullName]
     }
     SpinClear
 
@@ -8873,12 +9134,19 @@ if (-not $SkipModCheck) {
         $script:reviewMods  = [System.Collections.Generic.List[object]]::new()
         $script:flaggedMods = [System.Collections.Generic.List[object]]::new()
 
+        # Read every jar first, on as many cores as this PC has. Nothing is decided
+        # here - it is the same three functions the loop below would have called,
+        # just not one after another. A jar missing from $pre (or an empty $pre,
+        # which is what a small folder or a failed pool gives) is read inline in the
+        # loop, exactly as before.
+        $pre = Invoke-JarPrecompute $jarFiles
+
         $idx = 0
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            Invoke-JarAnalysis $jar
+            Invoke-JarAnalysis $jar $pre[$jar.FullName]
         }
         SpinClear
 

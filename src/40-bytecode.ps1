@@ -88,23 +88,34 @@ function Read-ClassConstantPool([byte[]]$b) {
     return @{ Symbols = $sb.ToString(); Strings = $strings }
 }
 
-function Add-DiskPackages([string]$JarPath) {
+function Get-JarPackages([string]$JarPath) {
     # Entry names only - no decompression, no parsing. Cheap enough to run on every
     # jar including verified ones, which is required: a verified minimap's packages
     # being on disk is exactly what makes an absent package meaningful.
+    #
+    # Returns the names rather than adding them, so it can also run in a worker
+    # thread. $script:DiskPackages is shared, and a set that several threads add to
+    # is a set that quietly loses entries - which here would read as a package with
+    # no jar behind it, which is the injected-client rule.
+    $out = New-Object System.Collections.Generic.List[string]
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
-    } catch { return }
+    } catch { return $out }
     try {
         foreach ($e in $zip.Entries) {
             $fn = $e.FullName
             if (-not $fn.EndsWith('.class')) { continue }
             $parts = $fn.Split('/')
-            if ($parts.Count -ge 2) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1])) }
-            if ($parts.Count -ge 3) { [void]$script:DiskPackages.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
-            if ($parts.Count -ge 1) { [void]$script:DiskPackages.Add($parts[0]) }
+            if ($parts.Count -ge 2) { [void]$out.Add(($parts[0] + '/' + $parts[1])) }
+            if ($parts.Count -ge 3) { [void]$out.Add(($parts[0] + '/' + $parts[1] + '/' + $parts[2])) }
+            if ($parts.Count -ge 1) { [void]$out.Add($parts[0]) }
         }
     } finally { $zip.Dispose() }
+    return $out
+}
+
+function Add-DiskPackages([string]$JarPath) {
+    foreach ($p in (Get-JarPackages $JarPath)) { [void]$script:DiskPackages.Add($p) }
 }
 
 function Test-LoadedFromDisk([string]$Token) {

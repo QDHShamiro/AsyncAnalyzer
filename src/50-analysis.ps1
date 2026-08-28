@@ -884,6 +884,68 @@ function Invoke-SelfTest {
             $ok = ($script:ScanGaps.Count -eq $before + 1)
             while ($script:ScanGaps.Count -gt $before) { $script:ScanGaps.RemoveAt($script:ScanGaps.Count - 1) }
             $ok } }
+        # ---- the parallel read, against the sequential one ------------------
+        # The precompute exists to make a screenshare shorter, and the one thing it
+        # is not allowed to do is change an answer. So the self-test builds real
+        # jars, reads them both ways and compares - on this machine, with these
+        # cores, every time the tool starts.
+        @{ Label = "Parallel read returns exactly what reading inline returns"; Test = {
+            $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_par_" + [guid]::NewGuid().ToString("N").Substring(0,8))
+            $ok = $false
+            try {
+                [void][System.IO.Directory]::CreateDirectory($dir)
+                # Enough jars to get past the "not worth a pool" threshold, each with
+                # different contents so an off-by-one in the result mapping shows up
+                # as a mismatch rather than passing by luck.
+                $made = @()
+                for ($n = 0; $n -lt 8; $n++) {
+                    $jp = Join-Path $dir "probe$n.jar"
+                    $fs = [System.IO.File]::Open($jp, "Create")
+                    $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+                    foreach ($entry in @("com/probe$n/Main.class", "org/example/Helper.class", "fabric.mod.json")) {
+                        $e = $zip.CreateEntry($entry)
+                        $w = New-Object System.IO.StreamWriter($e.Open())
+                        $w.Write(('{"id":"probe' + $n + '","name":"Probe ' + $n + '"}' + ('x' * (200 * ($n + 1)))))
+                        $w.Dispose()
+                    }
+                    $zip.Dispose(); $fs.Dispose()
+                    $made += (Get-Item $jp)
+                }
+                $pre = Invoke-JarPrecompute $made
+                $mismatch = 0
+                foreach ($j in $made) {
+                    $a = $pre[$j.FullName]
+                    if (-not $a) { $mismatch++; continue }
+                    if ($a.Sha1 -ne (Get-FileSHA1 $j.FullName)) { $mismatch++ }
+                    $fb = Get-JarFeatures $j.FullName
+                    if (($a.Features | ConvertTo-Json -Depth 8 -Compress) -ne ($fb | ConvertTo-Json -Depth 8 -Compress)) { $mismatch++ }
+                    $pa = (@($a.Packages) | Sort-Object) -join "|"
+                    $pb = (@(Get-JarPackages $j.FullName) | Sort-Object) -join "|"
+                    if ($pa -ne $pb) { $mismatch++ }
+                }
+                $ok = ($pre.Count -eq $made.Count) -and ($mismatch -eq 0)
+            } catch { $ok = $false } finally {
+                try { Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+            }
+            $ok } }
+        @{ Label = "The worker is handed everything those functions need"; Test = {
+            # A helper missing from the closure does not throw in a runspace - the
+            # command is simply not found and the feature comes back unset. So the
+            # closure is checked for the helpers that are reached indirectly, which
+            # are the ones a hand-written list would have missed.
+            $cl = Get-ParallelClosure
+            $need = @('Get-FileSHA1','Get-JarFeatures','Get-JarPackages','Get-ShannonEntropy','Test-SelfIdentifyingBlob')
+            $haveFn = @($need | Where-Object { $cl.Functions.ContainsKey($_) }).Count -eq $need.Count
+            $haveVar = ($cl.Variables -contains 'patternRegex') -and ($cl.Variables -contains 'magicExt')
+            $haveFn -and $haveVar } }
+        @{ Label = "...and never the one set that is shared"; Test = {
+            # $script:DiskPackages is added to while the scan runs. Copied into a
+            # worker, each thread would get its own and the additions would be lost -
+            # and a package that is on disk but missing from the set reads as a class
+            # with no jar behind it, which is the injected-client rule. It has to be
+            # returned and folded in on the main thread, never copied.
+            $cl = Get-ParallelClosure
+            ($cl.Variables -notcontains 'DiskPackages') -and ($script:parNeverCopy -contains 'DiskPackages') } }
         @{ Label = "Full report renders and is written"; Test = {
             # GetTempPath, not $env:TEMP: the variable is not set on every host,
             # and a self-test that fails because it could not find a temp folder
