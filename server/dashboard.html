@@ -53,6 +53,16 @@ tr.row{cursor:pointer;}tr.row:hover td{background:var(--surface2);}
     <button onclick="load()">Refresh</button>
   </div>
   <div class="stats" id="stats"></div>
+  <!-- Hashes a scanned PC contributed. They do NOT reach any client until a
+       moderator releases them here: an approved cheat hash is believed by every
+       scan on the team, so a wrong one is a permanent false positive on a
+       legitimate mod. If nobody works this queue the team stops learning, which
+       is the deliberate cost of not letting a published key decide. -->
+  <div id="queue" style="display:none;margin:18px 0;padding:14px 16px;border:1px solid #e3b341;border-radius:10px;background:#1b1712">
+    <div style="font-weight:600;margin-bottom:4px">Waiting for you <span id="qn" class="muted"></span></div>
+    <div class="muted" style="margin-bottom:10px">These hashes were contributed by a scanned PC. Nothing here reaches anyone's scan until you approve it.</div>
+    <div id="qrows"></div>
+  </div>
   <table id="tbl"><thead><tr><th>When</th><th>Scan ID</th><th>Scanned by</th><th>Target</th><th>PC</th><th>Overall (AI)</th><th>Verdict</th><th>Flagged</th></tr></thead><tbody id="rows"></tbody></table>
   <div id="empty" class="empty" style="display:none;">No scans yet. Run AsyncAnalyzer with the team endpoint configured.</div>
 </div>
@@ -69,6 +79,40 @@ async function load(){
   var r=await fetch('/api/history?limit=1000'+(key?('&key='+encodeURIComponent(key)):''));
   if(r.status===401){alert('Wrong view key');return;}
   var j=await r.json();DATA=j.scans||[];render();
+  loadQueue(key);
+}
+
+// Only a staff key sees this. With a view key the request comes back 401 and the
+// panel simply stays hidden.
+async function loadQueue(key){
+  var box=document.getElementById('queue');
+  try{
+    var r=await fetch('/api/signatures/pending'+(key?('?key='+encodeURIComponent(key)):''),
+                      {headers:key?{'x-key':key}:{}});
+    if(r.status!==200){box.style.display='none';return;}
+    var j=await r.json();
+    var rows=j.hashes||[];
+    if(!rows.length){box.style.display='none';return;}
+    box.style.display='block';
+    document.getElementById('qn').textContent='('+rows.length+')';
+    document.getElementById('qrows').innerHTML=rows.map(function(h){
+      return '<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid #262f3d">'+
+        '<span class="pill '+(h.kind==='cheat'?'red':'green')+'">'+esc(h.kind)+'</span>'+
+        '<span class="mono" style="flex:1;overflow-wrap:anywhere">'+esc(h.hash)+'</span>'+
+        '<span class="muted">from '+esc(h.scanner||'?')+(h.target?(' · '+esc(h.target)):'')+'</span>'+
+        '<button onclick="decide(\''+esc(h.hash)+'\',true)">Approve</button>'+
+        '<button onclick="decide(\''+esc(h.hash)+'\',false)">Reject</button></div>';
+    }).join('');
+  }catch(e){box.style.display='none';}
+}
+
+async function decide(hash, ok){
+  var key=document.getElementById('key').value.trim();
+  var opt={method:ok?'POST':'DELETE',headers:{'x-key':key}};
+  if(ok){opt.headers['content-type']='application/json';opt.body=JSON.stringify({hashes:[hash]});}
+  var r=await fetch(ok?'/api/signatures/approve':('/api/signatures/'+encodeURIComponent(hash)),opt);
+  if(r.status!==200){alert('That needs the staff key.');return;}
+  loadQueue(key);
 }
 function bandColor(b){return b==='Confirmed'?'#f85149':b==='Likely'?'#fb8500':b==='Review'?'#e3b341':'#2ecc71';}
 function overall(sv){

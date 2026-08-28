@@ -20,6 +20,26 @@ function json(obj, code = 200) {
 }
 function clip(s, n) { return String(s == null ? '' : s).slice(0, n); }
 
+// The scanned PC's own Windows account name travels inside modPath
+// (C:\Users\<real name>\AppData\Roaming\.minecraft\mods). A moderator needs to
+// know WHICH folder was scanned, not who the person is called on their own
+// computer, and this row can end up in a screenshot.
+function anonPath(p) {
+  return String(p == null ? '' : p).replace(/(\\Users\\)[^\\]+/gi, '$1<user>');
+}
+
+// Cloudflare has no per-IP limiter of its own here and server.js has had one all
+// along - the README even names rate limiting as "the only guard" against the
+// published write key, which was not true of the deployed half.
+const RATE = new Map();
+function limited(ip) {
+  const now = Date.now();
+  const r = RATE.get(ip) || { n: 0, t: now };
+  if (now - r.t > 60000) { r.n = 0; r.t = now; }
+  r.n++; RATE.set(ip, r);
+  return r.n > 120;
+}
+
 // A stored model from an OLDER version has a shorter feature_order, so the features
 // added since would simply never be trained - silently, because a missing feature
 // multiplies by 0 rather than failing. Refetch the new base instead; the team
@@ -67,16 +87,35 @@ export default {
     if (req.method === 'OPTIONS') return new Response('', { status: 204, headers: CORS });
     const WRITE_KEY = env.WRITE_KEY || 'change-me';
     const VIEW_KEY = env.VIEW_KEY || '';
-    const viewOK = () => !VIEW_KEY || (url.searchParams.get('key') || req.headers.get('x-key')) === VIEW_KEY;
+    // The write key is PUBLISHED - that is what lets a scanned PC upload its own
+    // result. So it cannot also be the authority to change what every client
+    // believes. The staff key is not in the repo, and it is what separates
+    // "somebody ran the tool" from "a moderator vouches for this".
+    const STAFF_KEY = env.STAFF_KEY || '';
+    const given = () => (req.headers.get('x-key') || '');
+    const isStaff = () => !!STAFF_KEY && given() === STAFF_KEY;
+    // A history row carries a Minecraft name, a PC name and a scan verdict about
+    // a real person. Without a view key set, this used to hand all of it to
+    // anybody who asked - so an unset key now means no history, not a public one.
+    const viewOK = () => {
+      const k = url.searchParams.get('key') || given();
+      if (isStaff()) return true;
+      if (!VIEW_KEY) return false;
+      return k === VIEW_KEY;
+    };
+    const ip = (req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || '').split(',')[0].trim();
+    if (limited(ip)) return json({ error: 'rate limited' }, 429);
 
     if (req.method === 'POST' && url.pathname === '/api/scan') {
-      if ((req.headers.get('x-key') || '') !== WRITE_KEY) return json({ error: 'bad key' }, 401);
+      const trusted = isStaff();
+      if (!trusted && given() !== WRITE_KEY) return json({ error: 'bad key' }, 401);
       let b; try { b = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
       const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
       const rec = {
         id, serverTs: new Date().toISOString(),
         scanner: clip(b.scanner || 'unknown', 80), targetUser: clip(b.targetUser, 80),
-        pcName: clip(b.pcName, 80), modPath: clip(b.modPath, 300), verdict: clip(b.verdict || 'clean', 20),
+        pcName: clip(b.pcName, 80), modPath: anonPath(clip(b.modPath, 300)), verdict: clip(b.verdict || 'clean', 20),
+        trusted: trusted ? 1 : 0,
         totals: b.totals || {}, flagged: (b.flagged || []).slice(0, 200), review: (b.review || []).slice(0, 200),
         systemIssues: (b.systemIssues || []).slice(0, 200), toolVersion: clip(b.toolVersion, 20), modelVersion: b.modelVersion || 0, session: b.session || null,
         // The ID the tool printed on the scanned PC, and the code the moderator said
@@ -85,14 +124,20 @@ export default {
         // this row is the one to believe.
         scanId: clip(b.scanId, 32).toUpperCase(), scanCode: clip(b.scanCode, 40),
       };
-      await env.DB.prepare('INSERT INTO scans (id, ts, scanner, target, pc, verdict, data) VALUES (?,?,?,?,?,?,?)')
-        .bind(id, rec.serverTs, rec.scanner, rec.targetUser, rec.pcName, rec.verdict, JSON.stringify(rec)).run();
+      await env.DB.prepare('INSERT INTO scans (id, ts, scanner, target, pc, verdict, trusted, data) VALUES (?,?,?,?,?,?,?,?)')
+        .bind(id, rec.serverTs, rec.scanner, rec.targetUser, rec.pcName, rec.verdict, rec.trusted, JSON.stringify(rec)).run();
       // Pooled hashes reach every client on their next run, so a wrong one becomes a
       // team-wide false positive nobody can trace. Record the source with each hash.
+      // A hash from an untrusted upload waits for a human. Approved hashes reach
+      // every client on their next run, and a wrong cheat hash is therefore a
+      // permanent team-wide false positive on a legitimate mod - somebody could
+      // submit the SHA1 of sodium.jar and every scan on the team would confirm
+      // it as a cheat.
+      const state = trusted ? 'approved' : 'pending';
       const addSig = async (h, kind) => {
         try {
-          await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind, scanner, target, scan_id, ts) VALUES (?,?,?,?,?,?)')
-            .bind(String(h), kind, rec.scanner, rec.targetUser, id, rec.serverTs).run();
+          await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind, scanner, target, scan_id, ts, state) VALUES (?,?,?,?,?,?,?)')
+            .bind(String(h), kind, rec.scanner, rec.targetUser, id, rec.serverTs, state).run();
         } catch {
           // a database created before attribution existed still has the 2-column table
           await env.DB.prepare('INSERT OR IGNORE INTO sigs (hash, kind) VALUES (?,?)')
@@ -101,24 +146,50 @@ export default {
       };
       for (const h of (b.newCheat || [])) if (h) await addSig(h, 'cheat');
       for (const h of (b.newGood || [])) if (h) await addSig(h, 'good');
-      if (Array.isArray(b.samples) && b.samples.length) {
+      // Training too: 500 SGD steps per request, from a key printed in the repo,
+      // would let anyone walk the shared model wherever they liked.
+      if (trusted && Array.isArray(b.samples) && b.samples.length) {
         const m = await getModel(env);
         let n = 0;
         for (const s of b.samples.slice(0, 500)) if (Array.isArray(s.vec) && (s.label === 0 || s.label === 1)) { sgdStep(m, s.vec, s.label); n++; }
         if (n) await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('model', ?)").bind(JSON.stringify(m)).run();
       }
       const ss = b.sessionSample;
-      if (ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1)) {
+      if (trusted && ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1)) {
         const sm = await getSModel(env);
         sgdStep(sm, ss.vec, ss.label);
         await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('smodel', ?)").bind(JSON.stringify(sm)).run();
       }
-      return json({ ok: true, id });
+      return json({ ok: true, id, trusted: rec.trusted === 1, signatureState: state });
     }
 
+    // Only APPROVED hashes are handed out. This is the endpoint every client
+    // pulls on every run, so anything here is believed by the whole team.
     if (req.method === 'GET' && url.pathname === '/api/signatures') {
-      const rows = (await env.DB.prepare('SELECT hash, kind FROM sigs').all()).results || [];
+      const rows = (await env.DB.prepare("SELECT hash, kind FROM sigs WHERE state = 'approved'").all()).results || [];
       return json({ version: 100, knownCheatHashes: rows.filter(r => r.kind === 'cheat').map(r => r.hash), knownGoodHashes: rows.filter(r => r.kind === 'good').map(r => r.hash) });
+    }
+
+    // The queue a moderator works through. Staff key only: it names who
+    // contributed what, and it is the list that decides what the team believes.
+    if (req.method === 'GET' && url.pathname === '/api/signatures/pending') {
+      if (!isStaff()) return json({ error: 'staff key required' }, 401);
+      const rows = (await env.DB.prepare("SELECT * FROM sigs WHERE state = 'pending' ORDER BY ts DESC LIMIT 500").all()).results || [];
+      return json({ count: rows.length, hashes: rows });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/signatures/approve') {
+      if (!isStaff()) return json({ error: 'staff key required' }, 401);
+      let b; try { b = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const list = Array.isArray(b.hashes) ? b.hashes.slice(0, 500) : [];
+      let n = 0;
+      for (const h of list) {
+        // A rejected hash stays rejected. Approving it back has to be a delete
+        // and a fresh contribution, not a retry that quietly wins.
+        const r = await env.DB.prepare("UPDATE sigs SET state = 'approved' WHERE hash = ? AND state = 'pending'").bind(String(h)).run();
+        n += (r.meta ? r.meta.changes : 0) || 0;
+      }
+      return json({ ok: true, approved: n });
     }
 
     if (req.method === 'GET' && url.pathname === '/api/model') {
@@ -136,9 +207,11 @@ export default {
     // Revoking matters more than adding: without it a single wrong confirmation is
     // permanent for the whole team.
     if (req.method === 'DELETE' && url.pathname.startsWith('/api/signatures/')) {
-      if ((req.headers.get('x-key') || '') !== WRITE_KEY) return json({ error: 'bad key' }, 401);
+      if (!isStaff()) return json({ error: 'staff key required' }, 401);
       const h = decodeURIComponent(url.pathname.split('/').pop());
-      const r = await env.DB.prepare('DELETE FROM sigs WHERE hash = ?').bind(h).run();
+      // Marked, not deleted: a row that is gone can be contributed again by the
+      // next upload and nobody would notice it came back.
+      const r = await env.DB.prepare("UPDATE sigs SET state = 'rejected' WHERE hash = ?").bind(h).run();
       return json({ ok: true, removed: r.meta ? r.meta.changes : 0 });
     }
 
@@ -151,7 +224,12 @@ export default {
       if (!viewOK()) return json({ error: 'bad view key' }, 401);
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '200') || 200, 1000);
       const rows = (await env.DB.prepare('SELECT data FROM scans ORDER BY ts DESC LIMIT ?').bind(limit).all()).results || [];
-      const scans = rows.map(r => { const s = JSON.parse(r.data); return { id: s.id, serverTs: s.serverTs, scanner: s.scanner, targetUser: s.targetUser, pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion, flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length, session: s.session || null }; });
+      // scanId and scanCode belong here. The report tells a moderator to look the
+      // Scan ID up in this dashboard, and leaving them out of the projection made
+      // the dashboard's Scan ID column show a dash on every row and its search
+      // never match - while server.js had them all along. That is what two
+      // hand-maintained copies of one API do, and why they now have a parity test.
+      const scans = rows.map(r => { const s = JSON.parse(r.data); return { id: s.id, serverTs: s.serverTs, scanner: s.scanner, targetUser: s.targetUser, pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion, flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length, session: s.session || null, scanId: s.scanId || '', scanCode: s.scanCode || '', trusted: s.trusted === 1 }; });
       return json({ scans, viewProtected: !!VIEW_KEY });
     }
 

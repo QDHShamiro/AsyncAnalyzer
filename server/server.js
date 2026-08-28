@@ -24,8 +24,15 @@ const crypto = require('crypto');
 
 const PORT = process.env.PORT || 8787;
 const WRITE_KEY = process.env.ASYNC_KEY || 'change-me-write-key';
-const VIEW_KEY = process.env.ASYNC_VIEWKEY || ''; // empty = history is public
-const DATA_DIR = path.join(__dirname, 'data');
+const VIEW_KEY = process.env.ASYNC_VIEWKEY || ''; // empty = no history at all (see viewOK)
+// The write key is PUBLISHED - that is what lets a scanned PC upload its own
+// result. So it cannot also be the authority to change what every client
+// believes. The staff key is not in the repo, and it is what separates
+// "somebody ran the tool" from "a moderator vouches for this".
+const STAFF_KEY = process.env.ASYNC_STAFFKEY || '';
+// Overridable so the parity tests can run against a throwaway directory
+// instead of writing into the repo's own data folder.
+const DATA_DIR = process.env.ASYNC_DATA || path.join(__dirname, 'data');
 const SCANS_FILE = path.join(DATA_DIR, 'scans.json');
 const SIGS_FILE = path.join(DATA_DIR, 'sigs.json');
 const MAX_SCANS = 5000;
@@ -37,6 +44,7 @@ function save(file, obj) { fs.writeFileSync(file, JSON.stringify(obj)); }
 let scans = load(SCANS_FILE, []);
 let sigs = load(SIGS_FILE, { knownCheatHashes: [], knownGoodHashes: [], meta: {} });
 if (!sigs.meta) sigs.meta = {};   // older stores predate attribution
+if (!sigs.rejected) sigs.rejected = [];   // and predate the approval queue
 
 // ---- shared (federated) model: trained by every team member's scans ----
 const MODEL_FILE = path.join(DATA_DIR, 'model.json');
@@ -118,13 +126,21 @@ function readBody(req) {
   });
 }
 
+// The scanned PC's own Windows account name travels inside modPath
+// (C:\Users\<real name>\AppData\Roaming\.minecraft\mods). A moderator needs to
+// know WHICH folder was scanned, not who the person is called on their own
+// computer, and this row can end up in a screenshot.
+function anonPath(p) {
+  return String(p == null ? '' : p).replace(/(\\Users\\)[^\\]+/gi, '$1<user>');
+}
+
 function summary(s) {
   return {
     id: s.id, serverTs: s.serverTs, scanner: s.scanner, targetUser: s.targetUser,
     pcName: s.pcName, verdict: s.verdict, totals: s.totals, toolVersion: s.toolVersion,
     flaggedCount: (s.flagged || []).length, reviewCount: (s.review || []).length,
     session: s.session || null,
-    scanId: s.scanId || '', scanCode: s.scanCode || '',
+    scanId: s.scanId || '', scanCode: s.scanCode || '', trusted: s.trusted === 1,
   };
 }
 
@@ -135,8 +151,20 @@ const server = http.createServer(async (req, res) => {
   if (limited(ip)) return send(res, 429, { error: 'rate limited' });
 
   // POST a scan
+  const given = () => (req.headers['x-key'] || '');
+  const isStaff = () => !!STAFF_KEY && given() === STAFF_KEY;
+  // A history row carries a Minecraft name, a PC name and a scan verdict about a
+  // real person. Without a view key set, this used to hand all of it to anybody
+  // who asked - so an unset key now means no history, not a public one.
+  const viewOK = () => {
+    if (isStaff()) return true;
+    if (!VIEW_KEY) return false;
+    return (url.searchParams.get('key') || given()) === VIEW_KEY;
+  };
+
   if (req.method === 'POST' && url.pathname === '/api/scan') {
-    if ((req.headers['x-key'] || '') !== WRITE_KEY) return send(res, 401, { error: 'bad key' });
+    const trusted = isStaff();
+    if (!trusted && given() !== WRITE_KEY) return send(res, 401, { error: 'bad key' });
     const body = await readBody(req);
     if (!body) return send(res, 400, { error: 'bad json' });
     const rec = {
@@ -146,7 +174,8 @@ const server = http.createServer(async (req, res) => {
       scanner: String(body.scanner || 'unknown').slice(0, 80),
       targetUser: String(body.targetUser || '').slice(0, 80),
       pcName: String(body.pcName || '').slice(0, 80),
-      modPath: String(body.modPath || '').slice(0, 300),
+      modPath: anonPath(String(body.modPath || '').slice(0, 300)),
+      trusted: trusted ? 1 : 0,
       verdict: String(body.verdict || 'clean').slice(0, 20),
       session: body.session || null,
       totals: body.totals || {},
@@ -174,14 +203,28 @@ const server = http.createServer(async (req, res) => {
     const gc = new Set(sigs.knownCheatHashes), gg = new Set(sigs.knownGoodHashes);
     const note = (h, kind) => {
       sigs.meta[h] = { kind, scanner: rec.scanner, target: rec.targetUser,
-                       scanId: rec.id, ts: rec.serverTs };
+                       scanId: rec.id, ts: rec.serverTs,
+                       state: trusted ? 'approved' : 'pending' };
     };
-    for (const h of (body.newCheat || [])) { if (h && !gc.has(h)) { gc.add(h); note(h, 'cheat'); changed = true; } }
-    for (const h of (body.newGood || [])) { if (h && !gg.has(h)) { gg.add(h); note(h, 'good'); changed = true; } }
+    // A hash from an untrusted upload waits for a human. Approved hashes reach
+    // every client on their next run, so a wrong cheat hash is a permanent
+    // team-wide false positive on a legitimate mod - somebody could submit the
+    // SHA1 of sodium.jar and every scan on the team would confirm it as a cheat.
+    const add = (h, kind, set) => {
+      if (!h) return;
+      if (sigs.rejected.includes(h)) return;   // stays rejected until re-contributed by staff
+      if (sigs.meta[h] && sigs.meta[h].state === 'approved') return;
+      note(h, kind);
+      if (trusted) { set.add(h); }
+      changed = true;
+    };
+    for (const h of (body.newCheat || [])) add(h, 'cheat', gc);
+    for (const h of (body.newGood || [])) add(h, 'good', gg);
     if (changed) { sigs.knownCheatHashes = [...gc]; sigs.knownGoodHashes = [...gg]; save(SIGS_FILE, sigs); }
 
-    // federated model training: every team member's labelled samples train ONE shared model
-    if (Array.isArray(body.samples) && model) {
+    // Training too: 500 SGD steps per request, from a key printed in the repo,
+    // would let anyone walk the shared model wherever they liked.
+    if (trusted && Array.isArray(body.samples) && model) {
       let n = 0;
       for (const s of body.samples.slice(0, 500)) {
         if (Array.isArray(s.vec) && (s.label === 0 || s.label === 1)) { sgdStep(s.vec, s.label); n++; }
@@ -191,23 +234,54 @@ const server = http.createServer(async (req, res) => {
 
     // federated OVERALL-SCAN training: one labelled sample per finished scan
     const ss = body.sessionSample;
-    if (ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1) && smodel) {
+    if (trusted && ss && Array.isArray(ss.vec) && (ss.label === 0 || ss.label === 1) && smodel) {
       sSgdStep(ss.vec, ss.label);
       save(SMODEL_FILE, smodel);
     }
-    return send(res, 200, { ok: true, id: rec.id, modelTrained: model ? model.trainedCount : 0 });
+    return send(res, 200, { ok: true, id: rec.id, trusted: rec.trusted === 1,
+                            signatureState: trusted ? 'approved' : 'pending',
+                            modelTrained: model ? model.trainedCount : 0 });
   }
 
-  // shared signatures (public — just hashes)
+  // Only APPROVED hashes are handed out. This is the endpoint every client pulls
+  // on every run, so anything here is believed by the whole team.
   if (req.method === 'GET' && url.pathname === '/api/signatures') {
     return send(res, 200, { version: 100, knownCheatHashes: sigs.knownCheatHashes, knownGoodHashes: sigs.knownGoodHashes });
   }
 
+  // The queue a moderator works through. Staff key only: it names who
+  // contributed what, and it is the list that decides what the team believes.
+  if (req.method === 'GET' && url.pathname === '/api/signatures/pending') {
+    if (!isStaff()) return send(res, 401, { error: 'staff key required' });
+    const rows = Object.keys(sigs.meta)
+      .filter(h => (sigs.meta[h].state || 'pending') === 'pending')
+      .map(h => ({ hash: h, ...sigs.meta[h] }));
+    return send(res, 200, { count: rows.length, hashes: rows });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/signatures/approve') {
+    if (!isStaff()) return send(res, 401, { error: 'staff key required' });
+    const body = await readBody(req);
+    if (!body) return send(res, 400, { error: 'bad json' });
+    const list = Array.isArray(body.hashes) ? body.hashes.slice(0, 500) : [];
+    let n = 0;
+    for (const h of list) {
+      const m = sigs.meta[h];
+      // A rejected hash stays rejected. Approving it back has to be a delete and
+      // a fresh contribution, not a retry that quietly wins.
+      if (!m || (m.state || 'pending') !== 'pending') continue;
+      m.state = 'approved';
+      if (m.kind === 'cheat') { if (!sigs.knownCheatHashes.includes(h)) sigs.knownCheatHashes.push(h); }
+      else { if (!sigs.knownGoodHashes.includes(h)) sigs.knownGoodHashes.push(h); }
+      n++;
+    }
+    if (n) save(SIGS_FILE, sigs);
+    return send(res, 200, { ok: true, approved: n });
+  }
+
   // auditable view: which hash came from whose scan (view-gated, not public)
   if (req.method === 'GET' && url.pathname === '/api/signatures/audit') {
-    if (VIEW_KEY && (url.searchParams.get('key') || req.headers['x-key']) !== VIEW_KEY) {
-      return send(res, 401, { error: 'bad view key' });
-    }
+    if (!viewOK()) return send(res, 401, { error: 'bad view key' });
     const rows = [...sigs.knownCheatHashes, ...sigs.knownGoodHashes]
       .map(h => ({ hash: h, ...(sigs.meta[h] || { kind: 'unknown' }) }));
     return send(res, 200, { count: rows.length, hashes: rows });
@@ -216,15 +290,17 @@ const server = http.createServer(async (req, res) => {
   // Revoking matters more than adding: without this a single wrong confirmation
   // is permanent for the whole team.
   if (req.method === 'DELETE' && url.pathname.startsWith('/api/signatures/')) {
-    if ((req.headers['x-key'] || '') !== WRITE_KEY) return send(res, 401, { error: 'bad key' });
+    if (!isStaff()) return send(res, 401, { error: 'staff key required' });
     const h = decodeURIComponent(url.pathname.split('/').pop());
-    const before = sigs.knownCheatHashes.length + sigs.knownGoodHashes.length;
+    const had = sigs.knownCheatHashes.includes(h) || sigs.knownGoodHashes.includes(h) || !!sigs.meta[h];
     sigs.knownCheatHashes = sigs.knownCheatHashes.filter(x => x !== h);
     sigs.knownGoodHashes = sigs.knownGoodHashes.filter(x => x !== h);
-    delete sigs.meta[h];
-    const removed = before - (sigs.knownCheatHashes.length + sigs.knownGoodHashes.length);
-    if (removed) save(SIGS_FILE, sigs);
-    return send(res, 200, { ok: true, removed });
+    // Marked, not forgotten: a row that is gone can be contributed again by the
+    // next upload and nobody would notice it came back.
+    if (sigs.meta[h]) sigs.meta[h].state = 'rejected';
+    if (!sigs.rejected.includes(h)) sigs.rejected.push(h);
+    if (had) save(SIGS_FILE, sigs);
+    return send(res, 200, { ok: true, removed: had ? 1 : 0 });
   }
 
   // the shared, team-trained model (every client pulls this)
@@ -241,14 +317,14 @@ const server = http.createServer(async (req, res) => {
 
   // history (view-gated if VIEW_KEY set)
   if (req.method === 'GET' && url.pathname === '/api/history') {
-    if (VIEW_KEY && (url.searchParams.get('key') || req.headers['x-key']) !== VIEW_KEY) return send(res, 401, { error: 'bad view key' });
+    if (!viewOK()) return send(res, 401, { error: 'bad view key' });
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '200', 10) || 200, 1000);
     return send(res, 200, { scans: scans.slice(-limit).reverse().map(summary), viewProtected: !!VIEW_KEY });
   }
 
   // full scan detail (view-gated)
   if (req.method === 'GET' && url.pathname.startsWith('/api/scan/')) {
-    if (VIEW_KEY && (url.searchParams.get('key') || req.headers['x-key']) !== VIEW_KEY) return send(res, 401, { error: 'bad view key' });
+    if (!viewOK()) return send(res, 401, { error: 'bad view key' });
     const id = url.pathname.split('/').pop();
     // Either key works. The moderator is reading the Scan ID off a screen - that is
     // the one printed in the report - so looking it up must not require knowing the

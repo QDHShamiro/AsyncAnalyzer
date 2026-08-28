@@ -58,9 +58,46 @@ powershell -ExecutionPolicy Bypass -File AsyncAnalyzer.ps1
 The env vars win over whatever `ml/signatures.json` says, so you can run the Node server locally,
 watch a scan land in the dashboard, and only then publish the telemetry block.
 
-Note: the write key in `ml/signatures.json` is public by design — that is what lets a suspect's
-one-liner run upload its result. Anyone who reads the repo can also POST to your backend; per-IP
-rate limiting is the only guard.
+### The write key is public. That is why there is a second one.
+
+The write key in `ml/signatures.json` is public by design — that is what lets a suspect's
+one-liner run upload its result. Anyone who reads the repo can therefore POST to your backend,
+which is fine for a scan row and **not** fine for anything the whole team then believes:
+
+* a contributed `newCheat` hash reaches every client on its next run, so a wrong one is a
+  permanent team-wide false positive on a legitimate mod — somebody could submit the SHA1 of
+  `sodium.jar` and every scan on the team would confirm it as a cheat;
+* `samples` trains the shared model, 500 SGD steps per request.
+
+So the two are separated:
+
+| | public `WRITE_KEY` | `STAFF_KEY` (never in the repo) |
+|---|---|---|
+| POST a scan | yes | yes, marked `trusted` |
+| contributed hashes | queued as `pending` | applied straight away |
+| trains the shared model | **no** | yes |
+| approve / revoke a hash | no | yes |
+
+Set it with `wrangler secret put STAFF_KEY` (or `ASYNC_STAFFKEY=` for the Node server). Without
+one, nothing is ever trusted: scans still land, and every contributed hash waits in the queue.
+
+**Work the queue.** `GET /api/signatures/pending` lists what is waiting and who sent it;
+`POST /api/signatures/approve` with `{"hashes":[...]}` releases them. If nobody ever approves,
+the team stops learning — that is the cost of the queue and it is deliberate.
+
+A revoked hash stays revoked. `DELETE /api/signatures/:hash` marks it rather than deleting the
+row, so the next upload cannot quietly put it back.
+
+### The history is not public any more
+
+`/api/history` and `/api/scan/:id` return a Minecraft name, a PC name and a verdict about a real
+person. Without `VIEW_KEY` set they used to hand all of that to anybody who asked; now an unset
+key means **no history**, not a public one. The scanned PC's own Windows account name is stripped
+from `modPath` before it is stored at all (`C:\Users\<user>\...`), because that row can end up
+in a screenshot.
+
+Rate limiting is per-IP, 120 requests a minute, in **both** implementations — it was in the Node
+server only until `server/test_parity.mjs` started checking.
 
 ## Point the tool at your backend
 

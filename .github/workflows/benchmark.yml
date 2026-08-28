@@ -66,6 +66,13 @@ jobs:
           echo "--- dead-end audit ---"
           python3 audit.py
 
+      # Two hand-maintained implementations of one API. They had already drifted -
+      # the deployed half left scanId out of /api/history, which is the field the
+      # report tells moderators to look up - so both are started for real and
+      # asked the same questions.
+      - name: Backend parity
+        run: node server/test_parity.mjs
+
       # There is no PowerShell here, so the script cannot be parsed or run. This is
       # the closest thing to a compile check: it catches calls to functions that do
       # not exist, duplicate definitions (the later one silently wins) and
