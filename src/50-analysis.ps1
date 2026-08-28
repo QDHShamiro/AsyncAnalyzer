@@ -13,7 +13,8 @@ function Get-JarFeatures([string]$FilePath) {
         NestedHollow = $false
         ModId = ""; MetaName = ""; FakeIdentity = $false
         JavaAgent = $false; AgentRetransform = $false; AgentClass = ""
-        HiddenPayload = 0; LoaderIds = [System.Collections.Generic.List[string]]::new()
+        HiddenPayload = 0; PaddingEntry = 0
+        LoaderIds = [System.Collections.Generic.List[string]]::new()
         PayloadKinds  = [System.Collections.Generic.List[string]]::new()
         BlankMeta = $false; NativeJna = $false
         MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
@@ -44,7 +45,10 @@ function Get-JarFeatures([string]$FilePath) {
                 $leaf = ($n -split '/')[-1]
                 $dot = $leaf.LastIndexOf('.')
                 $ext = if ($dot -ge 0) { $leaf.Substring($dot + 1).ToLower() } else { "" }
-                $checkThis = ($ext -eq "") -or ($script:magicExt.ContainsKey($ext)) -or ($script:textExt -contains $ext)
+                # Large blobs are always looked at, whatever they are called. The
+                # padding test below only needs the bytes, and a file named pad.dat
+                # would otherwise slip past a list of known extensions.
+                $checkThis = ($ext -eq "") -or ($script:magicExt.ContainsKey($ext)) -or ($script:textExt -contains $ext) -or ($e.Length -ge 65536)
                 if ($checkThis) {
                     try {
                         $payloadChecks++
@@ -56,8 +60,34 @@ function Get-JarFeatures([string]$FilePath) {
                             $slice = New-Object byte[] $got
                             [Array]::Copy($buf, $slice, $got)
                             $hit = $false; $why = ""
+                            # A large entry made of one repeated byte. There is no
+                            # innocent version of this: it is padding, and padding
+                            # exists to change the file's SIZE - and with it the
+                            # SHA1 - so a hash from the last download does not match
+                            # this one. Doomsday's own download page offers it as a
+                            # "Randomize size" checkbox. Measured at 0 hits across
+                            # 179 real libraries and 1 on the real loader.
+                            if ($got -ge 4096 -and $e.Length -ge 16384) {
+                                $seen = New-Object 'bool[]' 256
+                                $distinct = 0
+                                for ($bi = 0; $bi -lt $got; $bi++) {
+                                    $bv = [int]$slice[$bi]
+                                    if (-not $seen[$bv]) { $seen[$bv] = $true; $distinct++; if ($distinct -gt 2) { break } }
+                                }
+                                if ($distinct -le 2) {
+                                    $f.PaddingEntry++
+                                    if (-not $f.PayloadKinds.Contains("padding")) { [void]$f.PayloadKinds.Add("padding") }
+                                }
+                            }
                             if ($ext -eq "") {
-                                if ($isClass -or (Get-ShannonEntropy $slice) -gt 7.0) { $hit = $true; $why = "extensionless" }
+                                # A class file without the .class extension is hidden whatever
+                                # its header says. High entropy alone is not, if the bytes name
+                                # the format themselves (see Test-SelfIdentifyingBlob).
+                                if ($isClass) { $hit = $true; $why = "extensionless" }
+                                elseif ((Get-ShannonEntropy $slice) -gt 7.0 -and
+                                        -not (Test-SelfIdentifyingBlob $slice $e.Length)) {
+                                    $hit = $true; $why = "extensionless"
+                                }
                             } elseif ($script:magicExt.ContainsKey($ext)) {
                                 $magic = $script:magicExt[$ext]
                                 $match = $true
@@ -248,6 +278,10 @@ function Get-ModVerdict($ctx) {
     if ($ft.PackageHits.Count -gt 0) {
         $score = [Math]::Max($score, 80)
         [void]$reasons.Add("Cheat-client package path: " + ((@($ft.PackageHits) | Select-Object -Unique | Select-Object -First 3) -join ', '))
+    }
+    if ($ft.PaddingEntry -gt 0) {
+        $score = [Math]::Max($score, 60)
+        [void]$reasons.Add("$($ft.PaddingEntry) entr(y/ies) inside this jar are nothing but padding $([char]0x2014) one byte value repeated for kilobytes. Padding has no function; it exists to change the file's size and therefore its SHA1, so a hash taken from someone else's copy will not match this one. Nothing legitimate ships it")
     }
     if ($ft.JavaAgent) {
         $score = [Math]::Max($score, $(if ($ft.AgentRetransform) { 90 } else { 80 }))
@@ -609,7 +643,7 @@ function New-TestFeatures($over) {
         FullwidthClsPct = 0.0; JapaneseClsPct = 0.0; SingleCharClsPct = 0.0; NumericClsPct = 0.0; NoVowelClsPct = 0.0
         AvgEntropy = 0.0; HighEntropyPct = 0.0; ReflectionCount = 0; RuntimeExec = $false; HttpDownload = $false
         HttpExfil = $false; NestedHollow = $false; ModId = ""; MetaName = ""; FakeIdentity = $false
-        JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0
+        JavaAgent = $false; AgentRetransform = $false; AgentClass = ""; HiddenPayload = 0; PaddingEntry = 0
         LoaderIds = @(); BlankMeta = $false; NativeJna = $false; PayloadKinds = @()
         MixinConfigs = 0; MixinDeclared = 0; MixinClientOnly = $false
         CoreMod = $false; CoreModClass = ""; TweakClass = ""; CoreModJs = 0; AccessWidened = 0
@@ -639,6 +673,10 @@ function Invoke-SelfTest {
         @{ Label = "Minimap w/ mob radar, unverified"; Bands = @("ServerRule"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Minimap w/ mob radar, verified"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Dropper by behaviour (encrypted)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ cryptoRatio = 1.0; classloadRatio = 1.0; reflectRatio = 1.0; StrReadableRatio = 0.1 }) } }
+        # Measured on the real Doomsday loader: 175 KB of zeros in an entry called
+        # "000", which is the vendor's own "Randomize size" option. 0 hits across
+        # 179 real libraries.
+        @{ Label = "Jar padded to change its own hash"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{ PaddingEntry = 1 }); Bytecode = (New-TestBytecode @{}) } }
         @{ Label = "Reflection-heavy lib, no cheat behaviour"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 5 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0 }) } }
         # Mixins are how ordinary Fabric mods are built - Sodium and the Fabric API
         # are nothing else - so the technique on its own must never move the band.

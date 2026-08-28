@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "note": "Community cheat-intelligence list. AsyncAnalyzer auto-downloads this on start (unless -NoUpdate). knownCheatHashes = confirmed cheat SHA1s. knownGoodHashes = known-legit SHA1s. packagePaths = distinctive cheat Java packages. clientTokens = distinctive cheat-client filename tokens. downloadDomains = cheat download sites. processNames = EXTERNAL ghost clients that run as their own process and never appear in the mods folder. Keep clientTokens and processNames distinctive/compound (e.g. 'ghostclient', never bare 'ghost') so legit mods and normal programs are never false-flagged. moduleNames = cheat MODULE names confirmed in two independent open-source cheat clients (Wurst @4e9fd5a, Meteor @8038a0a) AND checked for collisions with real mods - names like Timer/Step/Reach or VeinMiner/Freecam are deliberately excluded because legit mods use them. scanPaths = extra folders every client should always scan on top of whatever Minecraft is open (a machine-specific list can also go in %APPDATA%\\\\AsyncAnalyzer\\\\paths.txt, one path per line). Everyone who runs the tool then benefits.",
   "telemetry": {
     "enabled": false,
@@ -8,7 +8,9 @@
     "pullSignatures": true,
     "note": "Team scan-history + shared learning. Set enabled=true and fill endpoint (your backend URL from server/README.md) + key (WRITE_KEY) to have every run upload its result to your dashboard. The tool shows an upload notice to the scanned person. Set enabled=false to turn it off for everyone instantly."
   },
-  "knownCheatHashes": [],
+  "knownCheatHashes": [
+    "ff3e28633c24356a45ac9d40023b07a15e3ccbc3"
+  ],
   "knownGoodHashes": [],
   "packagePaths": [
     "net/ccbluex",
@@ -164,5 +166,8 @@
     "BedAura",
     "MessageAura"
   ],
-  "scanPaths": []
+  "scanPaths": [],
+  "notes": {
+    "knownCheatHashes": "SHA1 of confirmed cheat files. Contributed from real screenshares. Note on Doomsday specifically: its download page offers a 'Randomize size' option that pads the jar with a block of zeros, so every download has a different SHA1 and a hash catches only that exact copy. The structural rules are what actually catch it - the padding block itself is now one of them."
+  }
 }

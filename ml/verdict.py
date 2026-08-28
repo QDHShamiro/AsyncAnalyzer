@@ -49,6 +49,13 @@ def verdict(raw):
     if raw.get("pkgpath"):
         score = max(score, 80)
     # mechanism-based hard rules (mirror of AsyncAnalyzer.ps1 Get-ModVerdict)
+    # A large entry made of one repeated byte. There is no innocent version: it is
+    # padding, and padding exists to change the file's size and therefore its SHA1,
+    # so a hash from someone else's copy does not match this one. Doomsday's own
+    # download page offers it as a "Randomize size" checkbox. 0 hits across 179 real
+    # libraries, 1 on the real loader.
+    if raw.get("padding_entry", 0) > 0:
+        score = max(score, 60)
     if raw.get("java_agent"):
         score = max(score, 90 if raw.get("agent_retransform") else 80)
     if raw.get("hidden_payload", 0) > 0:

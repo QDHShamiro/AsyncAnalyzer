@@ -72,6 +72,49 @@ def make_cheat_doomsday(d):
     return p
 
 
+def make_ghost_loader(d):
+    """The shape of a real ghost-client loader, measured from one.
+
+    Not the file - this repo ships no cheat binaries - but every structural thing
+    that file actually had, reproduced so it is proven on every build:
+
+      * three loader manifests at once (fabric.mod.json, mcmod.info, mods.toml),
+        which is not a compatibility choice but a dropper making sure SOMETHING
+        picks it up;
+      * Premain-Class with Can-Retransform-Classes: true, so it attaches as a Java
+        agent and can rewrite game classes as they load;
+      * four extensionless entries of near-maximum entropy - the encrypted payload,
+        which is why the bytecode reader finds no cheat behaviour in the jar itself;
+      * a 175 KB entry of pure zeros. That one is the vendor's own "Randomize size"
+        option: padding has no function except to change the file's size and with it
+        its SHA1, so a hash from somebody else's download does not match this copy;
+      * every class named with a single letter.
+
+    The real one scored Confirmed 90/100, on the hard rules rather than the model -
+    the model alone gave it 24%, which is the whole reason the hard rules exist.
+    """
+    p = os.path.join(d, "gzfjalsrvp.jar")
+    entries = {
+        "fabric.mod.json": '{"schemaVersion":1,"id":"dd","version":"1.0.0"}',
+        "mcmod.info": '[{"modid":"dd","url":"","description":""}]',
+        "META-INF/mods.toml": 'modLoader="javafml"\nloaderVersion="[25,)"\n[[mods]]\nmodId="dd"\n',
+        "META-INF/MANIFEST.MF": ("Manifest-Version: 1.0\nPremain-Class: net.java.f\n"
+                                 "Can-Retransform-Classes: true\nMain-Class: net.java.n\n"),
+        "pack.mcmeta": '{"pack":{"description": "","pack_format": 1}}',
+        # the encrypted payload: extensionless, near-maximum entropy
+        "net/java/a": os.urandom(214590),
+        "net/java/b": os.urandom(17474),
+        "net/java/d": os.urandom(106215),
+        "net/java/e": os.urandom(14152),
+        # the "Randomize size" padding, which is what makes a hash useless here
+        "000": b"\x00" * 175875,
+    }
+    for i, c in enumerate("abcdefghijk"):
+        entries["net/java/%s.class" % c] = _fake_class(60 + i)
+    build_jar(p, entries)
+    return p
+
+
 def make_token_grabber(d):
     p = os.path.join(d, "helper-mod.jar")
     entries = {
@@ -147,6 +190,7 @@ def analyze(path, verified=False):
 CASES = [
     # (builder, verified, expected-bands-allowed, label)
     (make_cheat_doomsday, False, {"Confirmed", "Likely"}, "Doomsday cheat"),
+    (make_ghost_loader, False, {"Confirmed"}, "Ghost-client loader (real shape)"),
     (make_token_grabber, False, {"Confirmed", "Likely"}, "Token grabber"),
     (make_clean_sodium, False, {"Clean"}, "Clean Sodium (legit modid)"),
     (make_legit_anticheat, False, {"Clean"}, "Anticheat w/ detection names"),
@@ -211,23 +255,54 @@ def main():
         print(f"  [{'PASS' if ok else 'FAIL'}] {label:42s} score={v['score']:3d} band={v['band']:9s}"
               f" (want {sorted(allowed)})")
 
-    # real known-clean library jars must all be Clean
+    # Real library jars. Split, the same way ml/benchmark.py splits them and for
+    # the same reason: a handful of these ARE Java agents - aspectjweaver,
+    # byte-buddy-agent, opentelemetry-javaagent, spring-instrument - and the agent
+    # rule flagging them is correct rather than a false positive. The rule is scoped
+    # to a jar sitting in a MODS FOLDER, where an agent is abnormal; in an ordinary
+    # application classpath it is the library's whole job.
+    #
+    # This split only appeared when features.py learned to read the manifest. Before
+    # that the Python extractor never computed java_agent at all, so this test was
+    # passing on rules it was not reaching - which is worth stating plainly rather
+    # than quietly widening the expectation.
     jars = os.path.join(HERE, "jars_legit")
     if os.path.isdir(jars):
-        print("\n=== Real library jars (must be Clean) ===")
+        print("\n=== Real library jars ===")
         worst = 0.0
+        agents = []
         for f in sorted(os.listdir(jars)):
             if not f.endswith(".jar"):
                 continue
-            v = analyze(os.path.join(jars, f))
+            path = os.path.join(jars, f)
+            raw = features.extract_from_jar(path)
+            v = analyze(path)
+            if raw.get("java_agent") and v["band"] != "Clean":
+                # genuinely an agent, and nothing else about it fired
+                agents.append(f)
+                continue
             ok = v["band"] == "Clean"
             passed += ok
             failed += not ok
             worst = max(worst, v["score"])
             if not ok:
                 print(f"  [FAIL] {f:32s} score={v['score']} band={v['band']}")
-        print(f"  {len([x for x in os.listdir(jars) if x.endswith('.jar')])} real jars, "
+        n = len([x for x in os.listdir(jars) if x.endswith('.jar')])
+        print(f"  {n} real jars, {n - len(agents)} judged on the non-agent rules, "
               f"worst score {worst} -> {'all Clean' if worst < 30 else 'SOME NOT CLEAN'}")
+        print(f"  {len(agents)} are real Java agents and are flagged as such, correctly: "
+              + ", ".join(agents))
+        # ...but an agent must not be flagged for anything BESIDES being an agent,
+        # or the split above would be hiding a genuine false positive behind it.
+        for f in agents:
+            raw = features.extract_from_jar(os.path.join(jars, f))
+            other = (raw.get("padding_entry", 0) > 0 or raw.get("hidden_payload", 0) > 0
+                     or len(raw.get("loader_ids", [])) >= 3
+                     or raw.get("pkgpath") or raw.get("cheatsite"))
+            passed += not other
+            failed += bool(other)
+            if other:
+                print(f"  [FAIL] {f} is flagged for more than being an agent")
 
     print(f"\n=== RESULT: {passed} passed, {failed} failed ===")
     return 0 if failed == 0 else 1

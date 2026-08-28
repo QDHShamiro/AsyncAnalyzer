@@ -43,7 +43,8 @@ def to_raw(over):
                 raw[key] = len(re.findall(r'["\'][^"\']+["\']', m2.group(1)))
         for k, v in re.findall(r'(\w+)\s*=\s*([\d.]+)', f.group(1)):
             raw[{"SingleCharClsPct": "singlechar_cls_pct", "HighEntropyPct": "high_entropy_pct",
-                 "AvgEntropy": "avg_entropy", "ReflectionCount": "reflection_count"}.get(k, k.lower())] = float(v)
+                 "AvgEntropy": "avg_entropy", "ReflectionCount": "reflection_count",
+                 "PaddingEntry": "padding_entry", "HiddenPayload": "hidden_payload"}.get(k, k.lower())] = float(v)
     return raw
 
 BYTECODE_ONLY = [c for c in cases if "New-TestBytecode" in c[2]]

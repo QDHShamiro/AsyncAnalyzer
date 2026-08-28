@@ -1062,6 +1062,30 @@ function Invoke-ObfuscationScan([string]$FilePath) {
     return $flags
 }
 
+# A blob that says what it is in its own first bytes. "No extension + high
+# entropy" is how a dropper hides a payload, but a Java keystore or a DER
+# certificate is high-entropy BY NATURE and announces itself in its header.
+# Checked structurally - the version field, or a declared length that has to
+# equal the entry we are actually holding - so a payload cannot buy itself an
+# exemption by prepending two magic bytes. Measured: exempts exactly 1 entry
+# across 179 real libraries (WireMock's HTTPS keystore) and 0 of the 4
+# encrypted payloads in a real ghost-client loader.
+function Test-SelfIdentifyingBlob([byte[]]$data, [int]$size) {
+    if ($data.Length -lt 8) { return $false }
+    # Java keystore (JKS / JCEKS): FEEDFEED, then a version of 1 or 2.
+    if ($data[0] -eq 0xFE -and $data[1] -eq 0xED -and $data[2] -eq 0xFE -and $data[3] -eq 0xED) {
+        $ver = ([int]$data[4] -shl 24) -bor ([int]$data[5] -shl 16) -bor ([int]$data[6] -shl 8) -bor [int]$data[7]
+        if ($ver -eq 1 -or $ver -eq 2) { return $true }
+    }
+    # DER (certificate, PKCS#12, private key): a SEQUENCE with a long-form
+    # two-byte length, and that length has to describe this exact entry.
+    if ($data[0] -eq 0x30 -and $data[1] -eq 0x82) {
+        $len = ([int]$data[2] -shl 8) -bor [int]$data[3]
+        if (($len + 4) -eq $size) { return $true }
+    }
+    return $false
+}
+
 function Get-ShannonEntropy([byte[]]$data) {
     $len = $data.Length
     if ($len -eq 0) { return 0.0 }

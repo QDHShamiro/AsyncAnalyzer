@@ -110,6 +110,21 @@ _JP = re.compile(r"[぀-ゟ゠-ヿ㐀-䶿一-鿿]")
 _VOWELS = set("aeiouAEIOU")
 
 
+def _self_identifying(head, size):
+    """A blob whose own header names its format. Mirrors Test-SelfIdentifyingBlob.
+
+    Checked structurally (version field, or a declared length that must equal the
+    entry) so a payload cannot buy an exemption by prepending two magic bytes.
+    """
+    if len(head) < 8:
+        return False
+    if head[:4] == b"\xfe\xed\xfe\xed" and int.from_bytes(head[4:8], "big") in (1, 2):
+        return True  # Java keystore (JKS / JCEKS)
+    if head[0] == 0x30 and head[1] == 0x82 and int.from_bytes(head[2:4], "big") + 4 == size:
+        return True  # DER certificate / PKCS#12 / private key
+    return False
+
+
 def _entropy(data):
     if not data:
         return 0.0
@@ -153,12 +168,58 @@ def extract_from_jar(path, verified=0, legit_modid=0, filename_client=0,
         return raw
 
     names = z.namelist()
+    loaders = set()
+    padding = 0
+    hidden = 0
     for n in names:
         if re.search(r"^META-INF/jars/.+\.jar$", n):
             nested += 1
         for p in PACKAGE_PATHS:
             if p in n:
                 pkg.add(p)
+        # Which loader this jar claims to be for. Claiming three at once is not a
+        # compatibility choice - it is a dropper making sure SOMETHING picks it up.
+        if re.search(r"fabric\.mod\.json$|quilt\.mod\.json$", n):
+            loaders.add("fabric")
+        elif re.search(r"META-INF/(neoforge\.)?mods\.toml$", n):
+            loaders.add("forge")
+        elif n == "mcmod.info":
+            loaders.add("forge-legacy")
+        elif n in ("plugin.yml", "bungee.yml"):
+            loaders.add("bukkit")
+
+    # These three were not computed here at all, so every rule that catches a
+    # LOADER - the agent, the hidden payload, the padding - was never exercised
+    # through this extractor. The tests passed on the rules they did reach.
+    for info in z.infolist():
+        n = info.filename
+        if n.endswith("/") or n.endswith(".class") or info.file_size < 1024:
+            continue
+        try:
+            head = z.open(n).read(65536)
+        except Exception:
+            continue
+        leaf = n.rsplit("/", 1)[-1]
+        ext = leaf.rsplit(".", 1)[-1].lower() if "." in leaf else ""
+        # a large entry made of one repeated byte is padding, and padding exists to
+        # change the file's size and therefore its SHA1
+        if info.file_size >= 16384 and len(head) >= 4096 and len(set(head)) <= 2:
+            padding += 1
+        if ext == "" and len(head) >= 512:
+            if head[:4] == b"\xca\xfe\xba\xbe":
+                hidden += 1
+            elif _entropy(head) > 7.0 and not _self_identifying(head, info.file_size):
+                hidden += 1
+    raw["loader_ids"] = sorted(loaders)
+    raw["padding_entry"] = padding
+    raw["hidden_payload"] = hidden
+    try:
+        mf = z.read("META-INF/MANIFEST.MF").decode("utf-8", "ignore")
+        raw["java_agent"] = bool(re.search(r"(?im)^(Premain-Class|Agent-Class)\s*:", mf))
+        raw["agent_retransform"] = bool(
+            re.search(r"(?im)^Can-(Retransform|Redefine)-Classes\s*:\s*true", mf))
+    except Exception:
+        pass
 
     for info in z.infolist():
         n = info.filename
