@@ -5,243 +5,14 @@
 <meta name="description" content="Every rule the scanner applies, read out of the shipped source when this page is built.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<style>
-:root{
-  --ground:#f6f7f9; --surface:#ffffff; --sunk:#f0f2f5;
-  --ink:#11151b; --muted:#59636f; --line:#e2e6ec;
-  --accent:#00a89b; --s1:#00a89b; --s2:#6d4fd0;
-  --pass:#1c7f47; --pass-bg:#e6f4ec;
-  --warn:#96610a; --warn-bg:#fbf0dd;
-  --grid:#eceff3;
-  --shadow:0 1px 2px rgba(17,21,27,.05),0 8px 24px -12px rgba(17,21,27,.12);
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --ground:#0f1216; --surface:#161a20; --sunk:#12161b;
-    --ink:#e7ebf1; --muted:#8a94a1; --line:#262c35;
-    --accent:#00a89b; --s1:#00a89b; --s2:#8064f0;
-    --pass:#43cf85; --pass-bg:#122a1e;
-    --warn:#e0a63c; --warn-bg:#2a2113;
-    --grid:#1e242c;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
-  }
-}
-:root[data-theme="dark"]{
-  --ground:#0f1216; --surface:#161a20; --sunk:#12161b;
-  --ink:#e7ebf1; --muted:#8a94a1; --line:#262c35;
-  --accent:#00a89b; --s1:#00a89b; --s2:#8064f0;
-  --pass:#43cf85; --pass-bg:#122a1e;
-  --warn:#e0a63c; --warn-bg:#2a2113;
-  --grid:#1e242c;
-  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
-}
-
-*{box-sizing:border-box;margin:0;padding:0}
-body{
-  background:var(--ground); color:var(--ink);
-  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  font-size:16px; line-height:1.6;
-  padding:0 20px 80px;
-}
-.wrap{max-width:860px;margin:0 auto}
-.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
-.num{font-variant-numeric:tabular-nums}
-
-/* ---- build stamp ---------------------------------------------------- */
-.stamp{
-  display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;
-  padding:22px 0 20px;border-bottom:1px solid var(--line);
-  font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);
-}
-.stamp b{color:var(--ink);font-weight:500}
-.stamp .sep{color:var(--line)}
-
-/* ---- masthead ------------------------------------------------------- */
-header{padding:44px 0 8px}
-h1{
-  font-size:clamp(28px,4.4vw,40px);font-weight:600;line-height:1.15;
-  letter-spacing:-.02em;text-wrap:balance;
-}
-.lede{margin-top:14px;color:var(--muted);max-width:60ch;font-size:17px}
-
-/* ---- hero figure ---------------------------------------------------- */
-.hero{
-  margin:36px 0 8px;padding:30px 32px;background:var(--surface);
-  border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
-  display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 28px;
-}
-.hero .fig{
-  font-family:"IBM Plex Mono",monospace;font-size:clamp(52px,9vw,76px);
-  font-weight:600;line-height:1;letter-spacing:-.04em;color:var(--accent);
-  font-variant-numeric:tabular-nums;
-}
-.hero .cap{flex:1;min-width:240px}
-.hero .cap strong{display:block;font-size:17px;font-weight:600;margin-bottom:4px}
-.hero .cap span{color:var(--muted);font-size:15px}
-
-/* ---- sections ------------------------------------------------------- */
-section{margin-top:52px}
-.label{
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:500;
-  letter-spacing:.11em;text-transform:uppercase;color:var(--muted);
-  padding-bottom:12px;margin-bottom:20px;border-bottom:1px solid var(--line);
-}
-h2{font-size:21px;font-weight:600;letter-spacing:-.01em;margin-bottom:6px}
-.note{color:var(--muted);font-size:15px;max-width:62ch}
-
-/* ---- results table -------------------------------------------------- */
-.tbl-scroll{overflow-x:auto;margin-top:18px}
-table{width:100%;border-collapse:collapse;font-size:15px;min-width:460px}
-th{
-  text-align:left;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
-  font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
-  padding:0 12px 10px 0;border-bottom:1px solid var(--line);
-}
-td{padding:12px 12px 12px 0;border-bottom:1px solid var(--line);vertical-align:top}
-tr:last-child td{border-bottom:0}
-td.w{color:var(--muted);font-size:14px}
-.pill{
-  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
-  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:500;
-  padding:3px 9px;border-radius:999px;
-}
-.pill.ok{color:var(--pass);background:var(--pass-bg)}
-.pill.rev{color:var(--warn);background:var(--warn-bg)}
-.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
-
-/* ---- chart ---------------------------------------------------------- */
-.chart-card{
-  margin-top:20px;padding:24px 24px 16px;background:var(--surface);
-  border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
-}
-.legend{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:18px}
-.legend i{display:flex;align-items:center;gap:8px;font-style:normal;font-size:13.5px;color:var(--muted)}
-.legend i s{width:14px;height:3px;border-radius:2px;text-decoration:none;flex:none}
-.chart-scroll{overflow-x:auto}
-svg{display:block;width:100%;height:auto;min-width:420px}
-.gl{stroke:var(--grid);stroke-width:1}
-.ax{fill:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:11px}
-.dlab{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;fill:var(--ink)}
-.hit{fill:transparent;cursor:crosshair}
-#cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3;opacity:0}
-.tip{
-  position:absolute;pointer-events:none;opacity:0;transform:translate(-50%,-100%);
-  background:var(--ink);color:var(--surface);border-radius:8px;padding:8px 11px;
-  font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5;white-space:nowrap;
-  transition:opacity .12s;z-index:5;
-}
-.tip b{font-weight:600}
-.chart-wrap{position:relative}
-
-/* ---- limits --------------------------------------------------------- */
-.limits{display:grid;gap:14px;margin-top:18px}
-.limit{
-  padding:16px 18px;background:var(--sunk);border-radius:11px;
-  border-left:2px solid var(--line);
-}
-.limit b{display:block;font-size:15px;font-weight:600;margin-bottom:3px}
-.limit span{color:var(--muted);font-size:14.5px}
-
-footer{
-  margin-top:56px;padding-top:22px;border-top:1px solid var(--line);
-  color:var(--muted);font-size:13.5px;display:flex;flex-wrap:wrap;gap:6px 20px;
-}
-a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
-a:hover{border-bottom-color:currentColor}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
-
-
-/* ---- site chrome (shared by every page) ------------------------------ */
-nav.site{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:18px 0 0;}
-nav.site a{
-  font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);
-  text-decoration:none;padding:6px 11px;border-radius:8px;
-}
-nav.site a:hover{color:var(--ink);background:var(--sunk)}
-nav.site a[aria-current]{color:var(--accent);background:var(--sunk)}
-nav.site .grow{flex:1}
-a{color:var(--accent)}
-
-/* ---- landing --------------------------------------------------------- */
-.cmd{
-  margin-top:26px;background:var(--surface);border:1px solid var(--line);
-  border-radius:14px;box-shadow:var(--shadow);overflow:hidden;
-}
-.cmd-head{
-  display:flex;align-items:center;gap:10px;padding:11px 16px;
-  border-bottom:1px solid var(--line);background:var(--sunk);
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;
-  letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
-}
-.cmd-head .grow{flex:1}
-.cmd pre{
-  /* A command people copy is worth seeing in full - wrapping beats a scrollbar
-     that hides half of it behind the edge of the card. */
-  padding:18px 16px;font-family:"IBM Plex Mono",monospace;
-  font-size:13px;line-height:1.7;color:var(--ink);
-  white-space:pre-wrap;overflow-wrap:anywhere;
-}
-.btn{
-  font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.06em;
-  text-transform:uppercase;background:var(--surface);color:var(--muted);
-  border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer;
-}
-.btn:hover{color:var(--accent);border-color:var(--accent)}
-.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:20px}
-.card{
-  padding:20px;background:var(--surface);border:1px solid var(--line);
-  border-radius:13px;box-shadow:var(--shadow);
-}
-.card b{display:block;font-size:15.5px;font-weight:600;margin-bottom:6px}
-.card span{color:var(--muted);font-size:14.5px}
-.card .k{
-  font-family:"IBM Plex Mono",monospace;font-size:30px;font-weight:600;
-  color:var(--accent);letter-spacing:-.03em;display:block;margin-bottom:4px;
-  font-variant-numeric:tabular-nums;
-}
-
-/* ---- documentation --------------------------------------------------- */
-.rule{
-  padding:17px 19px;background:var(--surface);border:1px solid var(--line);
-  border-left:2px solid var(--accent);border-radius:11px;margin-top:12px;
-}
-.rule b{display:block;font-size:15.5px;font-weight:600;margin-bottom:4px}
-.rule span{color:var(--muted);font-size:14.5px}
-.rule .mono{color:var(--ink);font-size:13px}
-.rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px}
-.rules-grid .rule{margin-top:0}
-.bands{display:grid;gap:10px;margin-top:18px}
-.band{
-  display:grid;grid-template-columns:minmax(96px,132px) minmax(58px,72px) 1fr;
-  gap:14px;align-items:baseline;padding:13px 16px;background:var(--surface);
-  border:1px solid var(--line);border-left:3px solid var(--bc);border-radius:11px;
-}
-.band .nm{font-weight:600;color:var(--bc)}
-.band .rg{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-.band .ds{color:var(--muted);font-size:14.5px}
-ul.pts{list-style:none;display:grid;gap:8px;margin-top:16px}
-ul.pts li{padding-left:17px;position:relative;color:var(--muted);font-size:15px}
-ul.pts li:before{
-  content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;
-  border-radius:50%;background:var(--accent);
-}
-ul.pts li b{color:var(--ink);font-weight:600}
-.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
-.chip{
-  font-family:"IBM Plex Mono",monospace;font-size:12px;padding:4px 10px;
-  border-radius:999px;background:var(--sunk);color:var(--muted);border:1px solid var(--line);
-}
-footer.site{
-  margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
-  color:var(--muted);font-size:14px;
-}
-</style></head>
-<body><div class="wrap">
-<nav class="site"><a href="index.html">Overview</a><a href="benchmarks.html">Benchmarks</a><a href="how-it-works.html" aria-current="page">How it works</a><span class="grow"></span><a href="https://github.com/QDHShamiro/AsyncAnalyzer">GitHub &#8599;</a></nav>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="stylesheet" href="/assets/docs.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div class="nav-shell"><nav class="nav" aria-label="Main"><a class="brand" href="/"><span class="dot" aria-hidden="true"></span>AsyncAnalyzer</a><div class="nav-links"><a href="/how-it-works" class="hide-sm" aria-current="page">How it works</a><a href="/benchmarks" class="hide-sm">Benchmarks</a><span id="nav-auth"></span><button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch between light and dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/></svg></button></div></nav></div>
+<main class="wrap">
 
 <header>
   <h1>How the verdict is reached</h1>
@@ -384,9 +155,15 @@ footer.site{
   </div>
 </section>
 
-<footer class="site">
-  AsyncAnalyzer is built by Async Studio and is open source &mdash; the whole scanner is
-  one PowerShell file you can read before you run it.
-  <a href="https://github.com/QDHShamiro/AsyncAnalyzer">Source</a> &middot; <a href="https://github.com/QDHShamiro/AsyncAnalyzer/blob/main/BENCHMARKS.md">Raw benchmark output</a>
-</footer>
-</div></body></html>
+</main>
+<footer><div class="wrap">
+  <span class="mono">AsyncAnalyzer</span>
+  <a href="/how-it-works">How it works</a>
+  <a href="/privacy">Privacy</a>
+  <a href="https://github.com/QDHShamiro/AsyncAnalyzer">Source</a>
+  <a href="https://github.com/QDHShamiro/AsyncAnalyzer/blob/main/BENCHMARKS.md">Raw benchmark output</a>
+  <span class="spacer"></span>
+  <span class="tiny">The scan runs on the suspect's own PC.</span>
+</div></footer>
+<script type="module">import { boot } from '/assets/app.js'; boot();</script>
+</body></html>

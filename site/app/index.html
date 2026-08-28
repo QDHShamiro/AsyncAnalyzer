@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div class="page-head">
+    <h1 id="hello">Your servers</h1>
+    <p class="muted" id="sub" style="margin-top:8px"></p>
+  </div>
+  <div id="body"><div class="skeleton" style="height:120px"></div></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, esc, $ } from '/assets/app.js';
+
+boot(async () => {
+  const state = await requireAuth();
+  if (!state) return;
+
+  $('#hello').textContent = state.staff ? 'Every server' : 'Your servers';
+  $('#sub').textContent = 'Signed in as ' + state.user.name + (state.user.role ? ' · ' + state.user.role : '');
+
+  const { servers, all } = await api('/api/servers');
+  const body = $('#body');
+
+  if (!servers.length) {
+    const app = state.application;
+    body.innerHTML = app && app.status === 'pending'
+      ? '<div class="empty"><h3>' + esc(app.name) + ' is waiting to be let in</h3>' +
+        '<p>We look at applications by hand. Nothing else for you to do.</p></div>'
+      : '<div class="empty"><h3>No server yet</h3>' +
+        '<p style="margin-bottom:22px">Apply with your server and we will take a look.</p>' +
+        '<a class="btn btn-primary" href="/apply">Apply with your server</a></div>';
+    return;
+  }
+
+  body.innerHTML = '<div class="grid grid-2">' + servers.map(s => {
+    const meta = all
+      ? esc(s.owner_name || '') + ' · ' + (s.members || 0) + ' staff · ' + (s.scans || 0) + ' scans'
+      : 'You are ' + (s.role === 'owner' ? 'the owner' : 'a moderator') + ' here';
+    const status = s.status && s.status !== 'active'
+      ? '<span class="chip chip-warn" style="margin-bottom:12px">' + esc(s.status) + '</span>' : '';
+    return '<a class="card card-link reveal" href="/app/' + encodeURIComponent(s.slug) + '">' +
+      status + '<h3>' + esc(s.name) + '</h3>' +
+      '<p class="muted small" style="margin-top:6px">' + meta + '</p></a>';
+  }).join('') + '</div>';
+});
+</script>
+</body></html>

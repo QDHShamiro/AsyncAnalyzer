@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apply with your server — AsyncAnalyzer</title>
+<meta name="description" content="Apply to use AsyncAnalyzer on your Minecraft server.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap narrow" style="padding-top:56px">
+  <div id="state"></div>
+
+  <div id="start" hidden>
+    <h2 style="margin-bottom:10px">Apply with your server</h2>
+    <p class="muted" style="margin-bottom:28px">
+      Every server is let in by hand. It takes a few sentences from you and a look from us —
+      the point is that a verdict from this tool means something.
+    </p>
+
+    <div id="error" hidden class="notice notice-bad" role="alert" style="margin-bottom:20px"></div>
+
+    <form id="form" novalidate>
+      <div class="field">
+        <label for="name">Server name <span aria-hidden="true">*</span></label>
+        <input id="name" type="text" required maxlength="60" placeholder="RayzeSMP">
+      </div>
+      <div class="field">
+        <label for="invite">Discord invite</label>
+        <input id="invite" type="text" maxlength="120" placeholder="https://discord.gg/…">
+        <div class="hint">So we can see the community is real. Use a link that does not expire.</div>
+      </div>
+      <div class="field">
+        <label for="players">Players</label>
+        <input id="players" type="text" maxlength="40" placeholder="~120 concurrent, 4k registered">
+      </div>
+      <div class="field">
+        <label for="age">How long has it been running?</label>
+        <input id="age" type="text" maxlength="40" placeholder="Since March 2024">
+      </div>
+      <div class="field">
+        <label for="reason">Why do you need it? <span aria-hidden="true">*</span></label>
+        <textarea id="reason" required maxlength="1000" placeholder="What your screenshares look like today, and where they fall apart."></textarea>
+        <div class="hint">A couple of honest sentences. Written by a person, not a template.</div>
+      </div>
+      <button class="btn btn-primary" style="width:100%" type="submit">Send the application</button>
+    </form>
+  </div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, esc, $ } from '/assets/app.js';
+
+boot(async () => {
+  const state = await requireAuth();
+  if (!state) return;
+
+  // Somebody who already runs a server, or already applied, gets told where they
+  // stand instead of an empty form that will be refused.
+  if (state.servers && state.servers.length) {
+    $('#state').innerHTML =
+      '<div class="card card-pad"><h3>You already have a server here</h3>' +
+      '<p class="muted" style="margin:8px 0 18px">' +
+      state.servers.map(s => esc(s.name)).join(', ') +
+      '</p><a class="btn btn-primary" href="/app">Open your dashboard</a></div>';
+    return;
+  }
+  const app = state.application;
+  if (app && app.status === 'pending') {
+    $('#state').innerHTML =
+      '<div class="card card-pad"><span class="chip chip-warn">Waiting</span>' +
+      '<h3 style="margin-top:14px">' + esc(app.name) + ' is in the queue</h3>' +
+      '<p class="muted" style="margin-top:8px">Sent ' + esc((app.created_ts || '').slice(0, 10)) +
+      '. We look at applications by hand, so give it a day or two.</p></div>';
+    return;
+  }
+  if (app && app.status === 'rejected') {
+    $('#state').innerHTML =
+      '<div class="notice notice-bad" style="margin-bottom:24px"><b>' + esc(app.name) +
+      ' was not accepted.</b> You can apply again with more detail.</div>';
+  }
+
+  $('#start').hidden = false;
+  $('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    btn.setAttribute('aria-busy', 'true');
+    $('#error').hidden = true;
+    try {
+      await api('/api/applications', {
+        body: {
+          name: $('#name').value.trim(), discordInvite: $('#invite').value.trim(),
+          players: $('#players').value.trim(), age: $('#age').value.trim(),
+          reason: $('#reason').value.trim(),
+        },
+      });
+      $('#start').hidden = true;
+      $('#state').innerHTML =
+        '<div class="card card-pad"><span class="chip chip-good">Sent</span>' +
+        '<h3 style="margin-top:14px">Thanks — it is in the queue</h3>' +
+        '<p class="muted" style="margin-top:8px">You will hear back once somebody has looked at it. ' +
+        'Nothing else to do for now.</p></div>';
+    } catch (ex) {
+      $('#error').textContent = ex.message;
+      $('#error').hidden = false;
+      $('#error').scrollIntoView({ block: 'center' });
+    } finally {
+      btn.removeAttribute('aria-busy');
+    }
+  });
+});
+</script>
+</body></html>

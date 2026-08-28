@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scans — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div id="head"><div class="skeleton" style="height:110px;margin-top:44px"></div></div>
+
+  <div class="btn-row" id="filters" hidden style="margin-bottom:18px">
+    <input id="q" type="text" placeholder="Search player, moderator or scan ID" style="max-width:340px" aria-label="Search scans">
+    <select id="verdict" aria-label="Filter by verdict" style="max-width:200px">
+      <option value="">Every verdict</option>
+      <option value="confirm">Confirmed</option>
+      <option value="review">Review</option>
+      <option value="clean">Clean</option>
+    </select>
+  </div>
+
+  <div id="body"></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, serverSlug, serverHead, chip, esc, fmtDate, $ } from '/assets/app.js';
+
+boot(async () => {
+  if (!await requireAuth()) return;
+  const slug = serverSlug();
+  const { server, role } = await api('/api/servers/' + encodeURIComponent(slug));
+  $('#head').outerHTML = serverHead(slug, server, role, '/app/' + encodeURIComponent(slug));
+
+  const { scans } = await api('/api/servers/' + encodeURIComponent(slug) + '/history?limit=500');
+  const body = $('#body');
+
+  if (!scans.length) {
+    body.innerHTML = '<div class="empty"><h3>No scans yet</h3>' +
+      '<p style="margin-bottom:22px">Run your first one — the setup tab has the command.</p>' +
+      '<a class="btn btn-primary" href="/app/' + encodeURIComponent(slug) + '/setup">Get the command</a></div>';
+    return;
+  }
+  $('#filters').hidden = false;
+
+  const render = () => {
+    const q = $('#q').value.trim().toLowerCase();
+    const v = $('#verdict').value;
+    const rows = scans.filter(s => {
+      const hay = (s.targetUser + ' ' + s.scanner + ' ' + s.scanId + ' ' + s.pcName).toLowerCase();
+      const verdict = String(s.verdict || '').toLowerCase();
+      return (!q || hay.includes(q)) && (!v || verdict.includes(v));
+    });
+    if (!rows.length) { body.innerHTML = '<div class="empty"><h3>Nothing matches</h3><p>Try a shorter search.</p></div>'; return; }
+    body.innerHTML =
+      '<div class="table-scroll"><table><thead><tr>' +
+      '<th>When</th><th>Player</th><th>Verdict</th><th>Findings</th><th>Scan ID</th><th>Run by</th>' +
+      '</tr></thead><tbody>' +
+      rows.map(s => {
+        const n = (s.flaggedCount || 0) + (s.reviewCount || 0);
+        return '<tr class="click" tabindex="0" data-id="' + esc(s.id) + '">' +
+          '<td class="num">' + esc(fmtDate(s.serverTs)) + '</td>' +
+          '<td><b>' + esc(s.targetUser || '—') + '</b></td>' +
+          '<td>' + chip(s.verdict) + '</td>' +
+          '<td class="num">' + (n ? n + (n === 1 ? ' mod' : ' mods') : '—') + '</td>' +
+          '<td class="mono">' + esc(s.scanId || '—') + '</td>' +
+          '<td>' + esc(s.scanner || '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<p class="muted tiny" style="margin-top:12px">' + rows.length + ' of ' + scans.length + ' scans</p>';
+
+    const open = (id) => { location.href = '/app/' + encodeURIComponent(slug) + '/scan/' + encodeURIComponent(id); };
+    body.querySelectorAll('tr.click').forEach(tr => {
+      tr.addEventListener('click', () => open(tr.dataset.id));
+      tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(tr.dataset.id); });
+    });
+  };
+
+  $('#q').addEventListener('input', render);
+  $('#verdict').addEventListener('change', render);
+  render();
+});
+</script>
+</body></html>

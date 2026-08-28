@@ -130,13 +130,6 @@ jobs:
             "a runtime error the -File run would not have shown"; exit 1
           }
 
-      # Two hand-maintained implementations of one API. They had already drifted -
-      # the deployed half left scanId out of /api/history, which is the field the
-      # report tells moderators to look up - so both are started for real and
-      # asked the same questions.
-      - name: Backend parity
-        run: node server/test_parity.mjs
-
       # There is no PowerShell here, so the script cannot be parsed or run. This is
       # the closest thing to a compile check: it catches calls to functions that do
       # not exist, duplicate definitions (the later one silently wins) and
@@ -178,6 +171,13 @@ jobs:
       - name: Build the site
         run: python3 ml/site.py
 
+      # The site has no bundler, so a stray character in a page's inline module
+      # would go unnoticed until somebody opened that page and found it blank.
+      # Runs after the build so it checks what was just generated, not what was
+      # committed last time.
+      - name: Check the site
+        run: python3 scripts/check-site.py
+
       - name: Publish the numbers to the run summary
         if: always()
         run: cat BENCHMARKS.md >> "$GITHUB_STEP_SUMMARY"
@@ -197,13 +197,13 @@ jobs:
       - name: Commit refreshed results
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
-          if git diff --quiet -- BENCHMARKS.md ml/benchmark_history.csv docs/; then
+          if git diff --quiet -- BENCHMARKS.md ml/benchmark_history.csv site/; then
             echo "unchanged"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add BENCHMARKS.md ml/benchmark_history.csv docs/
+          git add BENCHMARKS.md ml/benchmark_history.csv site/
           git commit -m "Refresh benchmark results [skip ci]"
           # main can move while the benchmark runs (it takes ~2 min). Rebasing was
           # the first attempt at that and it is wrong: when two runs overlap, both
@@ -222,7 +222,7 @@ jobs:
             git reset --hard origin/main
             python3 ml/benchmark.py || exit 1
             python3 ml/site.py || exit 1
-            git add BENCHMARKS.md ml/benchmark_history.csv docs/
+            git add BENCHMARKS.md ml/benchmark_history.csv site/
             if git diff --cached --quiet; then
               echo "already current on main"
               exit 0

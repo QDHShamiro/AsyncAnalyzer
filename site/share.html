@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scan result — AsyncAnalyzer</title>
+<meta name="description" content="A shared AsyncAnalyzer scan result.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div id="body"><div class="skeleton" style="height:200px;margin-top:44px"></div></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, pathParts, renderScan, reveal, $ } from '/assets/app.js';
+
+boot(async () => {
+  const id = decodeURIComponent(pathParts()[1] || '');
+  try {
+    const scan = await api('/api/public/scan/' + encodeURIComponent(id));
+    $('#body').innerHTML = renderScan(scan, {
+      redacted: true,
+      crumb: '<span>Shared scan result</span>',
+      actions: `<p class="muted tiny" style="margin-top:16px">
+        Anyone with this link can read it. It leaves out the PC name, the folder path and everything the
+        system checks noticed about unrelated software — the verdict and the reasons behind it are what
+        can be argued with, and that is all this page shows.</p>`,
+    });
+    reveal();
+  } catch (e) {
+    $('#body').innerHTML =
+      '<div class="empty"><h3>No such result</h3><p>' + (e.status === 404
+        ? 'That link is wrong, or the scan was removed.'
+        : 'Something went wrong loading it.') + '</p>' +
+      '<a class="btn" href="/" style="margin-top:20px">What is AsyncAnalyzer?</a></div>';
+  }
+});
+</script>
+</body></html>

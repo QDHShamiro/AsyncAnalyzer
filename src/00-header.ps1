@@ -97,6 +97,12 @@ $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
 $script:Telemetry    = $null
+# Where a copy of this tool belongs. A scan is a judgement about a person, so it
+# is made for a server that was let in by hand and not by whoever downloaded the
+# file - the key in the command decides which one. Overridden by
+# ASYNCANALYZER_ENDPOINT for local development and self-hosting.
+$script:HomeEndpoint = "https://asyncanalyzer.qdhshamiro.workers.dev"
+$script:ServerName   = $null
 $script:CurseForgeApiKey = if ($env:CURSEFORGE_API_KEY) { $env:CURSEFORGE_API_KEY } else { "" }
 # Qualified as $script: on purpose. Invoke-JarAnalysis adds to these from inside
 # a function, as $script:verifiedMods, and an UNQUALIFIED assignment here only

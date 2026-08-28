@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin — AsyncAnalyzer</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script>try{var t=localStorage.getItem('aa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div id="nav"></div>
+
+<main class="wrap">
+  <div class="page-head">
+    <h1>Admin</h1>
+    <div class="tabs" id="tabs">
+      <a href="#applications">Applications</a>
+      <a href="#servers">Servers</a>
+      <a href="#people">People</a>
+      <a href="#signatures">Signature queue</a>
+    </div>
+  </div>
+  <div id="body"><div class="skeleton" style="height:180px"></div></div>
+</main>
+
+<div id="foot"></div>
+
+<script type="module">
+import { boot, api, requireAuth, toast, esc, fmtDate, $, $$ } from '/assets/app.js';
+
+boot(async () => {
+  const state = await requireAuth();
+  if (!state) return;
+  if (!state.staff) {
+    $('#body').innerHTML = '<div class="empty"><h3>Not for you</h3><p>This page is for AsyncAnalyzer staff.</p>' +
+      '<a class="btn" href="/app" style="margin-top:20px">Your dashboard</a></div>';
+    $('#tabs').hidden = true;
+    return;
+  }
+
+  const views = {};
+
+  views.applications = async () => {
+    const { applications } = await api('/api/applications');
+    const pending = applications.filter(a => a.status === 'pending');
+    const rest = applications.filter(a => a.status !== 'pending');
+    if (!applications.length) return '<div class="empty"><h3>Nothing waiting</h3><p>No server has applied yet.</p></div>';
+
+    const card = (a) => `
+      <div class="card card-pad reveal" style="margin-bottom:14px">
+        <div class="finding-head" style="margin-bottom:10px">
+          <b style="font-family:inherit;font-size:1.05rem">${esc(a.name)}</b>
+          <span class="chip ${a.status === 'pending' ? 'chip-warn' : a.status === 'approved' ? 'chip-good' : 'chip-flat'}">${esc(a.status)}</span>
+          <span class="muted tiny" style="margin-left:auto">${esc(fmtDate(a.created_ts))}</span>
+        </div>
+        <p class="muted small">from <b>${esc(a.user_name)}</b>${a.user_email ? ' · ' + esc(a.user_email) : ''}</p>
+        <p class="muted small" style="margin-top:4px">
+          ${a.players ? esc(a.players) : 'players unknown'} · ${a.age ? esc(a.age) : 'age unknown'}
+          ${a.discord_invite ? ' · <a href="' + esc(a.discord_invite) + '" rel="noopener noreferrer nofollow" target="_blank">Discord invite</a>' : ''}
+        </p>
+        <blockquote class="panel" style="margin-top:14px;white-space:pre-wrap">${esc(a.reason || '')}</blockquote>
+        ${a.status === 'pending' ? `<div class="btn-row" style="margin-top:16px">
+          <button class="btn btn-primary btn-sm" data-approve="${esc(a.id)}">Let them in</button>
+          <button class="btn btn-sm btn-danger" data-reject="${esc(a.id)}">Reject</button>
+        </div>` : ''}
+      </div>`;
+
+    return (pending.length ? '<h3 style="margin-bottom:14px">Waiting</h3>' + pending.map(card).join('') : '') +
+      (rest.length ? '<h3 style="margin:34px 0 14px">Decided</h3>' + rest.map(card).join('') : '');
+  };
+
+  views.servers = async () => {
+    const { servers } = await api('/api/servers');
+    if (!servers.length) return '<div class="empty"><h3>No servers yet</h3><p>Approve an application and one appears here.</p></div>';
+    return '<div class="table-scroll"><table><thead><tr><th>Server</th><th>Owner</th><th>Staff</th><th>Scans</th><th>Since</th></tr></thead><tbody>' +
+      servers.map(s => '<tr class="click" onclick="location.href=\'/app/' + encodeURIComponent(s.slug) + '\'">' +
+        '<td><b>' + esc(s.name) + '</b> <span class="muted mono tiny">' + esc(s.slug) + '</span></td>' +
+        '<td>' + esc(s.owner_name || '') + '</td>' +
+        '<td class="num">' + (s.members || 0) + '</td>' +
+        '<td class="num">' + (s.scans || 0) + '</td>' +
+        '<td class="num muted">' + esc(fmtDate(s.created_ts)) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+  };
+
+  views.people = async () => {
+    const { users } = await api('/api/admin/users');
+    return '<div class="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Rank</th><th>Servers</th><th>Joined</th>' +
+      (state.owner ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      users.map(u => '<tr><td><b>' + esc(u.name) + '</b></td>' +
+        '<td class="muted">' + esc(u.email || '—') + '</td>' +
+        '<td>' + (u.global_role ? '<span class="chip chip-good">' + esc(u.global_role) + '</span>' : '<span class="muted">—</span>') + '</td>' +
+        '<td class="num">' + (u.servers || 0) + '</td>' +
+        '<td class="num muted">' + esc(fmtDate(u.created_ts)) + '</td>' +
+        (state.owner ? '<td>' + (u.id === state.user.id ? '<span class="muted tiny">you</span>' :
+          '<select data-role="' + esc(u.id) + '" aria-label="Rank for ' + esc(u.name) + '">' +
+          ['', 'staff', 'owner'].map(r => '<option value="' + r + '"' + (r === (u.global_role || '') ? ' selected' : '') + '>' +
+            (r || 'no rank') + '</option>').join('') + '</select>') + '</td>' : '') +
+        '</tr>').join('') + '</tbody></table></div>' +
+      (state.owner ? '' : '<p class="muted tiny" style="margin-top:12px">Only the owner hands out ranks.</p>');
+  };
+
+  views.signatures = async () => {
+    const { hashes } = await api('/api/signatures/pending');
+    if (!hashes.length) return '<div class="empty"><h3>Queue is empty</h3><p>Nothing is waiting to be believed by every client.</p></div>';
+    return '<p class="muted small" style="margin-bottom:16px">' +
+      'Approving a hash makes every client treat it that way on its next run. A wrong one is a permanent, ' +
+      'team-wide false positive — so this list stays a decision a person makes.</p>' +
+      '<div class="table-scroll"><table><thead><tr><th>Hash</th><th>Kind</th><th>From</th><th>When</th><th></th></tr></thead><tbody>' +
+      hashes.map(h => '<tr><td class="mono">' + esc(h.hash) + '</td>' +
+        '<td><span class="chip ' + (h.kind === 'cheat' ? 'chip-bad' : 'chip-good') + '">' + esc(h.kind) + '</span></td>' +
+        '<td>' + esc(h.scanner || '—') + (h.target ? ' <span class="muted tiny">on ' + esc(h.target) + '</span>' : '') + '</td>' +
+        '<td class="num muted">' + esc(fmtDate(h.ts)) + '</td>' +
+        '<td><div class="btn-row"><button class="btn btn-sm" data-sig-ok="' + esc(h.hash) + '">Approve</button>' +
+        '<button class="btn btn-sm btn-danger" data-sig-no="' + esc(h.hash) + '">Reject</button></div></td></tr>').join('') +
+      '</tbody></table></div>';
+  };
+
+  const show = async (name) => {
+    $$('#tabs a').forEach(a => a.removeAttribute('aria-current'));
+    const tab = $('#tabs a[href="#' + name + '"]');
+    if (tab) tab.setAttribute('aria-current', 'page');
+    $('#body').innerHTML = '<div class="skeleton" style="height:180px"></div>';
+    try { $('#body').innerHTML = await views[name](); }
+    catch (e) { $('#body').innerHTML = '<div class="notice notice-bad">' + esc(e.message) + '</div>'; return; }
+    wire(name);
+  };
+
+  const act = async (fn, name) => {
+    try { await fn(); await show(name); } catch (e) { toast(e.message, true); }
+  };
+
+  function wire(name) {
+    $$('[data-approve]').forEach(b => b.addEventListener('click', () => act(async () => {
+      const r = await api('/api/applications/' + b.dataset.approve + '/decide', { body: { decision: 'approve' } });
+      toast('In. Their dashboard is at /app/' + (r.server ? r.server.slug : ''));
+    }, name)));
+    $$('[data-reject]').forEach(b => b.addEventListener('click', () => act(async () => {
+      if (!confirm('Reject this application? They can apply again.')) throw new Error('cancelled');
+      await api('/api/applications/' + b.dataset.reject + '/decide', { body: { decision: 'reject' } });
+      toast('Rejected.');
+    }, name).catch(() => {})));
+    $$('[data-sig-ok]').forEach(b => b.addEventListener('click', () => act(async () => {
+      await api('/api/signatures/approve', { body: { hashes: [b.dataset.sigOk] } });
+      toast('Approved — every client picks it up on its next run.');
+    }, name)));
+    $$('[data-sig-no]').forEach(b => b.addEventListener('click', () => act(async () => {
+      await api('/api/signatures/' + encodeURIComponent(b.dataset.sigNo), { method: 'DELETE' });
+      toast('Rejected. It cannot come back on its own.');
+    }, name)));
+    $$('[data-role]').forEach(sel => sel.addEventListener('change', async () => {
+      try {
+        await api('/api/admin/users/' + sel.dataset.role + '/role', { body: { role: sel.value || null } });
+        toast('Rank updated.');
+      } catch (e) { toast(e.message, true); await show(name); }
+    }));
+  }
+
+  const pick = () => show((location.hash || '#applications').slice(1) in views ? (location.hash || '#applications').slice(1) : 'applications');
+  addEventListener('hashchange', pick);
+  await pick();
+});
+</script>
+</body></html>

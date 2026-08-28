@@ -1,0 +1,72 @@
+/* Extra shapes the generated pages use — the rule cards, score bands and stat
+ * blocks that only appear on "How it works" and the benchmark page. Colours and
+ * type come from app.css; nothing here defines a palette of its own. */
+
+.label {
+  font-family: "JetBrains Mono", monospace; font-size: .72rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); margin: 44px 0 4px;
+}
+.note { color: var(--muted); font-size: .9rem; }
+.grow { flex: 1; }
+
+/* ---- copyable command --------------------------------------------------- */
+.cmd { margin-top: 26px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.cmd-head {
+  display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+  font-family: "JetBrains Mono", monospace; font-size: .7rem;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+/* A command people copy is worth seeing in full - wrapping beats a scrollbar
+   that hides half of it behind the edge of the card. */
+.cmd pre {
+  padding: 18px 16px; font-family: "JetBrains Mono", monospace;
+  font-size: .82rem; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* ---- stat cards --------------------------------------------------------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 20px; }
+.card b { display: block; font-size: .98rem; font-weight: 600; margin-bottom: 6px; }
+.card span { color: var(--muted); font-size: .92rem; }
+.card .k {
+  display: block; margin-bottom: 4px;
+  font-family: "Plus Jakarta Sans", sans-serif; font-weight: 800; font-size: 2.1rem;
+  color: var(--accent); letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+}
+
+/* ---- rules -------------------------------------------------------------- */
+.rule {
+  padding: 17px 19px; background: var(--raised); border: 1px solid var(--line);
+  border-left: 2px solid var(--accent); border-radius: var(--radius-sm); margin-top: 12px;
+}
+.rule b { display: block; font-size: .98rem; font-weight: 600; margin-bottom: 4px; }
+.rule span { color: var(--muted); font-size: .92rem; }
+.rule .mono { color: var(--ink); font-size: .82rem; }
+.rules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.rules-grid .rule { margin-top: 0; }
+
+/* ---- score bands -------------------------------------------------------- */
+.bands { display: grid; gap: 10px; margin-top: 18px; }
+.band {
+  display: grid; grid-template-columns: minmax(96px, 132px) minmax(58px, 72px) 1fr;
+  gap: 14px; align-items: baseline; padding: 13px 16px; background: var(--raised);
+  border: 1px solid var(--line); border-left: 3px solid var(--bc, var(--accent)); border-radius: var(--radius-sm);
+}
+.band .nm { font-weight: 600; color: var(--bc, var(--ink)); }
+.band .rg { font-family: "JetBrains Mono", monospace; font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.band .ds { color: var(--muted); font-size: .92rem; }
+
+/* ---- bullet lists ------------------------------------------------------- */
+ul.pts { list-style: none; display: grid; gap: 8px; margin-top: 16px; padding: 0; }
+ul.pts li { padding-left: 17px; position: relative; color: var(--muted); font-size: .95rem; max-width: 68ch; }
+ul.pts li::before { content: ""; position: absolute; left: 0; top: .62em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+ul.pts li b { color: var(--ink); font-weight: 600; }
+
+/* The generated pages use .chip as a plain token pill, not as a verdict. Same
+   name, different job - so the verdict dot is switched off inside .chips. */
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+.chips .chip {
+  font-family: "JetBrains Mono", monospace; font-size: .74rem; font-weight: 400;
+  padding: 4px 10px; background: var(--surface); color: var(--muted); border-color: var(--line);
+}
+.chips .chip::before { display: none; }

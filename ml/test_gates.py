@@ -84,7 +84,11 @@ for s in want:
 for step, why in (
         ("scripts/check-order.ps1", "call order (this shipped twice)"),
         ("build.py --check", "the shipped file matches src/"),
-        ("test_parity.mjs", "the two backends answer the same"),
+        # There is one backend now, so there is nothing to check parity against.
+        # What replaced it guards the same class of silent failure: the site has no
+        # bundler, so a stray character in a page's inline module is only noticed by
+        # the person who opens that page and finds it blank.
+        ("scripts/check-site.py", "the site's pages actually parse"),
         ("[scriptblock]::Create", "the delivery path, which is iex and not -File"),
 ):
     check(f"the workflow still runs the check for {why}", step in WF)

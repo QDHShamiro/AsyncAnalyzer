@@ -21,6 +21,11 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "src")
 OUT = os.path.join(ROOT, "AsyncAnalyzer.ps1")
+# The backend serves the scanner from its own origin, so the suspect downloads it
+# from the same host the moderator read out - and, since this repository is private,
+# from somewhere raw.githubusercontent.com cannot answer for. Same bytes, written by
+# the same build, so the two can never be different versions.
+SERVED = os.path.join(ROOT, "site", "run.ps1")
 
 
 def assemble():
@@ -74,10 +79,15 @@ def main():
     check = "--check" in sys.argv
     current = open(OUT, encoding="utf-8").read() if os.path.exists(OUT) else None
 
+    served = open(SERVED, encoding="utf-8").read() if os.path.exists(SERVED) else None
+
     if check:
-        if current == built:
-            print("AsyncAnalyzer.ps1 is up to date with src/ (%d sections)" % len(parts))
+        if current == built and served == built:
+            print("AsyncAnalyzer.ps1 and site/run.ps1 are up to date with src/ (%d sections)" % len(parts))
             return 0
+        if current == built and served != built:
+            print("site/run.ps1 does NOT match AsyncAnalyzer.ps1 - run: python3 build.py", file=sys.stderr)
+            return 1
         print("AsyncAnalyzer.ps1 does NOT match src/ - run: python3 build.py", file=sys.stderr)
         if current is not None:
             import difflib
@@ -88,7 +98,10 @@ def main():
 
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(built)
-    print("built AsyncAnalyzer.ps1 from %d sections (%d lines)"
+    os.makedirs(os.path.dirname(SERVED), exist_ok=True)
+    with open(SERVED, "w", encoding="utf-8") as f:
+        f.write(built)
+    print("built AsyncAnalyzer.ps1 and site/run.ps1 from %d sections (%d lines)"
           % (len(parts), built.count("\n") + 1))
     res = parse_check(OUT)
     if res is None:

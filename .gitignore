@@ -19,3 +19,6 @@ node_modules/
 # Agent / tooling local state
 .claude/
 .claude-flow/
+
+# Local worker secrets (never committed)
+server/.dev.vars

@@ -445,7 +445,14 @@ $script:suspiciousPatterns = @(
     "$([char]0x3068).class","$([char]0x307F).class","$([char]0x3073).class","$([char]0x3059).class","$([char]0x306E).class"
 )
 
+# Two assemblies, not one. FileSystem carries ZipFile, which is what reading a jar
+# uses; ZipArchive and ZipArchiveMode live in System.IO.Compression, and Windows
+# PowerShell 5.1 will not resolve a [type] literal out of an assembly nobody has
+# loaded. Writing a zip therefore failed with "the type was not found" on 5.1 while
+# working on 7, which is why the self-test that builds probe jars was red here and
+# green in CI.
 Add-Type -Assembly "System.IO.Compression.FileSystem" -ErrorAction SilentlyContinue
+Add-Type -Assembly "System.IO.Compression" -ErrorAction SilentlyContinue
 
 function Build-PatternRegex {
     $script:patternRegex = [regex]::new(
