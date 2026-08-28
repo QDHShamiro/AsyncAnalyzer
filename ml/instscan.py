@@ -23,6 +23,8 @@ does not; either the pack contains bytecode or it does not.
 
 import re
 
+from logscan import TOKEN_FLOOR
+
 # What a normal Minecraft version profile starts. Anything else is worth reading -
 # but the LIST is not the test: the test is whether a cheat's own name is in there.
 KNOWN_MAIN = {
@@ -55,7 +57,7 @@ def _names_hit(value, package_paths, client_tokens):
                 return form
     for t in client_tokens:
         tl = t.lower()
-        if len(tl) < 5:
+        if len(tl) < TOKEN_FLOOR:
             continue
         if re.search(r"(?:^|[/.\\_\-])%s(?:$|[/.\\_\-])" % re.escape(tl), low):
             return tl
@@ -98,7 +100,7 @@ def is_cheat_config_dir(name, client_tokens):
     the whole name is both tighter and closer to how they are actually named.
     """
     n = re.sub(r"[^a-z0-9]", "", (name or "").lower())
-    if len(n) < 4:
+    if len(n) < TOKEN_FLOOR:
         return ""
     for t in client_tokens:
         if n == re.sub(r"[^a-z0-9]", "", t.lower()):

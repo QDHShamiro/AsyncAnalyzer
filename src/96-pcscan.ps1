@@ -410,7 +410,7 @@ function Test-CheatName([string]$Value) {
     }
     foreach ($t in $script:distinctiveClientTokens) {
         $tl = $t.ToLower()
-        if ($tl.Length -lt 5) { continue }
+        if ($tl.Length -lt $script:tokenFloor) { continue }
         if ($low -match ('(?:^|[/.\\_\-])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-])')) { return $tl }
     }
     return ""
@@ -423,7 +423,7 @@ function Test-CheatConfigDir([string]$Name) {
     # named after the client and nothing else, so compare the whole thing.
     if ([string]::IsNullOrEmpty($Name)) { return "" }
     $n = ($Name.ToLower() -replace '[^a-z0-9]', '')
-    if ($n.Length -lt 4) { return "" }
+    if ($n.Length -lt $script:tokenFloor) { return "" }
     foreach ($t in $script:distinctiveClientTokens) {
         if ($n -eq ($t.ToLower() -replace '[^a-z0-9]', '')) { return $t.ToLower() }
     }
@@ -623,7 +623,7 @@ function Test-LogLine([string]$Line) {
     if ($Line -match $script:logCodeContext) {
         foreach ($t in $script:distinctiveClientTokens) {
             $tl = $t.ToLower()
-            if ($tl.Length -lt 5) { continue }
+            if ($tl.Length -lt $script:tokenFloor) { continue }
             # must sit next to a package or class separator, not float in prose
             if ($low -match ('(?:^|[/.\\_\-\s"''()\[\]])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-\s"''()\[\]:])')) {
                 $out.Kind = "client"; $out.Evidence = $tl; return $out

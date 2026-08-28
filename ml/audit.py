@@ -159,6 +159,48 @@ else:
 gaps = re.findall(r"Add-ScanGap\s+[\"(]", JOINED)
 ok("the coverage box has gap messages to print", "%d call site(s)" % len(gaps))
 
+# ------------------------------------------------------- signature lists ---
+# A client name shorter than the floor the readers use is in the list and skipped
+# by three of the four places that read it. That is how "vape" - one of the
+# most-used clients there is - was invisible to the log reader, the instance reader
+# and the pre-filter while the filename and memory scans still saw it. Nothing
+# errored; the name was simply never searched for.
+sig = ALL["10-signatures.ps1"]
+floor_m = re.search(r"\$script:tokenFloor = (\d+)", sig)
+floor = int(floor_m.group(1)) if floor_m else 0
+sys.path.insert(0, HERE)
+try:
+    import logscan as _ls
+    py_floor = _ls.TOKEN_FLOOR
+except Exception:
+    py_floor = None
+if not floor:
+    fail("no $script:tokenFloor in the signatures", "the readers use bare literals")
+elif py_floor is not None and py_floor != floor:
+    fail("token floor differs between PowerShell and Python", "ps=%d py=%d" % (floor, py_floor))
+else:
+    ok("the token floor is one number in both languages", "%d characters" % floor)
+
+tok_blk = sig[sig.index("$script:distinctiveClientTokens = "):]
+tok_blk = tok_blk[:tok_blk.index(") | ForEach-Object")]
+tokens = re.findall(r'"([^"]+)"', tok_blk)
+short = [t for t in tokens if len(t) < floor] if floor else []
+if short:
+    fail("client names below the floor - the readers skip them", ", ".join(short))
+else:
+    ok("every client name is at or above the floor", "%d name(s)" % len(tokens))
+
+# A name that is also a legitimate mod id would accuse the mod. None today, and
+# this is the check that keeps it that way when the team adds one.
+legit_blk = sig[sig.index("$script:legitModIds = "):]
+legit_blk = legit_blk[:legit_blk.index(") | ForEach-Object")]
+legit = {x.lower() for x in re.findall(r'"([^"]+)"', legit_blk)}
+clash = sorted({t.lower() for t in tokens} & legit)
+if clash:
+    fail("a client name is also a known-good mod id", ", ".join(clash))
+else:
+    ok("no client name collides with a known-good mod id", "%d mod id(s)" % len(legit))
+
 # ------------------------------------------------------------- mod model ---
 # The 22 mod-model features have to be produced by the extractor, or the model is
 # scoring on a zero it was not trained to see.

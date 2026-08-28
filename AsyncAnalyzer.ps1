@@ -563,6 +563,14 @@ function Build-PatternRegex {
 }
 Build-PatternRegex
 
+# The shortest client name worth matching. It was 5, which silently excluded
+# "vape" - one of the most-used clients there is - from the log reader, the
+# instance reader and the pre-filter, while the filename and memory scans still saw
+# it. ml/audit.py now fails the build if any token in the signature lists falls
+# below this, so it cannot happen again quietly. Mirrored as TOKEN_FLOOR in
+# ml/logscan.py.
+$script:tokenFloor = 4
+
 function Build-LogPreFilter {
     # One compiled alternation of every cheat package path and client name, run ONCE
     # over a whole log file before any line is looked at individually.
@@ -583,7 +591,7 @@ function Build-LogPreFilter {
         [void]$parts.Add([regex]::Escape(($p -replace '/', '.')))
     }
     foreach ($t in $script:distinctiveClientTokens) {
-        if ($t.Length -ge 5) { [void]$parts.Add([regex]::Escape($t)) }
+        if ($t.Length -ge $script:tokenFloor) { [void]$parts.Add([regex]::Escape($t)) }
     }
     $script:logPreFilter = [regex]::new(
         (($parts | Select-Object -Unique) -join '|'),
@@ -5870,7 +5878,7 @@ function Test-CheatName([string]$Value) {
     }
     foreach ($t in $script:distinctiveClientTokens) {
         $tl = $t.ToLower()
-        if ($tl.Length -lt 5) { continue }
+        if ($tl.Length -lt $script:tokenFloor) { continue }
         if ($low -match ('(?:^|[/.\\_\-])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-])')) { return $tl }
     }
     return ""
@@ -5883,7 +5891,7 @@ function Test-CheatConfigDir([string]$Name) {
     # named after the client and nothing else, so compare the whole thing.
     if ([string]::IsNullOrEmpty($Name)) { return "" }
     $n = ($Name.ToLower() -replace '[^a-z0-9]', '')
-    if ($n.Length -lt 4) { return "" }
+    if ($n.Length -lt $script:tokenFloor) { return "" }
     foreach ($t in $script:distinctiveClientTokens) {
         if ($n -eq ($t.ToLower() -replace '[^a-z0-9]', '')) { return $t.ToLower() }
     }
@@ -6083,7 +6091,7 @@ function Test-LogLine([string]$Line) {
     if ($Line -match $script:logCodeContext) {
         foreach ($t in $script:distinctiveClientTokens) {
             $tl = $t.ToLower()
-            if ($tl.Length -lt 5) { continue }
+            if ($tl.Length -lt $script:tokenFloor) { continue }
             # must sit next to a package or class separator, not float in prose
             if ($low -match ('(?:^|[/.\\_\-\s"''()\[\]])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-\s"''()\[\]:])')) {
                 $out.Kind = "client"; $out.Evidence = $tl; return $out

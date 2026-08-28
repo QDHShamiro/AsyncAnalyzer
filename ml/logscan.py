@@ -22,6 +22,13 @@ And any line the game marked as chat is dropped before either test runs.
 
 import re
 
+# The shortest client name worth matching. It was 5, which silently excluded
+# "vape" - one of the most-used clients there is - from the log reader, the
+# instance reader and the pre-filter, while the filename and memory scans still
+# saw it. Four is the floor now, and ml/audit.py fails the build if any token in
+# the signature lists falls below it, so this cannot happen again quietly.
+TOKEN_FLOOR = 4
+
 # A line the game logged as chat, or as a message from another player. Anything in
 # here is something a HUMAN typed, and it is never evidence of anything.
 CHAT = re.compile(
@@ -65,7 +72,7 @@ def classify_line(line, package_paths, client_tokens):
     if CODE_CONTEXT.search(line):
         for t in client_tokens:
             tl = t.lower()
-            if len(tl) < 5:
+            if len(tl) < TOKEN_FLOOR:
                 continue
             # must sit next to a package or class separator, not float in prose
             if re.search(r"(?:^|[/.\\_\-\s\"'()\[\]])%s(?:$|[/.\\_\-\s\"'()\[\]:])"

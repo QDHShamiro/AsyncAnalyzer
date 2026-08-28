@@ -374,6 +374,28 @@ One false positive of its own on the first run too (`random_named` reaches the m
 through `Get-SessionVector` under another name), which is why it also follows the
 one-link chain from a category into a derived signal.
 
+## The token floor - how "vape" was invisible to three of four readers
+Four readers use the client-name list: the filename match, the memory scan, the log
+reader and the instance reader. The last two (and the log pre-filter) skipped any
+name shorter than **5** characters. `vape` is four. So one of the most-used clients
+there is was searched for by the filename and memory scans and by nothing else -
+no error, no failing test, the name was simply never looked for.
+
+- One named constant now, `$script:tokenFloor` / `logscan.TOKEN_FLOOR`, set to 4,
+  and `ml/audit.py` fails the build if any name in the list falls below it.
+- The audit also checks the two floors are the same number in both languages, and
+  that no client name collides with a known-good mod id - which is the check that
+  matters when the TEAM adds a name later, not when I do.
+- `test_logscan.py` gained the four-letter case and two negatives for the price of
+  a shorter floor: the name inside a longer word (`vaporizer`), and the name in
+  chat. Both stay clean, because the boundary rule and the chat filter still run.
+
+**Worth recording how this one was found and nearly missed:** the first patch that
+was supposed to lower the floor did not match the indentation in `logscan.py` and
+silently replaced nothing. The test then failed - which is the only reason it was
+caught - and the fix was to assert on the replacement rather than trust it. That is
+the same failure this whole audit exists for, in the tooling around it.
+
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
 - CI runs eleven suites plus `audit.py` (the dead-end detector).
