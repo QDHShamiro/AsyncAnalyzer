@@ -54,7 +54,19 @@ def parse_check(path):
     )
     r = subprocess.run([pwsh, "-NoProfile", "-Command", script],
                        capture_output=True, text=True, timeout=300)
-    return (r.returncode == 0, (r.stdout + r.stderr).strip())
+    if r.returncode != 0:
+        return (False, (r.stdout + r.stderr).strip())
+    # Parsing is not enough. PowerShell resolves a function call when it RUNS,
+    # so a call that is reached before its "function Foo {}" line has executed
+    # dies at runtime and nothing static about the syntax can see it. That
+    # shipped twice.
+    order = os.path.join(ROOT, "scripts", "check-order.ps1")
+    if os.path.exists(order):
+        r2 = subprocess.run([pwsh, "-NoProfile", "-File", order, path],
+                            capture_output=True, text=True, timeout=300)
+        if r2.returncode != 0:
+            return (False, (r2.stdout + r2.stderr).strip())
+    return (True, "")
 
 
 def main():
@@ -82,7 +94,7 @@ def main():
     if res is None:
         print("  (no pwsh here - the file was NOT parse-checked)")
     elif res[0]:
-        print("  parsed by PowerShell: no errors")
+        print("  PowerShell: parses, and no function is called before it exists")
     else:
         print("  PowerShell PARSE ERRORS:\n" + res[1], file=sys.stderr)
         return 1

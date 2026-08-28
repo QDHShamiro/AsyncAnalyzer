@@ -84,6 +84,17 @@ jobs:
           }
           "no parse errors"
 
+      # Parsing is not enough. PowerShell resolves a function call when it RUNS,
+      # so a call reached before its "function Foo {}" line has executed dies at
+      # runtime with "the term ... is not recognized" - and no parser, no test
+      # and no Python mirror can see it coming. It shipped: Run-SystemChecks
+      # called Test-CheatName, which was defined in a section that loaded after
+      # the scan had already started. Running the tool here missed it too,
+      # because that branch sits behind $env:SystemRoot, which is empty on Linux.
+      - name: Every function exists before it is called
+        shell: pwsh
+        run: pwsh -File scripts/check-order.ps1
+
       # And then actually RUN it. The self-test exercises the model, the verdict
       # bands, the report renderer and the filename heuristics - the last of
       # which is where a real run found that 'aeiou' -contains $_ is always

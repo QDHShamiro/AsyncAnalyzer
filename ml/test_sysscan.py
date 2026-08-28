@@ -213,7 +213,7 @@ def main():
     # Comments are stripped first: this file explains what it removed, and the
     # explanation naming the old pattern is not the old pattern.
     ps_code = "\n".join(l for l in ps.split("\n") if not l.lstrip().startswith("#"))
-    pc = open(os.path.join(root, "src", "96-pcscan.ps1"), encoding="utf-8").read()
+    pc = open(os.path.join(root, "src", "94-pcscan.ps1"), encoding="utf-8").read()
     pc_code = "\n".join(l for l in pc.split("\n") if not l.lstrip().startswith("#"))
     for gone, what in (
             (r"'aac'|\"aac\"|,aac,", "the 'aac' substring in the hosts list"),

@@ -219,7 +219,7 @@ silently), and that the PS feature ORDER equals the Python one.
   `instMainClass`, `instTweakClass`, `instPackExec` in `src/10-signatures.ps1` are
   generated from it, parity-checked by `ml/test_instscan.py` (31).
   `Test-CheatName` / `Test-CheatConfigDir` / `Run-InstanceScan` / `Show-InstanceScan`
-  in `src/96-pcscan.ps1`, run on every scan.
+  in `src/94-pcscan.ps1`, run on every scan.
 - Four things, all structural: `versions/<v>/<v>.json` mainClass + `--tweakClass`
   (an injected client installs itself as a custom version profile), `-javaagent:`
   in a launcher profile, `.class`/`.jar` inside a resource or shader pack, and a
@@ -240,7 +240,7 @@ silently), and that the PS feature ORDER equals the Python one.
 - `ml/logscan.py` is the source of truth; `$script:logChatLine` / `logCodeContext`
   in `src/10-signatures.ps1` are generated from it and parity-checked by
   `ml/test_logscan.py`. `Test-LogLine` / `Read-LogText` / `Run-LogScan` /
-  `Show-LogScan` live in `src/96-pcscan.ps1`; it runs on EVERY scan.
+  `Show-LogScan` live in `src/94-pcscan.ps1`; it runs on EVERY scan.
 - Reads `logs/latest.log`, `logs/*.log.gz` (gzip, decompressed) and
   `crash-reports/*.txt` for every instance folder that was scanned, newest 25 files,
   4 MB each (tail only for a huge log).
@@ -270,7 +270,7 @@ silently), and that the PS feature ORDER equals the Python one.
 - `ml/macro.py` is the source of truth for the patterns; `$script:macroLangs`,
   `$script:macroCheatNames`, `$script:macroDriverPaths` in `src/10-signatures.ps1`
   are **generated from it**, and `ml/test_macro.py` machine-checks that they match.
-- `Test-MacroFile` + `Run-MacroScan` (`src/96-pcscan.ps1`) read `.ahk .ahk2 .au3
+- `Test-MacroFile` + `Run-MacroScan` (`src/94-pcscan.ps1`) read `.ahk .ahk2 .au3
   .lua .vbs` in Downloads / Desktop / Documents / Temp (+2 sub-levels) and in the
   script folders of G HUB, LGS, Synapse 2+3, iCUE, SteelSeries, Glorious, Bloody.
 - Runs on **every** scan, not only the deep one (`Show-MacroScan`, called from
