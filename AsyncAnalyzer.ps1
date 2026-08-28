@@ -2344,6 +2344,14 @@ function Get-ModVerdict($ctx) {
         # the symbol table. On its own this only says the mod hides which API it
         # calls - the rules above already scored whatever it was hiding - but a
         # moderator should see that it was hidden, because no ordinary mod does it.
+        # The comment above said this was "reported rather than tuned". It was not:
+        # four behaviour categories were parsed on every class to derive it and then
+        # nothing was ever printed, which the dead-end audit found. A reason line
+        # without a score cannot cause a false flag - it does not move the band - and
+        # a jar that finds its own file and deletes it is worth a moderator seeing.
+        if ($bc.selfwipeRatio -gt 0) {
+            [void]$reasons.Add("Behaviour: a class in here locates its own jar and deletes a file $([char]0x2014) the shape of a mod that removes itself after running. NOT scored: this pattern also flagged real bytecode libraries twice, so it is written down for you rather than counted against the file")
+        }
         if ($bc.hiddenapiRatio -gt 0) {
             [void]$reasons.Add("Behaviour: reaches Minecraft through reflection so the API names never appear in the class symbol table $([char]0x2014) deliberately hiding which game methods it calls. An ordinary mod imports what it uses")
         }
@@ -2368,6 +2376,13 @@ function Get-ModVerdict($ctx) {
         # game starts. That is the same power a Java agent has - it can rewrite any
         # class on the way in - and unlike an agent it is ordinary Forge practice, so
         # it is recorded as scope rather than scored. OptiFine is a tweaker.
+        # A coremod whose manifest key is missing - or whose jar was read as bytecode
+        # before the manifest - is still visibly a class transformer from the code
+        # itself. Without this the scope line depended entirely on FMLCorePlugin
+        # being present, which is a text field a cheat can simply leave out.
+        if ($bc.transformerRatio -gt 0 -and -not $ft.CoreMod) {
+            [void]$reasons.Add("Scope: contains a class transformer (the Forge/LaunchWrapper interface is implemented in the code) $([char]0x2014) it can rewrite game classes as they load. Ordinary for a Forge mod; recorded because its manifest does not declare it")
+        }
         if ($ft.CoreMod) {
             $what = if ($ft.TweakClass) { "a LaunchWrapper tweaker ($($ft.TweakClass))" }
                     elseif ($ft.CoreModClass) { "a Forge coremod ($($ft.CoreModClass))" }
@@ -2659,6 +2674,9 @@ function Invoke-SelfTest {
         @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Self-deleting jar is measured, not accused"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfwipeRatio = 1.0; selfpathRatio = 1.0; filedeleteRatio = 1.0 }) } }
+        # A transformer that only its bytecode declares - no FMLCorePlugin in the
+        # manifest - must still be recorded as scope, and must still not be flagged.
+        @{ Label = "Transformer the manifest does not declare"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Library unpacking a native lib"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; filedeleteRatio = 1.0; nativetempRatio = 1.0 }) } }
         @{ Label = "Mod that reads its own jar location"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Jetpack mod (writes velocity)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }

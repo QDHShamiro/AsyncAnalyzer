@@ -60,6 +60,11 @@ jobs:
             echo "--- $t ---"
             python3 "$t.py"
           done
+          # Not a test suite: a detector for signals that are measured and never
+          # reach a decision. Those do not fail a test - the scan just quietly
+          # scores lower than every suite above says it should.
+          echo "--- dead-end audit ---"
+          python3 audit.py
 
       # There is no PowerShell here, so the script cannot be parsed or run. This is
       # the closest thing to a compile check: it catches calls to functions that do
