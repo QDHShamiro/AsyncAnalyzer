@@ -625,3 +625,31 @@ $script:macroDriverPaths = @(
     @('Glorious Core', '%APPDATA%\GloriousCore', 'device profiles with macros')
 )
 $script:macroExtList = @('.ahk', '.ahk2', '.au3', '.lua', '.vbs')
+
+# ---------------------------------------------------------------------------
+# Reading Minecraft's own logs as evidence
+#
+# A log line survives the jar. Deleting a cheat before a screenshare removes the
+# file, not the record that it loaded - and a log line is DATED, so it says the
+# cheat was running at 20:14, which a file on disk never says.
+#
+# The whole difficulty is one thing: latest.log contains the chat. Somebody typing
+# "killaura" into chat writes the word killaura into the log, and a scanner that
+# matches module names there accuses people for what they SAID. That is the worst
+# false flag this tool could produce, because it looks like hard evidence and comes
+# with a timestamp on it.
+#
+# So: module names are never matched at all, chat lines are dropped before anything
+# is tested, and a client name only counts inside a stack frame, a classloader
+# line, a mixin config or a jar name. Mirrored from ml/logscan.py; parity is
+# machine-checked by ml/test_logscan.py.
+# ---------------------------------------------------------------------------
+# A line the game logged as chat, or as a message from another player. Anything in
+# here is something a HUMAN typed and is never evidence of anything.
+$script:logChatLine = '\[CHAT\]|/INFO\]: <[^>]{1,32}>|\[Server thread/INFO\]: <|issued server command|\[Async Chat Thread|commands\.message|\bwhispers to you\b|\bwhispers:\b'
+# A stack frame, a classloader line, a mixin config, a jar filename - the places a
+# class name legitimately appears in a log.
+$script:logCodeContext = '^\s*at\s+[\w$.]+\(|\bClassNotFoundException\b|\bNoClassDefFoundError\b|\bLoading\b.*\bmods?\b|\bmixin\b|\bMixin\b|\.jar\b|\bClassLoader\b|\bTransformer\b|\bCaused by:|\bjava\.lang\.|\bcom\.|\bnet\.|\borg\.|\bme\.|\bdev\.'
+# "Loading 42 mods:" then "- modid 1.2.3" - Fabric and Forge both print this.
+$script:logModListHeader = 'Loading \d+ mods?:|Mod List:|Loading Minecraft .* with'
+$script:logModListItem = '^\s*[-│|]\s*([a-z0-9_-]{2,64})\s+([\w.+-]{1,32})\s*$'

@@ -396,6 +396,157 @@ function Run-BamScan {
     Write-Host ""
 }
 
+function Test-LogLine([string]$Line) {
+    # Mirror of classify_line() in ml/logscan.py. Returns @{ Kind = ""|"package"|"client"; Evidence = "" }.
+    $out = @{ Kind = ""; Evidence = "" }
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $out }
+    # Chat first, always. Everything after this point is about CODE.
+    if ($Line -match $script:logChatLine) { return $out }
+    $low = $Line.ToLower()
+    foreach ($p in $script:cheatPackagePaths) {
+        $pl = $p.ToLower()
+        foreach ($form in @($pl, ($pl -replace '/', '.'))) {
+            if ($low.IndexOf($form, [System.StringComparison]::Ordinal) -ge 0) {
+                $out.Kind = "package"; $out.Evidence = $form; return $out
+            }
+        }
+    }
+    if ($Line -match $script:logCodeContext) {
+        foreach ($t in $script:distinctiveClientTokens) {
+            $tl = $t.ToLower()
+            if ($tl.Length -lt 5) { continue }
+            # must sit next to a package or class separator, not float in prose
+            if ($low -match ('(?:^|[/.\\_\-\s"''()\[\]])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-\s"''()\[\]:])')) {
+                $out.Kind = "client"; $out.Evidence = $tl; return $out
+            }
+        }
+    }
+    return $out
+}
+
+function Read-LogText([string]$Path, [int]$MaxBytes = 4194304) {
+    # latest.log is plain, the rotated ones are gzip. Both are read; a cheat that
+    # ran last week is in logs/2026-08-21-1.log.gz and nowhere else.
+    try {
+        $fi = [System.IO.FileInfo]::new($Path)
+        if ($fi.Length -gt 64MB) { return $null }
+        if ($Path.EndsWith('.gz', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $fs = [System.IO.File]::OpenRead($Path)
+            try {
+                $gz = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
+                try {
+                    $ms = New-Object System.IO.MemoryStream
+                    $buf = New-Object byte[] 65536
+                    while ($ms.Length -lt $MaxBytes) {
+                        $n = $gz.Read($buf, 0, $buf.Length)
+                        if ($n -le 0) { break }
+                        $ms.Write($buf, 0, $n)
+                    }
+                    return [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
+                } finally { $gz.Dispose() }
+            } finally { $fs.Dispose() }
+        }
+        if ($fi.Length -le $MaxBytes) { return [System.IO.File]::ReadAllText($Path) }
+        # only the tail of a very large log - the newest lines are the ones that matter
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            $fs.Seek(-$MaxBytes, [System.IO.SeekOrigin]::End) | Out-Null
+            $buf = New-Object byte[] $MaxBytes
+            $got = $fs.Read($buf, 0, $MaxBytes)
+            return [System.Text.Encoding]::UTF8.GetString($buf, 0, $got)
+        } finally { $fs.Dispose() }
+    } catch { return $null }
+}
+
+function Run-LogScan {
+    # Minecraft's own logs and crash reports, for every instance folder that was
+    # scanned. This runs on every scan: it is cheap, and it is the only evidence
+    # that survives deleting the jar.
+    $res = @{
+        Hits = [System.Collections.Generic.List[object]]::new()
+        Files = 0; Lines = 0
+        LoadedMods = [System.Collections.Generic.List[string]]::new()
+    }
+    $roots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try {
+            $inst = [System.IO.Path]::GetDirectoryName($t.TrimEnd('\'))
+            if ($inst) { [void]$roots.Add($inst) }
+        } catch {}
+    }
+    $seenEvidence = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($root in $roots) {
+        foreach ($sub in @('logs', 'crash-reports')) {
+            $dir = [System.IO.Path]::Combine($root, $sub)
+            if (-not [System.IO.Directory]::Exists($dir)) { continue }
+            $files = @()
+            try {
+                $files = @([System.IO.Directory]::GetFiles($dir) |
+                           Where-Object { $_ -match '\.(log|log\.gz|txt)$' } |
+                           Sort-Object { [System.IO.File]::GetLastWriteTime($_) } -Descending |
+                           Select-Object -First 25)
+            } catch {}
+            foreach ($lf in $files) {
+                $txt = Read-LogText $lf
+                if ($null -eq $txt) { continue }
+                $res.Files++
+                $when = try { [System.IO.File]::GetLastWriteTime($lf).ToString('yyyy-MM-dd HH:mm') } catch { "?" }
+                foreach ($line in ($txt -split "`r?`n")) {
+                    $res.Lines++
+                    $v = Test-LogLine $line
+                    if ($v.Kind -eq "") { continue }
+                    $key = "$($v.Kind)|$($v.Evidence)"
+                    if (-not $seenEvidence.Add($key)) { continue }
+                    $trimmed = $line.Trim()
+                    if ($trimmed.Length -gt 200) { $trimmed = $trimmed.Substring(0, 197) + "..." }
+                    [void]$res.Hits.Add([PSCustomObject]@{
+                        Kind = $v.Kind; Evidence = $v.Evidence
+                        File = $lf; When = $when; Line = $trimmed
+                    })
+                }
+            }
+        }
+    }
+    return $res
+}
+
+function Show-LogScan {
+    $lg = Run-LogScan
+    $script:LogHits = $lg.Hits.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) GAME LOGS AND CRASH REPORTS " + "$([char]0x2500)" * 42 + "$([char]0x2510)") DarkCyan
+    $lLine = "  $([char]0x2502)  Read $($lg.Files) log file(s), $($lg.Lines) line(s)"
+    W ($lLine + (" " * [Math]::Max(0, 75 - $lLine.Length)) + "$([char]0x2502)") DarkGray
+    if ($lg.Files -eq 0) {
+        W ("  $([char]0x2502)   $([char]0x2139) No logs folder found $([char]0x2014) nothing to read" + (" " * 32) + "$([char]0x2502)") DarkGray
+        Add-ScanGap "No Minecraft logs folder was found, so the record of what the game LOADED $([char]0x2014) which survives deleting the jar $([char]0x2014) could not be read"
+    } elseif ($lg.Hits.Count -eq 0) {
+        W ("  $([char]0x2502)   OK $([char]0x2014) no cheat package or client name in any log" + (" " * 25) + "$([char]0x2502)") DarkCyan
+    } else {
+        foreach ($h in $lg.Hits) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) FOUND IN LOG  $($h.Evidence)" Red
+            W "  $([char]0x2502)    $($h.File)  (last written $($h.When))" DarkYellow
+            W "  $([char]0x2502)    $($h.Line)" DarkGray
+        }
+    }
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
+    Write-Host ""
+
+    $script:SysArea = "Rest of the PC"
+    if ($lg.Hits.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($lg.Hits.Count) cheat name(s) in the game's own logs" `
+            @($lg.Hits | ForEach-Object { "$($_.Evidence)  $([char]0x2014) $($_.File) ($($_.When)): $($_.Line)" }) `
+            "Minecraft's logs and crash reports were read for cheat package paths and known client names, in code contexts only." `
+            "This is the evidence that survives deleting the jar. A log line is dated: it says the cheat was LOADED, and when. Chat is excluded before anything is matched, so this cannot be someone typing a cheat name at another player." `
+            "" "Keep the log file. It is the strongest thing in this report." | Out-Null
+    } elseif ($lg.Files -gt 0) {
+        Add-Finding "OK" "Rest of the PC" "Game logs and crash reports $([char]0x2014) no cheat package or client name loaded" `
+            @() `
+            "$($lg.Files) log file(s) and crash report(s) were read, chat lines excluded." | Out-Null
+    }
+}
+
 function Test-MacroFile([string]$Name, [string]$Text) {
     # Mirror of classify() in ml/macro.py; the tables live in $script:macroLangs and
     # the reasoning is written out there. Returns @{ Level = ""|"macro"|"cheat" }.

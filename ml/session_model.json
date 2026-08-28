@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "feature_order": [
     "flagged_ratio",
     "review_ratio",
@@ -20,7 +20,8 @@
     "behaviour_likely",
     "server_rule",
     "hidden_api",
-    "macro_cheat"
+    "macro_cheat",
+    "log_cheat"
   ],
   "intercept": -4.0,
   "weights": {
@@ -43,7 +44,8 @@
     "behaviour_likely": 2.0,
     "server_rule": 0.8,
     "hidden_api": 0.8,
-    "macro_cheat": 4.5
+    "macro_cheat": 4.5,
+    "log_cheat": 5.0
   },
   "note": "Session / overall-scan model. Source of truth: ml/session_model.py"
 }

@@ -76,6 +76,10 @@ $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # session AI at the end so it can judge the scan as a whole, and learn from it.
 $script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0 }
 $script:AltClients = [System.Collections.Generic.List[string]]::new()
+# The folders that were actually scanned, so the log reader knows which
+# instances' logs/ and crash-reports/ to read.
+$script:ScanTargetDirs = [System.Collections.Generic.List[string]]::new()
+$script:LogHits = 0
 $script:SessionRaw = $null
 $script:SessionVerdict = $null
 $script:SessionSample = $null
@@ -724,6 +728,34 @@ $script:macroDriverPaths = @(
 )
 $script:macroExtList = @('.ahk', '.ahk2', '.au3', '.lua', '.vbs')
 
+# ---------------------------------------------------------------------------
+# Reading Minecraft's own logs as evidence
+#
+# A log line survives the jar. Deleting a cheat before a screenshare removes the
+# file, not the record that it loaded - and a log line is DATED, so it says the
+# cheat was running at 20:14, which a file on disk never says.
+#
+# The whole difficulty is one thing: latest.log contains the chat. Somebody typing
+# "killaura" into chat writes the word killaura into the log, and a scanner that
+# matches module names there accuses people for what they SAID. That is the worst
+# false flag this tool could produce, because it looks like hard evidence and comes
+# with a timestamp on it.
+#
+# So: module names are never matched at all, chat lines are dropped before anything
+# is tested, and a client name only counts inside a stack frame, a classloader
+# line, a mixin config or a jar name. Mirrored from ml/logscan.py; parity is
+# machine-checked by ml/test_logscan.py.
+# ---------------------------------------------------------------------------
+# A line the game logged as chat, or as a message from another player. Anything in
+# here is something a HUMAN typed and is never evidence of anything.
+$script:logChatLine = '\[CHAT\]|/INFO\]: <[^>]{1,32}>|\[Server thread/INFO\]: <|issued server command|\[Async Chat Thread|commands\.message|\bwhispers to you\b|\bwhispers:\b'
+# A stack frame, a classloader line, a mixin config, a jar filename - the places a
+# class name legitimately appears in a log.
+$script:logCodeContext = '^\s*at\s+[\w$.]+\(|\bClassNotFoundException\b|\bNoClassDefFoundError\b|\bLoading\b.*\bmods?\b|\bmixin\b|\bMixin\b|\.jar\b|\bClassLoader\b|\bTransformer\b|\bCaused by:|\bjava\.lang\.|\bcom\.|\bnet\.|\borg\.|\bme\.|\bdev\.'
+# "Loading 42 mods:" then "- modid 1.2.3" - Fabric and Forge both print this.
+$script:logModListHeader = 'Loading \d+ mods?:|Mod List:|Loading Minecraft .* with'
+$script:logModListItem = '^\s*[-│|]\s*([a-z0-9_-]{2,64})\s+([\w.+-]{1,32})\s*$'
+
 $script:mlModelVersion = 2
 $script:mlIntercept = -3.595535
 $script:mlFeatureOrder = @('pkgpath','cheatsite','strong_sig','weak_sig','fullwidth_str','fullwidth_cls','japanese_cls','singlechar_cls','numeric_cls','novowel_cls','avg_entropy','high_entropy','reflection','runtime_exec','http_download','http_exfil','nested_hollow','fake_identity','filename_client','random_name','verified','legit_modid')
@@ -942,8 +974,8 @@ function Update-ModelOnline($raw, $label) {
 # from every finished scan, locally and (with team mode) across everyone.
 # Source of truth for the weights: ml/session_model.py -> ml/session_model.json
 # ---------------------------------------------------------------------------
-$script:smModelVersion = 3
-$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat')
+$script:smModelVersion = 4
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat','log_cheat')
 $script:smIntercept = -4.0
 $script:smWeights = @{
     'flagged_ratio' = 4
@@ -966,6 +998,7 @@ $script:smWeights = @{
     'server_rule' = 0.8
     'hidden_api' = 0.8
     'macro_cheat' = 4.5
+    'log_cheat' = 5
 }
 $script:smBaseWeights = @{}
 foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
@@ -1006,6 +1039,9 @@ function Get-SessionRaw {
         behaviour_likely = [int]$ev.BehaviourLikely
         server_rule      = [int]$script:ServerRule
         hidden_api       = [int]$ev.HiddenApi
+        # The game's own logs. This is the evidence that survives deleting the jar:
+        # a log line says the cheat LOADED, and says when.
+        log_cheat        = [int]$script:LogHits
     }
 }
 
@@ -1034,6 +1070,7 @@ function Get-SessionVector($raw) {
         server_rule      = Get-Clip01 ([Math]::Min([double]$raw.server_rule, 2.0) / 2.0)
         hidden_api       = Get-Clip01 ([Math]::Min([double]$raw.hidden_api, 2.0) / 2.0)
         macro_cheat      = $(if ($raw.macro_cheat) { 1.0 } else { 0.0 })
+        log_cheat        = $(if ($raw.log_cheat) { 1.0 } else { 0.0 })
     }
 }
 
@@ -1065,6 +1102,11 @@ function Get-SessionVerdict($raw) {
     # A server-rule finding is not an accusation, and this floor is not one either:
     # it puts the scan in front of a person, which is the whole purpose of the band.
     if ($raw.server_rule -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("$($raw.server_rule) mod(s) recognised for certain whose legality is YOUR server's rule, not a technical question (ESP-shaped rendering, schematic printer) $([char]0x2014) not an accusation") }
+    # Minecraft's own log naming a cheat package or client, in a code context. The
+    # jar can be gone; the record that it loaded is not, and it is dated. Chat is
+    # excluded before anything is matched, so this cannot be someone typing a cheat
+    # name at another player.
+    if ($raw.log_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.log_cheat) cheat name(s) found in Minecraft's OWN logs $([char]0x2014) proof it was loaded, with a timestamp, whatever is in the mods folder now") }
     # An autoclicker is not a mod and never shows up in the mods folder. A script
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
@@ -1096,11 +1138,12 @@ function Get-SessionVerdictCached {
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
     if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0 -or
-        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0) { return 1 }
+        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0 -or $raw.log_cheat -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
         $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
         $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
         $raw.behaviour_cheat -eq 0 -and $raw.behaviour_likely -eq 0 -and $raw.server_rule -eq 0 -and
+        $raw.log_cheat -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }
@@ -2526,6 +2569,8 @@ function Invoke-SelfTest {
         @{ Label = "Big pack, a behaviour-LIKELY mod"; Bands = @("Likely"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_likely = 1 } }
         # A server-rule finding needs a person, and never more than that.
         @{ Label = "Server-rule findings only"; Bands = @("Review"); Raw = @{ total_mods = 40; verified = 20; review = 8; server_rule = 8 } }
+        # The jar can be gone. The log line saying it loaded is not, and it is dated.
+        @{ Label = "Mods clean, cheat named in the log"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; log_cheat = 1 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {
@@ -3610,6 +3655,7 @@ function Get-ScanTargets {
             "The install folders of Lunar, Badlion, Feather, LabyMod and friends were located, and every mods/ or addons/ folder inside them was added to the scan." `
             "Owning one of these is completely normal. It is here because a jar parked in another client's folder is out of sight of a scan that only looks at .minecraft." | Out-Null
     }
+    foreach ($t in $targets) { if (-not $script:ScanTargetDirs.Contains($t)) { [void]$script:ScanTargetDirs.Add($t) } }
     Write-Host ""
     return @($targets)
 }
@@ -5614,6 +5660,157 @@ function Run-BamScan {
     Write-Host ""
 }
 
+function Test-LogLine([string]$Line) {
+    # Mirror of classify_line() in ml/logscan.py. Returns @{ Kind = ""|"package"|"client"; Evidence = "" }.
+    $out = @{ Kind = ""; Evidence = "" }
+    if ([string]::IsNullOrWhiteSpace($Line)) { return $out }
+    # Chat first, always. Everything after this point is about CODE.
+    if ($Line -match $script:logChatLine) { return $out }
+    $low = $Line.ToLower()
+    foreach ($p in $script:cheatPackagePaths) {
+        $pl = $p.ToLower()
+        foreach ($form in @($pl, ($pl -replace '/', '.'))) {
+            if ($low.IndexOf($form, [System.StringComparison]::Ordinal) -ge 0) {
+                $out.Kind = "package"; $out.Evidence = $form; return $out
+            }
+        }
+    }
+    if ($Line -match $script:logCodeContext) {
+        foreach ($t in $script:distinctiveClientTokens) {
+            $tl = $t.ToLower()
+            if ($tl.Length -lt 5) { continue }
+            # must sit next to a package or class separator, not float in prose
+            if ($low -match ('(?:^|[/.\\_\-\s"''()\[\]])' + [regex]::Escape($tl) + '(?:$|[/.\\_\-\s"''()\[\]:])')) {
+                $out.Kind = "client"; $out.Evidence = $tl; return $out
+            }
+        }
+    }
+    return $out
+}
+
+function Read-LogText([string]$Path, [int]$MaxBytes = 4194304) {
+    # latest.log is plain, the rotated ones are gzip. Both are read; a cheat that
+    # ran last week is in logs/2026-08-21-1.log.gz and nowhere else.
+    try {
+        $fi = [System.IO.FileInfo]::new($Path)
+        if ($fi.Length -gt 64MB) { return $null }
+        if ($Path.EndsWith('.gz', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $fs = [System.IO.File]::OpenRead($Path)
+            try {
+                $gz = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
+                try {
+                    $ms = New-Object System.IO.MemoryStream
+                    $buf = New-Object byte[] 65536
+                    while ($ms.Length -lt $MaxBytes) {
+                        $n = $gz.Read($buf, 0, $buf.Length)
+                        if ($n -le 0) { break }
+                        $ms.Write($buf, 0, $n)
+                    }
+                    return [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
+                } finally { $gz.Dispose() }
+            } finally { $fs.Dispose() }
+        }
+        if ($fi.Length -le $MaxBytes) { return [System.IO.File]::ReadAllText($Path) }
+        # only the tail of a very large log - the newest lines are the ones that matter
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            $fs.Seek(-$MaxBytes, [System.IO.SeekOrigin]::End) | Out-Null
+            $buf = New-Object byte[] $MaxBytes
+            $got = $fs.Read($buf, 0, $MaxBytes)
+            return [System.Text.Encoding]::UTF8.GetString($buf, 0, $got)
+        } finally { $fs.Dispose() }
+    } catch { return $null }
+}
+
+function Run-LogScan {
+    # Minecraft's own logs and crash reports, for every instance folder that was
+    # scanned. This runs on every scan: it is cheap, and it is the only evidence
+    # that survives deleting the jar.
+    $res = @{
+        Hits = [System.Collections.Generic.List[object]]::new()
+        Files = 0; Lines = 0
+        LoadedMods = [System.Collections.Generic.List[string]]::new()
+    }
+    $roots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in @($script:ScanTargetDirs)) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        try {
+            $inst = [System.IO.Path]::GetDirectoryName($t.TrimEnd('\'))
+            if ($inst) { [void]$roots.Add($inst) }
+        } catch {}
+    }
+    $seenEvidence = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($root in $roots) {
+        foreach ($sub in @('logs', 'crash-reports')) {
+            $dir = [System.IO.Path]::Combine($root, $sub)
+            if (-not [System.IO.Directory]::Exists($dir)) { continue }
+            $files = @()
+            try {
+                $files = @([System.IO.Directory]::GetFiles($dir) |
+                           Where-Object { $_ -match '\.(log|log\.gz|txt)$' } |
+                           Sort-Object { [System.IO.File]::GetLastWriteTime($_) } -Descending |
+                           Select-Object -First 25)
+            } catch {}
+            foreach ($lf in $files) {
+                $txt = Read-LogText $lf
+                if ($null -eq $txt) { continue }
+                $res.Files++
+                $when = try { [System.IO.File]::GetLastWriteTime($lf).ToString('yyyy-MM-dd HH:mm') } catch { "?" }
+                foreach ($line in ($txt -split "`r?`n")) {
+                    $res.Lines++
+                    $v = Test-LogLine $line
+                    if ($v.Kind -eq "") { continue }
+                    $key = "$($v.Kind)|$($v.Evidence)"
+                    if (-not $seenEvidence.Add($key)) { continue }
+                    $trimmed = $line.Trim()
+                    if ($trimmed.Length -gt 200) { $trimmed = $trimmed.Substring(0, 197) + "..." }
+                    [void]$res.Hits.Add([PSCustomObject]@{
+                        Kind = $v.Kind; Evidence = $v.Evidence
+                        File = $lf; When = $when; Line = $trimmed
+                    })
+                }
+            }
+        }
+    }
+    return $res
+}
+
+function Show-LogScan {
+    $lg = Run-LogScan
+    $script:LogHits = $lg.Hits.Count
+    W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) GAME LOGS AND CRASH REPORTS " + "$([char]0x2500)" * 42 + "$([char]0x2510)") DarkCyan
+    $lLine = "  $([char]0x2502)  Read $($lg.Files) log file(s), $($lg.Lines) line(s)"
+    W ($lLine + (" " * [Math]::Max(0, 75 - $lLine.Length)) + "$([char]0x2502)") DarkGray
+    if ($lg.Files -eq 0) {
+        W ("  $([char]0x2502)   $([char]0x2139) No logs folder found $([char]0x2014) nothing to read" + (" " * 32) + "$([char]0x2502)") DarkGray
+        Add-ScanGap "No Minecraft logs folder was found, so the record of what the game LOADED $([char]0x2014) which survives deleting the jar $([char]0x2014) could not be read"
+    } elseif ($lg.Hits.Count -eq 0) {
+        W ("  $([char]0x2502)   OK $([char]0x2014) no cheat package or client name in any log" + (" " * 25) + "$([char]0x2502)") DarkCyan
+    } else {
+        foreach ($h in $lg.Hits) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) FOUND IN LOG  $($h.Evidence)" Red
+            W "  $([char]0x2502)    $($h.File)  (last written $($h.When))" DarkYellow
+            W "  $([char]0x2502)    $($h.Line)" DarkGray
+        }
+    }
+    W ("  $([char]0x2514)" + "$([char]0x2500)" * 73 + "$([char]0x2518)") DarkCyan
+    Write-Host ""
+
+    $script:SysArea = "Rest of the PC"
+    if ($lg.Hits.Count -gt 0) {
+        Add-Finding "FAIL" "Rest of the PC" "$($lg.Hits.Count) cheat name(s) in the game's own logs" `
+            @($lg.Hits | ForEach-Object { "$($_.Evidence)  $([char]0x2014) $($_.File) ($($_.When)): $($_.Line)" }) `
+            "Minecraft's logs and crash reports were read for cheat package paths and known client names, in code contexts only." `
+            "This is the evidence that survives deleting the jar. A log line is dated: it says the cheat was LOADED, and when. Chat is excluded before anything is matched, so this cannot be someone typing a cheat name at another player." `
+            "" "Keep the log file. It is the strongest thing in this report." | Out-Null
+    } elseif ($lg.Files -gt 0) {
+        Add-Finding "OK" "Rest of the PC" "Game logs and crash reports $([char]0x2014) no cheat package or client name loaded" `
+            @() `
+            "$($lg.Files) log file(s) and crash report(s) were read, chat lines excluded." | Out-Null
+    }
+}
+
 function Test-MacroFile([string]$Name, [string]$Text) {
     # Mirror of classify() in ml/macro.py; the tables live in $script:macroLangs and
     # the reasoning is written out there. Returns @{ Level = ""|"macro"|"cheat" }.
@@ -6806,10 +7003,16 @@ Write-Host ""
 Write-Host ""
 # No question here any more - the tool decided this itself in Set-AutoDepth, and
 # escalated on its own if the mod pass turned anything up.
-# Not gated on the deep scan. An autoclicker is not in the mods folder and does not
-# need the game to be open, so closing Minecraft before the screenshare used to hide
-# it completely - which is the opposite of the point.
+# Neither of these is gated on the deep scan.
+#
+# An autoclicker is not in the mods folder and does not need the game to be open,
+# so closing Minecraft before the screenshare used to hide it completely - which is
+# the opposite of the point.
+#
+# And the game's own logs are the only evidence that survives deleting the jar: a
+# log line says the cheat LOADED, and says when.
 Show-MacroScan
+Show-LogScan
 
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {

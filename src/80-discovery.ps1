@@ -347,6 +347,7 @@ function Get-ScanTargets {
             "The install folders of Lunar, Badlion, Feather, LabyMod and friends were located, and every mods/ or addons/ folder inside them was added to the scan." `
             "Owning one of these is completely normal. It is here because a jar parked in another client's folder is out of sight of a scan that only looks at .minecraft." | Out-Null
     }
+    foreach ($t in $targets) { if (-not $script:ScanTargetDirs.Contains($t)) { [void]$script:ScanTargetDirs.Add($t) } }
     Write-Host ""
     return @($targets)
 }

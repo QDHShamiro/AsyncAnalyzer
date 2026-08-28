@@ -39,7 +39,7 @@ Flags: `-Ask` (manual path), `-Path "C:\...\mods"`, `-DeepScan`, `-DeepMemory`, 
   - Main scan loop (verify → features → verdict → learn) inside `if (-not $SkipModCheck)`.
   - `New-HtmlReport` (the screenshare evidence document), `Add-Finding` + the `Write-SystemFlag`/`Write-Detail` hook that feeds it, `Run-SystemChecks`, `Run-PCscan`, `Run-BamScan`, `Run-JVMScan`.
 - `ml/` — the AI pipeline (Python, offline):
-  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
+  - `features.py` (22-feature schema, MUST match the PS extractor), `build_dataset.py` (downloads 36 real libs + synthesises profiles), `train_model.py` (logreg → `model.json` + `model_ps_snippet.txt`), `online_learn.py` (SGD, matches PS), `verdict.py` (reference port), `signatures.json` (community/cheat DB, auto-downloaded by the tool), tests: `test_verdict.py` (194), `test_bytecode.py` (263), `test_session.py` (40), `test_memory.py` (9), `test_autoscan.py` (23), `test_report.py` (46), `test_macro.py` (42, autoclicker/macro classification + PS parity), `test_logscan.py` (21, log evidence + PS parity), `test_selftest_cases.py` (38, runs the PS self-test cases through the Python port), `test_selflearn.py` (self-learning proof).
 - `server/` — team backend: `server.js` (zero-dep Node), `worker.js` (Cloudflare + D1), `schema.sql`, `wrangler.toml`, `dashboard.html`, `README.md`.
 
 ## AI / verdict (how it decides)
@@ -214,6 +214,27 @@ silently), and that the PS feature ORDER equals the Python one.
 - Client installed but no mods/addons folder found -> `Add-ScanGap`. A format that
   cannot be read is not a clean result.
 
+## Game logs and crash reports (the evidence that outlives the jar)
+- `ml/logscan.py` is the source of truth; `$script:logChatLine` / `logCodeContext`
+  in `src/10-signatures.ps1` are generated from it and parity-checked by
+  `ml/test_logscan.py`. `Test-LogLine` / `Read-LogText` / `Run-LogScan` /
+  `Show-LogScan` live in `src/96-pcscan.ps1`; it runs on EVERY scan.
+- Reads `logs/latest.log`, `logs/*.log.gz` (gzip, decompressed) and
+  `crash-reports/*.txt` for every instance folder that was scanned, newest 25 files,
+  4 MB each (tail only for a huge log).
+- **The trap, and the reason this needed care: latest.log contains the chat.**
+  Someone typing "killaura" at another player writes that word into the log. A
+  scanner matching module names there accuses people for what they SAID, and it
+  looks like hard evidence because it is timestamped. So module names are never
+  matched, chat lines are dropped first, and only two things count: a cheat
+  vendor's Java PACKAGE path, or a known client name inside a code context (stack
+  frame / classloader / mixin config / jar name) with separator boundaries.
+- `test_logscan.py` (21) is mostly negatives on purpose: chat about cheating, a
+  staff ban broadcast, a `/report` command, an anticheat MOTD, a chat line that
+  spells out a cheat package.
+- Session model **v3 -> v4**: new feature `log_cheat` (5.0) + hard rule >=85 +
+  auto-label. No logs folder -> `Add-ScanGap`.
+
 ## Autoclickers / macro files (the half that is not a mod)
 - `ml/macro.py` is the source of truth for the patterns; `$script:macroLangs`,
   `$script:macroCheatNames`, `$script:macroDriverPaths` in `src/10-signatures.ps1`
@@ -250,7 +271,7 @@ silently), and that the PS feature ORDER equals the Python one.
 
 ## Benchmarks & CI (public, continuous)
 - `ml/benchmark.py` -> generates `BENCHMARKS.md` + appends to `ml/benchmark_history.csv`.
-- CI runs nine suites now (`test_macro` added).
+- CI runs ten suites now (`test_macro`, `test_logscan` added).
 - **CI owns both generated files.** Run the benchmark locally as much as you like, but do NOT commit the regenerated files - the bot writes them on every push to main, and committing your own copy produces a merge conflict every time (it already did once). If you do hit that conflict: resolve it by regenerating rather than hand-editing, and for the history take the UNION of both sides keyed by commit.
 - `.github/workflows/benchmark.yml` runs on every push to main, every PR, and weekly. It runs all seven suites, checks the weights embedded in the `.ps1` still equal `ml/model.json` + `ml/session_model.json`, runs the benchmark, publishes it to the run summary, and commits a refreshed `BENCHMARKS.md` on main (`[skip ci]` so it cannot loop).
 - **Regression gates fail the build**: no real library flagged by a cheat rule; aim + dropper always detected; detection independent of hiding depth.
@@ -261,7 +282,7 @@ silently), and that the PS feature ORDER equals the Python one.
 ## Open items / TODO
 - [ ] **Real cheat hashes** (the one thing the cloud can't do): `$script:knownCheatHashes` / `ml/signatures.json` `knownCheatHashes` are empty. On a PC that actually has Doomsday/Ghost/Vape, run the tool with **`-Share`** (exports confirmed cheat SHA1s locally) or paste the SHA1 into `signatures.json` → instant 100% detection for the whole team. The tool already detects Doomsday without a hash (random-name → Review, package path / cheat site → Confirmed); the hash just makes it instant + certain.
 - [ ] **Live Windows test — THE open item.** Nothing has ever run in real PowerShell.
-      Run `-SelfTest` (expect **78/78**), then one real scan with Minecraft running.
+      Run `-SelfTest` (expect **79/79**), then one real scan with Minecraft running.
       Check specifically: (a) UAC appears and declining it still scans, (b) every open
       instance shows up, (c) "JVM / RUNTIME INJECTION" actually has content, (d)
       `last-scan.txt` is written, (e) the HTML report opens and its Coverage box is

@@ -84,6 +84,9 @@ SCANS = [
      dict(total_mods=40, verified=20, review=8, server_rule=8), {"Review"}),
     ("Mods that hide the API behind reflection",
      dict(total_mods=30, verified=20, hidden_api=2), {"Clean", "Review"}),
+    # The jar can be gone. The log line saying it loaded is not, and it is dated.
+    ("Mods folder spotless, cheat named in the log",
+     dict(total_mods=20, verified=20, log_cheat=1), {"Confirmed"}),
 ]
 
 print("=== Session scoring (whole scan, not one jar) ===")

@@ -294,6 +294,30 @@ user alive. The walker only collects `mods/` and `addons/`, which those are not 
 And if a client is installed but no mods/addons folder turns up under it, that goes in the
 **coverage box** — it means a format this tool cannot read, which is not the same as clean.
 
+### 📜 The game's own logs — the evidence that survives deleting the jar
+
+`latest.log`, the rotated `.log.gz` files and `crash-reports/` are read on **every**
+scan. A log line outlives the file: deleting a cheat before a screenshare removes the
+jar, not the record that it loaded — and a log line is **dated**, so it says the cheat
+was running at 20:14, which a file on disk never says.
+
+The whole difficulty is one thing, and it is why this took care rather than a regex:
+**latest.log contains the chat.** Someone typing "killaura" at another player writes the
+word killaura into the log. A scanner that matched module names there would accuse people
+for what they *said* — and it would look like hard evidence, with a timestamp on it. That
+is the worst false flag this tool could produce.
+
+So module names are **never** matched. Chat lines are dropped before anything is tested.
+What is matched is structural: a **cheat vendor's Java package** (`net.ccbluex`,
+`meteordevelopment`) — not something anyone types in chat — or a **known client name**,
+and only inside a stack frame, a classloader failure, a mixin config or a jar filename.
+`ml/test_logscan.py` carries twelve innocent lines including chat about cheating, a staff
+ban broadcast, a `/report` command and an anticheat MOTD; none of them may ever be
+evidence.
+
+A hit is **Confirmed** for the whole scan, with the file and the timestamp in the report.
+No logs folder at all goes in the coverage box instead.
+
 ### 🖱 Autoclicker — the half that is not a mod
 
 An autoclicker is never in the mods folder. It is an AutoHotkey script on the desktop, an

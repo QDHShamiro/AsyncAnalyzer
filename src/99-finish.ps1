@@ -61,10 +61,16 @@ Write-Host ""
 Write-Host ""
 # No question here any more - the tool decided this itself in Set-AutoDepth, and
 # escalated on its own if the mod pass turned anything up.
-# Not gated on the deep scan. An autoclicker is not in the mods folder and does not
-# need the game to be open, so closing Minecraft before the screenshare used to hide
-# it completely - which is the opposite of the point.
+# Neither of these is gated on the deep scan.
+#
+# An autoclicker is not in the mods folder and does not need the game to be open,
+# so closing Minecraft before the screenshare used to hide it completely - which is
+# the opposite of the point.
+#
+# And the game's own logs are the only evidence that survives deleting the jar: a
+# log line says the cheat LOADED, and says when.
 Show-MacroScan
+Show-LogScan
 
 $doDeep = $script:DeepScan -or $script:AssumeYes
 if (-not $doDeep -and -not $script:_DevMode) {

@@ -170,8 +170,8 @@ function Update-ModelOnline($raw, $label) {
 # from every finished scan, locally and (with team mode) across everyone.
 # Source of truth for the weights: ml/session_model.py -> ml/session_model.json
 # ---------------------------------------------------------------------------
-$script:smModelVersion = 3
-$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat')
+$script:smModelVersion = 4
+$script:smFeatureOrder = @('flagged_ratio','review_ratio','unverified_ratio','random_ratio','cheatsite_dl','hard_confirmed','sys_issues','jvm_inject','bam_deleted','cheat_procs','stray_jars','cheat_folders','deleted_jars','mc_running','mem_client','behaviour_cheat','behaviour_likely','server_rule','hidden_api','macro_cheat','log_cheat')
 $script:smIntercept = -4.0
 $script:smWeights = @{
     'flagged_ratio' = 4
@@ -194,6 +194,7 @@ $script:smWeights = @{
     'server_rule' = 0.8
     'hidden_api' = 0.8
     'macro_cheat' = 4.5
+    'log_cheat' = 5
 }
 $script:smBaseWeights = @{}
 foreach ($smk in $script:smWeights.Keys) { $script:smBaseWeights[$smk] = $script:smWeights[$smk] }
@@ -234,6 +235,9 @@ function Get-SessionRaw {
         behaviour_likely = [int]$ev.BehaviourLikely
         server_rule      = [int]$script:ServerRule
         hidden_api       = [int]$ev.HiddenApi
+        # The game's own logs. This is the evidence that survives deleting the jar:
+        # a log line says the cheat LOADED, and says when.
+        log_cheat        = [int]$script:LogHits
     }
 }
 
@@ -262,6 +266,7 @@ function Get-SessionVector($raw) {
         server_rule      = Get-Clip01 ([Math]::Min([double]$raw.server_rule, 2.0) / 2.0)
         hidden_api       = Get-Clip01 ([Math]::Min([double]$raw.hidden_api, 2.0) / 2.0)
         macro_cheat      = $(if ($raw.macro_cheat) { 1.0 } else { 0.0 })
+        log_cheat        = $(if ($raw.log_cheat) { 1.0 } else { 0.0 })
     }
 }
 
@@ -293,6 +298,11 @@ function Get-SessionVerdict($raw) {
     # A server-rule finding is not an accusation, and this floor is not one either:
     # it puts the scan in front of a person, which is the whole purpose of the band.
     if ($raw.server_rule -gt 0) { $score = [Math]::Max($score, 30); [void]$reasons.Add("$($raw.server_rule) mod(s) recognised for certain whose legality is YOUR server's rule, not a technical question (ESP-shaped rendering, schematic printer) $([char]0x2014) not an accusation") }
+    # Minecraft's own log naming a cheat package or client, in a code context. The
+    # jar can be gone; the record that it loaded is not, and it is dated. Chat is
+    # excluded before anything is matched, so this cannot be someone typing a cheat
+    # name at another player.
+    if ($raw.log_cheat -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.log_cheat) cheat name(s) found in Minecraft's OWN logs $([char]0x2014) proof it was loaded, with a timestamp, whatever is in the mods folder now") }
     # An autoclicker is not a mod and never shows up in the mods folder. A script
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
@@ -324,11 +334,12 @@ function Get-SessionVerdictCached {
 function Get-SessionLabel($raw) {
     # Only unambiguous scans teach the model - that is what stops it drifting.
     if ($raw.hard_confirmed -or $raw.jvm_inject -gt 0 -or $raw.cheat_procs -gt 0 -or $raw.mem_client -gt 0 -or
-        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0) { return 1 }
+        $raw.macro_cheat -gt 0 -or $raw.behaviour_cheat -gt 0 -or $raw.log_cheat -gt 0) { return 1 }
     if ($raw.total_mods -gt 0 -and $raw.flagged -eq 0 -and $raw.review -eq 0 -and $raw.sys_issues -eq 0 -and
         $raw.bam_deleted -eq 0 -and $raw.stray_jars -eq 0 -and $raw.cheat_folders -eq 0 -and $raw.deleted_jars -eq 0 -and
         $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
         $raw.behaviour_cheat -eq 0 -and $raw.behaviour_likely -eq 0 -and $raw.server_rule -eq 0 -and
+        $raw.log_cheat -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }

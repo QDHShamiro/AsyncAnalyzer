@@ -699,6 +699,8 @@ function Invoke-SelfTest {
         @{ Label = "Big pack, a behaviour-LIKELY mod"; Bands = @("Likely"); Raw = @{ total_mods = 100; verified = 60; flagged = 1; behaviour_likely = 1 } }
         # A server-rule finding needs a person, and never more than that.
         @{ Label = "Server-rule findings only"; Bands = @("Review"); Raw = @{ total_mods = 40; verified = 20; review = 8; server_rule = 8 } }
+        # The jar can be gone. The log line saying it loaded is not, and it is dated.
+        @{ Label = "Mods clean, cheat named in the log"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; log_cheat = 1 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {
