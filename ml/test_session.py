@@ -39,6 +39,14 @@ SCANS = [
      dict(total_mods=20, verified=12, flagged=1, hard_confirmed=1), {"Confirmed"}),
     ("Clean mods but JVM injection",
      dict(total_mods=18, verified=18, jvm_inject=2), {"Likely", "Confirmed"}),
+    # The other half of that rule. jvm_inject is hard, so ONLY proof may raise it;
+    # a localhost listener, a cheat word in chat or a memory sweep that ran out of
+    # time are reported as system issues instead. Those must never decide a band -
+    # see test_memory.classify_jvm for which observation lands in which bucket.
+    ("soft observations only, nothing proven",
+     dict(total_mods=25, verified=25, sys_issues=3), {"Clean"}),
+    ("soft observations at the maximum",
+     dict(total_mods=25, verified=25, sys_issues=10), {"Clean"}),
     ("Clean mods but cheat process running",
      dict(total_mods=12, verified=9, cheat_procs=1), {"Likely", "Confirmed"}),
     ("Mods deleted right before the scan",

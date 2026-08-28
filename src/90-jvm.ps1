@@ -1,31 +1,88 @@
+# ---------------------------------------------------------------------------
+# The live game process.
+#
+# Everything this function observes is sorted into one of three buckets, and the
+# difference matters more than any single check:
+#
+#   Findings - proof of injection. Only these raise jvm_inject, which is a HARD
+#              rule: one finding forces the whole scan to at least "Likely".
+#   Notes    - real observations that also have innocent explanations. Reported
+#              in full, counted as system issues (so the model sees them), but
+#              never allowed to force a band on their own.
+#   Gaps     - things the scan could NOT check. These prove nothing in either
+#              direction and must never look like evidence.
+#
+# Before this split, every one of them was one flat list whose COUNT became
+# jvm_inject. A clean PC whose memory sweep simply ran out of its time budget
+# added the sentence "Live-memory check stopped at its 120 s budget" to that
+# list, and that sentence alone was enough to label the scan "Likely" - the more
+# RAM a legitimate modpack used, the more likely it was to be accused.
+# ---------------------------------------------------------------------------
+function New-JvmScanResult {
+    return @{
+        Findings = [System.Collections.Generic.List[string]]::new()
+        Notes    = [System.Collections.Generic.List[string]]::new()
+        Gaps     = [System.Collections.Generic.List[string]]::new()
+    }
+}
+
 function Run-JVMScan {
-    $jvmFlags = [System.Collections.Generic.List[string]]::new()
+    $r = New-JvmScanResult
 
     $javaProcs = Get-WmiObject Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" -ErrorAction SilentlyContinue
-    if (-not $javaProcs) { return $jvmFlags }
+    if (-not $javaProcs) { return $r }
 
     foreach ($proc in $javaProcs) {
-        $cmdLine = $proc.CommandLine
-
-        $agentMatches = [regex]::Matches($cmdLine, '-javaagent:([^\s"]+)')
-        foreach ($m in $agentMatches) {
-            $agentPath = $m.Groups[1].Value.Trim('"').Trim("'")
-            $agentName = [System.IO.Path]::GetFileName($agentPath)
-            $legitAgents = @("jmxremote","yjp","jrebel","newrelic","jacoco","theseus")
-            $isLegit = $false
-            foreach ($la in $legitAgents) { if ($agentName -match $la) { $isLegit = $true; break } }
-            if (-not $isLegit) { $jvmFlags.Add("JVM Agent $([char]0x2014) -javaagent:$agentName (path: $agentPath)") }
+        $where = "$($proc.Name) (PID $($proc.ProcessId))"
+        $cmdLine = [string]$proc.CommandLine
+        # WMI returns a null command line for a process this account may not read.
+        # That is a gap, not a clean result: the JVM flags are exactly where an
+        # injected agent would be visible.
+        if ([string]::IsNullOrWhiteSpace($cmdLine)) {
+            $r.Gaps.Add("Could not read the command line of $where $([char]0x2014) its JVM flags (agents, bootclasspath) were not checked. Run as administrator.")
+            $cmdLine = ""
         }
 
-        $suspJvmFlags = @(
-            @{ Flag = "-Xbootclasspath/p:"; Desc = "prepends to bootstrap classpath, overrides core Java classes" },
-            @{ Flag = "-Xbootclasspath/a:"; Desc = "appends to bootstrap classpath, injects below classloader" },
-            @{ Flag = "-agentlib:jdwp";     Desc = "JDWP debug agent, remote debugging enabled" },
-            @{ Flag = "-agentpath:";         Desc = "native agent loaded, bypasses Java sandbox" }
-        )
-        foreach ($sf in $suspJvmFlags) {
-            if ($cmdLine -match [regex]::Escape($sf.Flag)) {
-                $jvmFlags.Add("Suspicious JVM flag $([char]0x2014) $($sf.Flag) $([char]0x2014) $($sf.Desc)")
+        if ($cmdLine) {
+            $agentMatches = [regex]::Matches($cmdLine, '-javaagent:([^\s"]+)')
+            foreach ($m in $agentMatches) {
+                $agentPath = $m.Groups[1].Value.Trim('"').Trim("'")
+                $agentName = [System.IO.Path]::GetFileName($agentPath)
+                $legitAgents = @("jmxremote","yjp","jrebel","newrelic","jacoco","theseus")
+                $isLegit = $false
+                foreach ($la in $legitAgents) { if ($agentName -match $la) { $isLegit = $true; break } }
+                if ($isLegit) {
+                    # Named like a known-good agent - but the check is only the file
+                    # NAME, and a file name is the cheapest thing in the world to
+                    # copy. Say out loud that an agent is attached so a human can
+                    # look at the path, instead of hiding it behind a whitelist.
+                    $r.Notes.Add("JVM agent attached, name looks legitimate $([char]0x2014) -javaagent:$agentName (path: $agentPath) $([char]0x2014) matched the known-good list by file NAME only, so check the path is really that tool.")
+                } else {
+                    $r.Findings.Add("JVM Agent $([char]0x2014) -javaagent:$agentName (path: $agentPath)")
+                }
+            }
+
+            # Split by what a normal player's launcher could plausibly do.
+            # Findings: no launcher attaches a native agent or a remote debugger to
+            # a game. Notes: -Xbootclasspath is how some legacy 1.8-era launchers
+            # patch authlib, so it is reported but never forces a band by itself.
+            $hardJvmFlags = @(
+                @{ Flag = "-agentlib:jdwp"; Desc = "JDWP debug agent $([char]0x2014) anyone who can reach that port can run code inside the game" },
+                @{ Flag = "-agentpath:";    Desc = "native agent loaded, bypasses the Java sandbox entirely" }
+            )
+            foreach ($sf in $hardJvmFlags) {
+                if ($cmdLine -match [regex]::Escape($sf.Flag)) {
+                    $r.Findings.Add("Suspicious JVM flag $([char]0x2014) $($sf.Flag) $([char]0x2014) $($sf.Desc)")
+                }
+            }
+            $softJvmFlags = @(
+                @{ Flag = "-Xbootclasspath/p:"; Desc = "prepends to the bootstrap classpath, overriding core Java classes" },
+                @{ Flag = "-Xbootclasspath/a:"; Desc = "appends to the bootstrap classpath, loading below the mod loader" }
+            )
+            foreach ($sf in $softJvmFlags) {
+                if ($cmdLine -match [regex]::Escape($sf.Flag)) {
+                    $r.Notes.Add("Bootstrap classpath modified $([char]0x2014) $($sf.Flag) $([char]0x2014) $($sf.Desc). Some legacy launchers do this legitimately; read the path it points at.")
+                }
             }
         }
 
@@ -34,7 +91,11 @@ function Run-JVMScan {
                        Where-Object { $_.LocalAddress -eq '127.0.0.1' -and $_.State -eq 'Listen' }
             if ($netConn) {
                 $ports = $netConn.LocalPort -join ', '
-                $jvmFlags.Add("Localhost listener $([char]0x2014) Java opened server socket(s) on port(s): $ports $([char]0x2014) vanilla Minecraft never opens listen sockets")
+                # Deliberately NOT a finding. A Gradle daemon, a launcher catching a
+                # Microsoft login redirect and a mod with a built-in web map all
+                # listen on 127.0.0.1, and none of them is a cheat. It is worth a
+                # moderator's eyes; it is not worth an accusation.
+                $r.Notes.Add("Localhost listener $([char]0x2014) $where has server socket(s) open on port(s): $ports $([char]0x2014) the game itself does not need this, but launchers, dev tools and web-map mods do. Check what is on the port.")
             }
         } catch {}
 
@@ -61,10 +122,12 @@ function Run-JVMScan {
             # The struct above is laid out for 64-bit. Rather than read misaligned
             # garbage on a 32-bit host, say so and skip.
             if ([IntPtr]::Size -ne 8) {
-                $jvmFlags.Add("Live-memory check skipped $([char]0x2014) needs 64-bit PowerShell (this host is 32-bit)")
+                $r.Gaps.Add("Live-memory check skipped for $where $([char]0x2014) it needs 64-bit PowerShell and this host is 32-bit. An injected client would not have been seen.")
             } else {
             $handle = [Win32.MemAPI]::OpenProcess(0x10 -bor 0x400, $false, $proc.ProcessId)
-            if ($handle -ne [IntPtr]::Zero) {
+            if ($handle -eq [IntPtr]::Zero) {
+                $r.Gaps.Add("Could not open $where for reading $([char]0x2014) its memory was not checked, so an injected client would not have been seen. Run as administrator.")
+            } else {
                 $addr      = [IntPtr]::Zero
                 $mbi       = New-Object Win32.MemAPI+MEMORY_BASIC_INFORMATION
                 $mbiSize   = [System.Runtime.InteropServices.Marshal]::SizeOf($mbi)
@@ -95,42 +158,53 @@ function Run-JVMScan {
                 $memRegex = [regex]::new("($memAlt)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                 $memHits = @{}
                 $scanLimit = 0
+                # Coverage bookkeeping. The time budget stops the READING, not the
+                # walk: VirtualQueryEx costs nothing, so keep enumerating regions to
+                # the end of the address space and learn the real total. That turns
+                # "we stopped early" into "we read 61% of 3.2 GB", which is a fact a
+                # moderator can act on instead of a shrug.
+                $memBudgetHit = $false
+                $memRead      = [int64]0
+                $memTotal     = [int64]0
 
                 while ([Win32.MemAPI]::VirtualQueryEx($handle, $addr, [ref]$mbi, [uint32]$mbiSize) -and $scanLimit -lt 200000) {
                     $scanLimit++
-                    if ($memWatch.Elapsed.TotalSeconds -gt $memBudget) {
-                        $jvmFlags.Add("Live-memory check stopped at its $memBudget s budget $([char]0x2014) run with -Deep for a longer sweep")
-                        break
-                    }
                     # .ToInt64() rather than a cast: IntPtr does not implement IConvertible,
                     # so [int64]$ptr throws on PowerShell 5.1.
                     $regionSize = $mbi.RegionSize.ToInt64()
                     # committed, and readable+writable (the JVM heap) or RWX (JIT / injected code)
                     $readable = (($mbi.Protect -band 0x04) -ne 0) -or (($mbi.Protect -band 0x40) -ne 0)
                     if ($mbi.State -eq 0x1000 -and $readable -and $regionSize -gt 0) {
-                        $offset = [int64]0
-                        while ($offset -lt $regionSize) {
-                            if ($memWatch.Elapsed.TotalSeconds -gt $memBudget) { break }
-                            $take = [int][Math]::Min([int64]$chunkSize, $regionSize - $offset)
-                            $buf  = New-Object byte[] $take
-                            $read = 0
-                            $rAddr = [IntPtr]($mbi.BaseAddress.ToInt64() + $offset)
-                            if (-not ([Win32.MemAPI]::ReadProcessMemory($handle, $rAddr, $buf, $take, [ref]$read)) -or $read -le 0) { break }
-                            $str = [System.Text.Encoding]::ASCII.GetString($buf, 0, $read)
-                            foreach ($mm in $memRegex.Matches($str)) {
-                                $term = $mm.Groups[1].Value
-                                $key  = $term.ToLower()
-                                if (-not $memHits.ContainsKey($key)) {
-                                    $memHits[$key] = @{
-                                        Label = $term
-                                        Kind  = $(if ($memClientSet.Contains($term)) { "client" } else { "module" })
-                                        Hits  = 0
-                                        Addr  = ("0x{0:X}" -f $mbi.BaseAddress.ToInt64())
+                        $memTotal += $regionSize
+                        if (-not $memBudgetHit -and $memWatch.Elapsed.TotalSeconds -gt $memBudget) { $memBudgetHit = $true }
+                        if (-not $memBudgetHit) {
+                            $offset = [int64]0
+                            while ($offset -lt $regionSize) {
+                                if ($memWatch.Elapsed.TotalSeconds -gt $memBudget) { $memBudgetHit = $true; break }
+                                $take = [int][Math]::Min([int64]$chunkSize, $regionSize - $offset)
+                                $buf  = New-Object byte[] $take
+                                $read = 0
+                                $rAddr = [IntPtr]($mbi.BaseAddress.ToInt64() + $offset)
+                                if (-not ([Win32.MemAPI]::ReadProcessMemory($handle, $rAddr, $buf, $take, [ref]$read)) -or $read -le 0) { break }
+                                $memRead += $read
+                                $str = [System.Text.Encoding]::ASCII.GetString($buf, 0, $read)
+                                foreach ($mm in $memRegex.Matches($str)) {
+                                    $term = $mm.Groups[1].Value
+                                    $key  = $term.ToLower()
+                                    if (-not $memHits.ContainsKey($key)) {
+                                        $memHits[$key] = @{
+                                            Label   = $term
+                                            Kind    = $(if ($memClientSet.Contains($term)) { "client" } else { "module" })
+                                            Hits    = 0
+                                            Addr    = ("0x{0:X}" -f $mbi.BaseAddress.ToInt64())
+                                            Regions = [System.Collections.Generic.HashSet[string]]::new()
+                                        }
                                     }
+                                    $memHits[$key].Hits++
+                                    [void]$memHits[$key].Regions.Add(("0x{0:X}" -f $mbi.BaseAddress.ToInt64()))
                                 }
-                                $memHits[$key].Hits++
+                                $offset += $read
                             }
-                            $offset += $read
                         }
                     }
                     try { $addr = [IntPtr]($mbi.BaseAddress.ToInt64() + $regionSize) } catch { break }
@@ -139,27 +213,43 @@ function Run-JVMScan {
                 [Win32.MemAPI]::CloseHandle($handle) | Out-Null
                 $memWatch.Stop()
 
+                if ($memBudgetHit) {
+                    $pct = if ($memTotal -gt 0) { [Math]::Round(100.0 * $memRead / $memTotal, 1) } else { 0 }
+                    $mb  = [Math]::Round($memTotal / 1MB)
+                    $r.Gaps.Add("Live-memory check read $pct% of $mb MB in $where before its $memBudget s budget ran out $([char]0x2014) the rest was not looked at. Run with -Deep for a longer sweep.")
+                }
+
                 # Report WHAT was found, WHERE, and whether it is a cheat.
                 foreach ($mk in @($memHits.Keys | Sort-Object)) {
                     $mh = $memHits[$mk]
-                    $where = "$($proc.Name) (PID $($proc.ProcessId)) at $($mh.Addr), $($mh.Hits) hit(s)"
+                    $spread = if ($mh.Regions.Count -gt 1) { ", across $($mh.Regions.Count) memory regions" } else { "" }
+                    $at = "$where at $($mh.Addr), $($mh.Hits) hit(s)$spread"
+                    # ONE bar for both kinds, because the reason is the same for both:
+                    # a word in RAM can be a chat message, a server MOTD, a sign, a
+                    # book or a scoreboard line. "killaura" is a word players type.
+                    # Loaded code puts its own name in memory many times over - the
+                    # class file, the metaspace, the interned pool - so repetition,
+                    # not presence, is what separates code from conversation.
+                    $strong = ($mh.Label.Length -ge 6 -and $mh.Hits -ge 3)
                     if ($mh.Kind -eq "client") {
-                        # The strong claim - "injected, nothing on disk could have loaded
-                        # it" - needs stronger evidence than a plain memory hit, because a
-                        # short word can appear in RAM by coincidence (a chat message, a
-                        # server MOTD). Require a distinctive token AND repeated hits, which
-                        # is what loaded code looks like versus one stray string.
-                        if ($mh.Label.Length -ge 6 -and $mh.Hits -ge 3 -and -not (Test-LoadedFromDisk $mh.Label)) {
+                        if (-not $strong) {
+                            $r.Notes.Add("Cheat client name seen in memory: $($mh.Label) $([char]0x2014) $at. Too few occurrences to call it loaded code; a chat message or a server MOTD looks exactly like this.")
+                        } elseif (-not (Test-LoadedFromDisk $mh.Label)) {
                             # Nothing on disk could have supplied these classes.
-                            $jvmFlags.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) live in $where, and NO jar on disk contains it. It was injected straight into the running game, so deleting files cannot hide it and a file scan alone would never have found it.")
+                            $r.Findings.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) live in $at, and NO jar on disk contains it. It was injected straight into the running game, so deleting files cannot hide it and a file scan alone would never have found it.")
                             $script:Evidence.MemInjectedOnly++
+                            $script:Evidence.MemCheatClient++
                         } else {
-                            $jvmFlags.Add("INJECTED CHEAT CLIENT: $($mh.Label) $([char]0x2014) identified live in $where. This IS a cheat and it is loaded in the running game right now.")
+                            $r.Findings.Add("CHEAT CLIENT IN MEMORY: $($mh.Label) $([char]0x2014) identified live in $at. This IS a cheat and it is loaded in the running game right now.")
+                            $script:Evidence.MemCheatClient++
                         }
-                        $script:Evidence.MemCheatClient++
                     } else {
-                        $jvmFlags.Add("Cheat module active in memory: $($mh.Label) $([char]0x2014) found in $where. A cheat feature is live in the running game.")
-                        $script:Evidence.MemModule++
+                        if ($strong) {
+                            $r.Findings.Add("Cheat module active in memory: $($mh.Label) $([char]0x2014) found in $at. A cheat feature is live in the running game.")
+                            $script:Evidence.MemModule++
+                        } else {
+                            $r.Notes.Add("Cheat term seen in memory: $($mh.Label) $([char]0x2014) $at. One or two occurrences is what a chat message looks like, so this is reported, not counted as proof.")
+                        }
                     }
                 }
             }
@@ -167,5 +257,5 @@ function Run-JVMScan {
         } catch {} }
     }
 
-    return $jvmFlags
+    return $r
 }

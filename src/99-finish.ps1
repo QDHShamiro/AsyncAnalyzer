@@ -1,21 +1,41 @@
-    $jvmFlags = Run-JVMScan
-    $script:Evidence.JvmInject = $jvmFlags.Count
-    if ($jvmFlags.Count -gt 0) {
-        Write-SectionHeader "JVM / RUNTIME INJECTION" $jvmFlags.Count Yellow Yellow
+    $jvm = Run-JVMScan
+    # ONLY the findings count. A note has an innocent explanation and a gap is
+    # something the scan could not look at - neither is proof of an injection,
+    # and jvm_inject is a hard rule that forces the whole scan to "Likely".
+    $script:Evidence.JvmInject = $jvm.Findings.Count
+    foreach ($g in $jvm.Gaps) { Add-ScanGap $g }
+    if ($jvm.Findings.Count -gt 0) {
+        Write-SectionHeader "JVM / RUNTIME INJECTION" $jvm.Findings.Count Yellow Yellow
         Write-Rule "$([char]0x2500)" 76 DarkGray
         Write-Host ""
-        Write-InjectionCard "javaw / java process" $jvmFlags
-        $script:SystemIssues += $jvmFlags.Count
-        Add-Finding "FAIL" "Live game process" "$($jvmFlags.Count) injection trace(s) in the running Java process" `
-            @($jvmFlags) `
+        Write-InjectionCard "javaw / java process" $jvm.Findings
+        $script:SystemIssues += $jvm.Findings.Count
+        Add-Finding "FAIL" "Live game process" "$($jvm.Findings.Count) injection trace(s) in the running Java process" `
+            @($jvm.Findings) `
             "The scan attached to the running javaw/java process and read its loaded agents, its open localhost ports and its heap." `
             "This is what the mods folder cannot show: code that is live in the game right now, whether or not any file on disk still contains it." `
             "Deleting a jar does not remove what is already loaded, so these traces survive a last-second cleanup." `
             "Do not let the player close the game before this is reviewed $([char]0x2014) closing it destroys this evidence." | Out-Null
     } else {
         Write-Host ""
-        W "  $([char]0x2713) JVM $([char]0x2014) no agents, no localhost listeners, no heap signatures" DarkGray
-        Add-Finding "OK" "Live game process" "Running Java process $([char]0x2014) no agents, no localhost listeners, no cheat signatures in the heap" | Out-Null
+        W "  $([char]0x2713) JVM $([char]0x2014) no agents, no remote debugger, no loaded cheat code in the heap" DarkGray
+        Add-Finding "OK" "Live game process" "Running Java process $([char]0x2014) no injected agent, no remote debugger, no cheat code loaded in the heap" | Out-Null
+    }
+    # Notes are printed whether or not there were findings: they are real
+    # observations, they move the model score through sys_issues, and they are
+    # exactly the kind of thing a moderator should look at with their own eyes.
+    # What they must never do is decide the verdict by themselves.
+    if ($jvm.Notes.Count -gt 0) {
+        Write-Host ""
+        W "  $([char]0x2139) Worth a look in the live process (each of these also has an innocent explanation):" DarkYellow
+        foreach ($n in $jvm.Notes) { W "    $([char]0x2022) $n" DarkGray }
+        $script:SystemIssues += $jvm.Notes.Count
+        Add-Finding "WARN" "Live game process" "$($jvm.Notes.Count) observation(s) in the running Java process that need a human" `
+            @($jvm.Notes) `
+            "The scan read the running javaw/java process and found things that are unusual but not proof." `
+            "Each of these has a legitimate cause as well as a suspicious one $([char]0x2014) a launcher agent, a dev tool on a local port, a cheat word typed in chat." `
+            "Calling any of them an injection on its own would flag innocent players, so they are reported and left to a person." `
+            "Look at the path or the port named above and decide from what is actually there." | Out-Null
     }
 }
 

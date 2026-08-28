@@ -771,6 +771,13 @@ function Invoke-SelfTest {
         @{ Label = "Mods clean, cheat named in the log"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; log_cheat = 1 } }
         @{ Label = "Launcher profile starts a cheat class"; Bands = @("Confirmed"); Raw = @{ total_mods = 20; verified = 20; instance_cheat = 1 } }
         @{ Label = "A -javaagent in the launcher profile"; Bands = @("Likely"); Raw = @{ total_mods = 20; verified = 20; instance_agent = 1 } }
+        # The property that makes it safe to REPORT weak observations at all.
+        # A localhost listener, a chat message naming a cheat, a bootclasspath
+        # flag: all real, all with innocent explanations, all counted here as
+        # system issues. They must move the score and never decide the band -
+        # otherwise a Gradle daemon convicts somebody.
+        @{ Label = "Soft observations only, nothing proven"; Bands = @("Clean"); Raw = @{ total_mods = 25; verified = 25; sys_issues = 3 } }
+        @{ Label = "Soft observations at the maximum"; Bands = @("Clean"); Raw = @{ total_mods = 25; verified = 25; sys_issues = 10 } }
     )
     $sBase = @{ total_mods = 0; verified = 0; flagged = 0; review = 0; random_named = 0; cheatsite_dl = 0; hard_confirmed = 0; sys_issues = 0; jvm_inject = 0; bam_deleted = 0; cheat_procs = 0; stray_jars = 0; cheat_folders = 0; deleted_jars = 0; mc_running = 0; mem_client = 0 }
     foreach ($sc in $sCases) {

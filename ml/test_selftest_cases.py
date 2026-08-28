@@ -7,6 +7,7 @@ which is exactly the kind of thing that is discovered in front of a suspect.
 import os, re, sys, pathlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import verdict as V
+import session_model as S
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 src = (ROOT / 'src' / '50-analysis.ps1').read_text(encoding='utf-8')
@@ -58,5 +59,27 @@ for label, bands, over in BYTECODE_ONLY:
         bad += 1
     print("  %s  %-40s -> %-10s score=%-3d (want %s)"
           % ("PASS" if ok else "FAIL", label, got["band"], got["score"], "/".join(want)))
-print("\n=== RESULT: %d passed, %d failed ===" % (len(BYTECODE_ONLY) - bad, bad))
+
+# --------------------------------------------------------------------------
+# The WHOLE-SCAN cases from the same -SelfTest block. They were written in
+# PowerShell and read by nothing on this side, so a wrong expectation in that
+# table would only have surfaced on Windows, in front of a suspect.
+# --------------------------------------------------------------------------
+s_cases = re.findall(
+    r'@\{ Label = "([^"]+)"; Bands = @\(([^)]*)\); Raw = @\{([^}]*)\} \}', body)
+print("\nchecking %d self-test cases that judge the whole scan\n" % len(s_cases))
+for label, bands, rawtxt in s_cases:
+    want = re.findall(r'"(\w+)"', bands)
+    raw = {k: float(v) for k, v in re.findall(r'(\w+)\s*=\s*([\d.]+)', rawtxt)}
+    got = S.verdict(raw)
+    ok = got["band"] in want
+    if not ok:
+        bad += 1
+    print("  %s  %-40s -> %-10s score=%-3d (want %s)"
+          % ("PASS" if ok else "FAIL", label, got["band"], got["score"], "/".join(want)))
+
+total = len(BYTECODE_ONLY) + len(s_cases)
+# A table that stopped being found would report a clean run over nothing at all.
+assert len(s_cases) >= 15, "whole-scan self-test cases not found - the regex stopped matching"
+print("\n=== RESULT: %d passed, %d failed ===" % (total - bad, bad))
 sys.exit(1 if bad else 0)
