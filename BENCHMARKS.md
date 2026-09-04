@@ -126,8 +126,8 @@ abnormal; in an ordinary application classpath it is not.
 | | |
 |---|---|
 | classes parsed | 122556 |
-| time | ~90 s |
-| per class | ~0.7 ms |
+| time | ~70 s |
+| per class | ~0.6 ms |
 
 Verified mods are skipped entirely during a real scan (they are capped safe),
 so a normal run only pays for the unverified remainder.
@@ -187,7 +187,6 @@ of 0 means more as that number grows.
 
 | commit | real libraries | false flags | aim | dropper | depth-proof |
 |---|---:|---:|:--:|:--:|:--:|
-| `6b02ad6` | 186 ███████ | 0 | ok | ok | ok |
 | `adc4a6d` | 186 ███████ | 0 | ok | ok | ok |
 | `35cc9ff` | 186 ███████ | 0 | ok | ok | ok |
 | `3e3ca00` | 186 ███████ | 0 | ok | ok | ok |
@@ -199,6 +198,7 @@ of 0 means more as that number grows.
 | `57111d0` | 186 ███████ | 0 | ok | ok | ok |
 | `9b419e9` | 186 ███████ | 0 | ok | ok | ok |
 | `ea29093` | 186 ███████ | 0 | ok | ok | ok |
+| `0fd5db1` | 186 ███████ | 0 | ok | ok | ok |
 
 ## Regression gates
 
