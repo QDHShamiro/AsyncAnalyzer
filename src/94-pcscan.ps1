@@ -2472,9 +2472,15 @@ function Run-PCscan {
     # boundary-anchored client matcher recognises. That is deliberately strict
     # and misses an injector with a dull name; an unsigned DLL out of a
     # user-writable folder is still shown, as a note that counts for nothing.
-    $dllFlags = [System.Collections.Generic.List[object]]::new()
-    $dllNotes = [System.Collections.Generic.List[object]]::new()
+    $dllFlags  = [System.Collections.Generic.List[object]]::new()
+    $dllNotes  = [System.Collections.Generic.List[object]]::new()
+    $dllReview = [System.Collections.Generic.List[object]]::new()
     $dllScanned = 0
+    # Vendors that legitimately hook into every game they touch - OBS's own
+    # graphics-hook, RivaTuner's overlay, Discord's overlay, Overwolf, NVIDIA's
+    # capture stack. An unsigned DLL of theirs from a user-writable folder stays
+    # a Note; anything else unsigned from Temp/AppData/Downloads is now Review.
+    $dllVendorWhitelist = '(?i)(graphics-hook|RTSSHooks|obs-browser|obs-|discord|overwolf|nvidia|GeForce ?Experience|NahimicOSD)'
     $javaProcs = Get-Process -Name @("javaw","java") -ErrorAction SilentlyContinue
     foreach ($jp in $javaProcs) {
         try {
@@ -2483,6 +2489,20 @@ function Run-PCscan {
                 $dllScanned++
                 $dllShort = [System.IO.Path]::GetFileName($dll)
                 Write-Host "`r  Scanning DLL: $($dllShort.Substring(0,[Math]::Min($dllShort.Length,38)).PadRight(38))  checked: $dllScanned  flagged: $($dllFlags.Count)" -NoNewline -ForegroundColor DarkGray
+                # A module the process still has mapped, but whose file is gone
+                # from disk - the injector move of loading, then deleting itself
+                # so nothing is left to find on a file scan. No signature can be
+                # checked on a file that no longer exists; that absence IS the
+                # finding, so this runs before the user-writable-path filter and
+                # skips it entirely.
+                $dllExists = $true
+                try { $dllExists = [System.IO.File]::Exists($dll) } catch {}
+                if (-not $dllExists) {
+                    $dllFlags.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "loaded into the game right now, but the file is gone from disk $([char]0x2014) nothing legitimate deletes its own DLL while still mapped into the process" })
+                    $script:Evidence.DllGoneMissing++
+                    Add-SessionEvent "PC" "$($jp.Name) (PID $($jp.Id)): loaded DLL missing from disk $([char]0x2014) $dllShort" $null
+                    continue
+                }
                 # Only DLLs out of a folder the user can write to get their
                 # signature checked. Everything under System32 or Program Files
                 # is a product, and Get-AuthenticodeSignature over a hundred
@@ -2497,23 +2517,31 @@ function Run-PCscan {
                 $hit = Test-CheatName ([System.IO.Path]::GetFileName($dll))
                 if ($hit) {
                     $dllFlags.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, and named after a known cheat client ($hit)" })
+                } elseif ($dll -match $dllVendorWhitelist) {
+                    $dllNotes.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded from a folder the user can write to $([char]0x2014) matches a known overlay/capture vendor" })
                 } else {
-                    $dllNotes.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded from a folder the user can write to" })
+                    $dllReview.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded into the game from a folder the user can write to (Temp/AppData/Downloads)" })
                 }
             }
         } catch {}
     }
     Write-Host "`r$(' ' * 80)`r" -NoNewline
-    $pcIssues += $dllFlags.Count
+    $pcIssues += $dllFlags.Count + $dllReview.Count
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) INJECTABLE DLL SCAN (javaw) " + "$([char]0x2500)" * 42 + "$([char]0x2510)") DarkCyan
     $dllScannedLine = "  $([char]0x2502)  Scanned $dllScanned module(s) in Java process"
     W ($dllScannedLine + (" " * [Math]::Max(0, 75 - $dllScannedLine.Length)) + "$([char]0x2502)") DarkGray
-    if ($dllFlags.Count -eq 0 -and $dllNotes.Count -eq 0) {
+    if ($dllFlags.Count -eq 0 -and $dllNotes.Count -eq 0 -and $dllReview.Count -eq 0) {
         W ("  $([char]0x2502)   OK $([char]0x2014) every module in the game process is signed or from a system folder" + (" " * 3) + "$([char]0x2502)") DarkCyan
     }
     foreach ($f in $dllFlags) {
         Write-Host ""
         W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  PID $($f.PID) ($($f.Process))" Red
+        W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
+        W "  $([char]0x2502)    Why    : $($f.Why)" DarkGray
+    }
+    foreach ($f in $dllReview) {
+        Write-Host ""
+        W "  $([char]0x2502)  $([char]0x2139) REVIEW  PID $($f.PID) ($($f.Process))" Yellow
         W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
         W "  $([char]0x2502)    Why    : $($f.Why)" DarkGray
     }
@@ -2578,11 +2606,18 @@ function Run-PCscan {
             "It is here because an injector is almost never signed, and this is the shortest list a moderator can eyeball." `
             "Look at what each file is before drawing any conclusion."
     }
+    if ($dllReview.Count -gt 0) {
+        Add-Finding "WARN" "Rest of the PC" "$($dllReview.Count) unsigned DLL(s) loaded into the game from Temp/AppData/Downloads" `
+            @($dllReview | ForEach-Object { "PID $($_.PID) ($($_.Process))  $($_.DLL)" }) `
+            "Every module loaded inside the running javaw/java process was listed, and the ones from a user-writable folder had their digital signature checked." `
+            "Unsigned and out of the folder is not proof by itself - small tools are unsigned too - but it is exactly where an injector's payload lives, and it is not a known overlay/capture vendor." `
+            "" "Look at what each file is before drawing a conclusion." | Out-Null
+    }
     if ($dllFlags.Count -gt 0) {
         Add-Finding "FAIL" "Rest of the PC" "$($dllFlags.Count) suspicious DLL(s) loaded inside the Java process" `
             @($dllFlags | ForEach-Object { "PID $($_.PID) ($($_.Process))  $($_.DLL)" }) `
-            "The module list of the running Java process was read and compared against known injector DLLs." `
-            "A DLL loaded into javaw.exe is running inside the game with full access to it." | Out-Null
+            "The module list of the running Java process was read: each module was matched against known injector DLLs by name, and checked against the disk to see if its file still exists." `
+            "A DLL loaded into javaw.exe is running inside the game with full access to it. One whose file is gone was deleted while still loaded $([char]0x2014) the classic injector self-cleanup, and something no ordinary DLL does to itself." | Out-Null
     }
     if ($startupFlags.Count -gt 0) {
         Add-Finding "WARN" "Rest of the PC" "$($startupFlags.Count) suspicious autostart entr(y/ies)" `
@@ -2594,7 +2629,7 @@ function Run-PCscan {
     # every scan rather than only when something was found: a macro burned into a
     # mouse's ONBOARD memory runs on the device and leaves nothing here at all.
     if ($flaggedProcs.Count -eq 0 -and $foundFolders.Count -eq 0 -and $fsFlags.Count -eq 0 -and
-        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $startupFlags.Count -eq 0) {
+        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $dllReview.Count -eq 0 -and $startupFlags.Count -eq 0) {
         Add-Finding "OK" "Rest of the PC" "Processes, folders, stray jars, scripts, executables, loaded DLLs and autostart $([char]0x2014) nothing cheat-like" | Out-Null
     }
     W "  Startup flags       : " DarkGray -NoNewline; W "$($startupFlags.Count)" $(if($startupFlags.Count -gt 0){"Red"}else{"Green"})
@@ -2606,6 +2641,7 @@ function Run-PCscan {
     W "  Click macros        : " DarkGray -NoNewline; W "$macroHard" $(if($macroHard -gt 0){"Red"}else{"Green"})
     W "  Flagged EXE files   : " DarkGray -NoNewline; W "$($exeFlags.Count)" $(if($exeFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Injected DLLs       : " DarkGray -NoNewline; W "$($dllFlags.Count)" $(if($dllFlags.Count -gt 0){"Red"}else{"Green"})
+    W "  DLLs worth review   : " DarkGray -NoNewline; W "$($dllReview.Count)" $(if($dllReview.Count -gt 0){"Yellow"}else{"Green"})
     W "  Flagged mods (scan) : " DarkGray -NoNewline; W "$($script:FlaggedModsList.Count)" $(if($script:FlaggedModsList.Count -gt 0){"Red"}else{"Green"})
     if ($script:FlaggedModsList.Count -gt 0) {
         foreach ($m in $script:FlaggedModsList) {
@@ -2668,6 +2704,100 @@ function Invoke-PackScanSelfTest {
     $pass = $script:pngPass; $fail = $script:pngFail
     Write-Host ""
     if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) pack/shader/config detection OK on this machine." Green }
+    else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
+    Write-Host ""
+}
+
+function Invoke-InjectionSelfTest {
+    <#
+        Injected-client / self-destructing-client detection, pinned the same
+        way the other self-tests are: real bytes and real values in, exact
+        answer checked out. What is NOT pinned here is anything that needs a
+        live process - the Attach-API/instrument.dll check, the memory-region
+        walk itself, Get-MpThreatDetection, WScript.Shell .lnk resolution -
+        those need a real running javaw and a real Windows to mean anything,
+        and are exercised by hand on a real PC instead (see STATUS.md).
+    #>
+    W "  AsyncAnalyzer self-test $([char]0x2014) injected/self-destructing client detection" Cyan
+    Write-Host ""
+    $script:injPass = 0; $script:injFail = 0
+    function InjCheck([string]$Label, [bool]$Ok) {
+        if ($Ok) { $script:injPass++ } else { $script:injFail++ }
+        W ("  [$(if($Ok){'PASS'}else{'FAIL'})] " + $Label) $(if ($Ok) { "Green" } else { "Red" })
+    }
+
+    # ---- Get-RecentDocFileName: RecentDocs binary value -> file name -------
+    $rdName = [System.Text.Encoding]::Unicode.GetBytes("vape.exe") + [byte[]]@(0, 0, 1, 2, 3, 4, 5, 6)
+    InjCheck "RecentDocs: name before the null terminator is read" ((Get-RecentDocFileName $rdName) -eq "vape.exe")
+    $rdNoTerm = [System.Text.Encoding]::Unicode.GetBytes("nofinalzero")
+    InjCheck "RecentDocs: no null terminator -> empty, not a truncated guess" ((Get-RecentDocFileName $rdNoTerm) -eq "")
+    InjCheck "RecentDocs: too short -> empty" ((Get-RecentDocFileName ([byte[]]@(1, 2))) -eq "")
+    InjCheck "RecentDocs: null input -> empty, no throw" ((Get-RecentDocFileName $null) -eq "")
+
+    # ---- Get-MuiCachePath: the path is in the VALUE NAME, not its data -----
+    InjCheck "MuiCache: .FriendlyAppName suffix is stripped" ((Get-MuiCachePath 'C:\Users\s\AppData\Local\Temp\vape.exe.FriendlyAppName') -eq 'C:\Users\s\AppData\Local\Temp\vape.exe')
+    InjCheck "MuiCache: a value name without the suffix is not a path" ((Get-MuiCachePath 'SomeOtherValue') -eq "")
+    InjCheck "MuiCache: empty input -> empty" ((Get-MuiCachePath "") -eq "")
+
+    # ---- Get-PendingRenameJarDllExe: [source, destination] MULTI_SZ pairs --
+    $pfroHit  = @('\??\C:\Users\s\AppData\Local\Temp\injector.dll', '', '\??\C:\Users\s\Downloads\loader.exe', '')
+    $pfroGot  = @(Get-PendingRenameJarDllExe $pfroHit)
+    InjCheck "PendingFileRename: user-writable jar/dll/exe pairs are both kept" ($pfroGot.Count -eq 2 -and $pfroGot -contains 'C:\Users\s\AppData\Local\Temp\injector.dll' -and $pfroGot -contains 'C:\Users\s\Downloads\loader.exe')
+    $pfroSys  = @('C:\Windows\System32\somefile.dll', '')
+    InjCheck "PendingFileRename: a System32 path is not user-writable, so it is not kept" ((Get-PendingRenameJarDllExe $pfroSys).Count -eq 0)
+    $pfroTxt  = @('C:\Users\s\Documents\notes.txt', '')
+    InjCheck "PendingFileRename: a non jar/dll/exe file is not kept" ((Get-PendingRenameJarDllExe $pfroTxt).Count -eq 0)
+    InjCheck "PendingFileRename: null input -> empty, no throw" ((Get-PendingRenameJarDllExe $null).Count -eq 0)
+
+    # ---- Get-UsnDeleteCategory: what kind of delete/rename record this is --
+    InjCheck "USN category: a .jar is Jar" ((Get-UsnDeleteCategory "sodium-extra.jar") -eq "Jar")
+    InjCheck "USN category: a .litemod is Jar" ((Get-UsnDeleteCategory "old.litemod") -eq "Jar")
+    InjCheck "USN category: a .pf is Prefetch" ((Get-UsnDeleteCategory "JAVAW.EXE-1A2B3C4D.pf") -eq "Prefetch")
+    InjCheck "USN category: latest.log is Log, case-insensitively" ((Get-UsnDeleteCategory "Latest.LOG") -eq "Log")
+    InjCheck "USN category: a known config-adjacent folder name is ConfigDir" ((Get-UsnDeleteCategory "shaderpacks") -eq "ConfigDir")
+    InjCheck "USN category: an unrelated file is None" ((Get-UsnDeleteCategory "randomfile.txt") -eq "None")
+    InjCheck "USN category: empty name -> None, no throw" ((Get-UsnDeleteCategory "") -eq "None")
+
+    # ---- Test-ManualMapRegionShape: which regions are even worth a header read
+    InjCheck "Manual-map shape: committed, private, RWX -> a candidate" (Test-ManualMapRegionShape 0x1000 0x20000 0x1000 0x40)
+    InjCheck "Manual-map shape: committed, private, RX -> a candidate" (Test-ManualMapRegionShape 0x1000 0x20000 0x1000 0x20)
+    InjCheck "Manual-map shape: private but read-write only, not executable -> not a candidate" (-not (Test-ManualMapRegionShape 0x1000 0x20000 0x1000 0x04))
+    InjCheck "Manual-map shape: MEM_IMAGE (a real loaded DLL) -> not a candidate" (-not (Test-ManualMapRegionShape 0x1000 0x1000000 0x1000 0x40))
+    InjCheck "Manual-map shape: MEM_RESERVE (not committed) -> not a candidate" (-not (Test-ManualMapRegionShape 0x2000 0x20000 0x1000 0x40))
+    InjCheck "Manual-map shape: region too small to hold a header -> not a candidate" (-not (Test-ManualMapRegionShape 0x1000 0x20000 0x10 0x40))
+
+    # ---- Test-ManualMapHeaderBytes: MZ + a sane e_lfanew + 'PE00' -----------
+    $peHead = New-Object byte[] 64
+    $peHead[0] = 0x4D; $peHead[1] = 0x5A   # 'MZ'
+    $lfanewBytes = [System.BitConverter]::GetBytes([int32]0x80)
+    [Array]::Copy($lfanewBytes, 0, $peHead, 0x3C, 4)
+    $peSigGood = [byte[]]@(0x50, 0x45, 0, 0)   # 'PE\0\0'
+    InjCheck "Manual-map header: MZ + sane e_lfanew + PE00 -> a real PE header" (Test-ManualMapHeaderBytes $peHead $peSigGood 0x1000)
+    $peHeadNoMz = $peHead.Clone()
+    $peHeadNoMz[0] = 0x00
+    InjCheck "Manual-map header: no MZ -> not a PE header" (-not (Test-ManualMapHeaderBytes $peHeadNoMz $peSigGood 0x1000))
+    $peHeadFarLfanew = $peHead.Clone()
+    [Array]::Copy([System.BitConverter]::GetBytes([int32]0x2000), 0, $peHeadFarLfanew, 0x3C, 4)
+    InjCheck "Manual-map header: e_lfanew past the end of the region -> not trusted" (-not (Test-ManualMapHeaderBytes $peHeadFarLfanew $peSigGood 0x1000))
+    $peSigBad = [byte[]]@(0, 0, 0, 0)
+    InjCheck "Manual-map header: MZ present but no PE00 at e_lfanew -> not a PE header" (-not (Test-ManualMapHeaderBytes $peHead $peSigBad 0x1000))
+    InjCheck "Manual-map header: header shorter than 64 bytes -> not trusted" (-not (Test-ManualMapHeaderBytes ([byte[]]@(0x4D, 0x5A)) $peSigGood 0x1000))
+
+    # ---- Add-SessionEvent: the +X min offset a timeline entry gets ---------
+    $savedEvents = $script:SessionEvents
+    $savedStart  = $script:GameStarted
+    $script:SessionEvents = [System.Collections.Generic.List[object]]::new()
+    $script:GameStarted   = Get-Date "2026-09-04 12:00:00"
+    Add-SessionEvent "Test" "five minutes after game start" (Get-Date "2026-09-04 12:05:00")
+    InjCheck "Session timeline: an event 5 minutes after start is offset '+5 min'" ($script:SessionEvents[0].Offset -eq "+5 min")
+    Add-SessionEvent "Test" "no timestamp at all" $null
+    InjCheck "Session timeline: an event with no timestamp has no offset, not a guessed one" (-not $script:SessionEvents[1].Offset)
+    $script:SessionEvents = $savedEvents
+    $script:GameStarted   = $savedStart
+
+    $pass = $script:injPass; $fail = $script:injFail
+    Write-Host ""
+    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) injected/self-destructing client detection OK on this machine." Green }
     else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
     Write-Host ""
 }

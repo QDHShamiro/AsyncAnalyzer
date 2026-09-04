@@ -212,6 +212,23 @@ function New-HtmlReport([string]$OutPath = "") {
         "<div class='panel clear'>Firewall on, script logging at its default, Security log not cleared. Nothing to note about how this PC is set up.</div>"
     } else { $stateRows }
 
+    # ---- session timeline -----------------------------------------------
+    # Every source (BAM, USN, Defender, the JVM sweep, RecentDocs) on the same
+    # clock, zeroed to when the game itself started. No single source has the
+    # whole story - an .exe that ran for three seconds and vanished is one line
+    # from BAM and a different line from the journal - only reading them next
+    # to each other in order shows the pattern.
+    $timelineAnchor = if ($script:GameStarted) { $script:GameStarted } else { $script:ScanStart }
+    $timelineAnchorLabel = if ($script:GameStarted) { "game start" } else { "scan start" }
+    $timelineRows = ""
+    foreach ($tev in @($script:SessionEvents | Sort-Object -Property @{ Expression = { if ($_.Time) { $_.Time } else { [DateTime]::MaxValue } } })) {
+        $tOffset = if ($tev.Offset) { Enc $tev.Offset } else { "?" }
+        $timelineRows += "<tr><td class='mono'>$tOffset</td><td>$(Enc $tev.Source)</td><td>$(Enc $tev.Text)</td></tr>"
+    }
+    $timelineSection = if ($script:SessionEvents.Count -eq 0) { "" } else {
+        "<section>`n  <h2>Session timeline<span class=`"count`">$($script:SessionEvents.Count)</span></h2>`n  <p class=`"note`">Zero point ($timelineAnchorLabel): $(Enc ($timelineAnchor.ToString('yyyy-MM-dd HH:mm:ss')))</p>`n  <div class=`"tscroll`"><table><thead><tr><th>Offset</th><th>Source</th><th>What happened</th></tr></thead><tbody>$timelineRows</tbody></table></div>`n</section>"
+    }
+
     # ---- look at these first ------------------------------------------------
     # A moderator reads this during a call, with somebody waiting. The report is
     # thorough, which is the same thing as long: the verdict is at the top and
@@ -548,6 +565,8 @@ footer a:hover{text-decoration:underline;}
   </div>
   <div class="tscroll"><table id="ft"><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allRows</tbody></table></div>
 </section>
+
+$timelineSection
 
 <section>
   <h2>How this PC is set up<span class="count">$($state.Count)</span></h2>

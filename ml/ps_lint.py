@@ -35,6 +35,11 @@ BUILTIN = {
     "Get-Random", "Get-Command", "Get-Member", "Get-Variable", "Set-Variable",
     "Read-Host", "Get-Host", "Select-String", "Get-FileHash", "Get-ItemProperty",
     "Get-WinEvent", "Get-ScheduledTask", "Get-MpPreference", "Get-NetTCPConnection",
+    # Defender module, same story as Get-MpPreference: ships with Windows, not
+    # with pwsh on Linux, so it is not discoverable here either. Both call
+    # sites guard it the same way - -ErrorAction Stop inside a try/catch that
+    # records a coverage gap.
+    "Get-MpComputerStatus", "Get-MpThreatDetection", "Get-MpThreat",
     # NetSecurity ships with Windows but not with pwsh on Linux, so it is not
     # discoverable here. The call site guards it with -ErrorAction Stop inside a
     # try/catch that records a coverage gap, which is what the absence needs.

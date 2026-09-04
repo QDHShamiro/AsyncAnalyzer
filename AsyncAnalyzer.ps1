@@ -101,7 +101,13 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0; AttachAgent = 0; ManualMap = 0; DllGoneMissing = 0; DefenderDetect = 0; ExecTrace = 0 }
+# A chronological trail across every evidence source (BAM, USN, Prefetch,
+# Defender, the JVM memory sweep, exec traces), all keyed to the same clock -
+# GameStarted. One line here does not prove anything by itself; "an .exe ran
+# 2 minutes after the game started, then vanished 3 seconds later" is a
+# pattern no single source shows, because no single source has both halves.
+$script:SessionEvents = [System.Collections.Generic.List[object]]::new()
 $script:AltClients = [System.Collections.Generic.List[string]]::new()
 # The folders that were actually scanned, so the log reader knows which
 # instances' logs/ and crash-reports/ to read.
@@ -1024,6 +1030,28 @@ $script:textExt = @('json', 'txt', 'properties', 'cfg', 'toml', 'lang', 'mcmeta'
 
 function Add-ScanGap([string]$What) {
     if (-not $script:ScanGaps.Contains($What)) { [void]$script:ScanGaps.Add($What) }
+}
+
+function Add-SessionEvent([string]$Source, [string]$Text, $When = $null) {
+    # $When is untyped on purpose: BAM/UserAssist/USN all hand back strings that
+    # may or may not parse (a corrupt timestamp is not a reason to lose the rest
+    # of the line), and a typed [DateTime] parameter throws on a bad string
+    # before this function gets a chance to say so.
+    $t = $null
+    if ($When -is [DateTime]) { $t = $When }
+    elseif ($When) { try { $t = [DateTime]$When } catch {} }
+    $anchor = if ($script:GameStarted) { $script:GameStarted } else { $script:ScanStart }
+    $offset = $null
+    if ($t -and $anchor) {
+        $mins = [Math]::Round(($t - [DateTime]$anchor).TotalMinutes, 1)
+        $offset = if ($mins -ge 0) { "+$mins min" } else { "$mins min" }
+    }
+    [void]$script:SessionEvents.Add([PSCustomObject]@{
+        Time   = $t
+        Offset = $offset
+        Source = $Source
+        Text   = $Text
+    })
 }
 
 function Get-WmiOrCim([string]$Class, [string]$Filter = "") {
@@ -3742,6 +3770,23 @@ function New-HtmlReport([string]$OutPath = "") {
         "<div class='panel clear'>Firewall on, script logging at its default, Security log not cleared. Nothing to note about how this PC is set up.</div>"
     } else { $stateRows }
 
+    # ---- session timeline -----------------------------------------------
+    # Every source (BAM, USN, Defender, the JVM sweep, RecentDocs) on the same
+    # clock, zeroed to when the game itself started. No single source has the
+    # whole story - an .exe that ran for three seconds and vanished is one line
+    # from BAM and a different line from the journal - only reading them next
+    # to each other in order shows the pattern.
+    $timelineAnchor = if ($script:GameStarted) { $script:GameStarted } else { $script:ScanStart }
+    $timelineAnchorLabel = if ($script:GameStarted) { "game start" } else { "scan start" }
+    $timelineRows = ""
+    foreach ($tev in @($script:SessionEvents | Sort-Object -Property @{ Expression = { if ($_.Time) { $_.Time } else { [DateTime]::MaxValue } } })) {
+        $tOffset = if ($tev.Offset) { Enc $tev.Offset } else { "?" }
+        $timelineRows += "<tr><td class='mono'>$tOffset</td><td>$(Enc $tev.Source)</td><td>$(Enc $tev.Text)</td></tr>"
+    }
+    $timelineSection = if ($script:SessionEvents.Count -eq 0) { "" } else {
+        "<section>`n  <h2>Session timeline<span class=`"count`">$($script:SessionEvents.Count)</span></h2>`n  <p class=`"note`">Zero point ($timelineAnchorLabel): $(Enc ($timelineAnchor.ToString('yyyy-MM-dd HH:mm:ss')))</p>`n  <div class=`"tscroll`"><table><thead><tr><th>Offset</th><th>Source</th><th>What happened</th></tr></thead><tbody>$timelineRows</tbody></table></div>`n</section>"
+    }
+
     # ---- look at these first ------------------------------------------------
     # A moderator reads this during a call, with somebody waiting. The report is
     # thorough, which is the same thing as long: the verdict is at the top and
@@ -4079,6 +4124,8 @@ footer a:hover{text-decoration:underline;}
   <div class="tscroll"><table id="ft"><thead><tr><th>File</th><th>Type</th><th>Status</th></tr></thead><tbody>$allRows</tbody></table></div>
 </section>
 
+$timelineSection
+
 <section>
   <h2>How this PC is set up<span class="count">$($state.Count)</span></h2>
   <p class="note">Not cheat evidence and not counted against anyone &mdash; a third-party antivirus switches the Windows firewall off by itself. Here because a moderator should see it, and because the dates can matter.</p>
@@ -4262,6 +4309,28 @@ function Get-LauncherName([string]$path) {
     if ($path -match 'PolyMC') { return "PolyMC" }
     if ($path -match 'modrinth|theseus|ModrinthApp') { return "Modrinth" }
     return "Unknown"
+}
+
+function Show-SessionTimeline {
+    # One line here proves nothing by itself. The pattern that matters -
+    # "an .exe ran 2 minutes after the game started, then the BAM record for
+    # it vanished 3 seconds later, and a jar with the same timestamp is gone
+    # from mods\" - only shows up once every source is on the SAME clock. No
+    # single source (BAM, USN, Defender, the JVM sweep, RecentDocs) has both
+    # halves of that story; only reading them side by side does.
+    if ($script:SessionEvents.Count -eq 0) { return }
+    Write-SysSection "SESSION TIMELINE"
+    $anchorLabel = if ($script:GameStarted) { "game start" } else { "scan start" }
+    $anchorTime  = if ($script:GameStarted) { $script:GameStarted } else { $script:ScanStart }
+    W "  $([char]0x2502)  Zero point: $anchorLabel at $($anchorTime.ToString('yyyy-MM-dd HH:mm:ss'))" DarkGray
+    W "  $([char]0x2502)" DarkGray
+    $ordered = @($script:SessionEvents | Sort-Object -Property @{ Expression = { if ($_.Time) { $_.Time } else { [DateTime]::MaxValue } } })
+    foreach ($ev in $ordered) {
+        $stamp = if ($ev.Offset) { $ev.Offset } else { "time unknown" }
+        $stampPadded = $stamp.PadLeft(11)
+        W "  $([char]0x2502)  $stampPadded  [$($ev.Source.PadRight(9))]  $($ev.Text)" DarkYellow
+    }
+    Write-SysSectionEnd
 }
 
 # ---------------------------------------------------------------------------
@@ -6175,6 +6244,28 @@ $script:jvmGenerated = '\$\$|\$Proxy|GeneratedConstructorAccessor|GeneratedMetho
 # disk side is not trustworthy enough to call anything injected.
 $script:jvmMinDiskPackages = 200
 
+# Manual-map region shape: PRIVATE (not backed by any file), COMMITTED, and
+# executable. Pulled out as its own pure function so the gate that decides
+# WHICH regions get their first 64 bytes read can be pinned by a self-test,
+# separately from the two live ReadProcessMemory calls that follow it.
+function Test-ManualMapRegionShape([uint32]$State, [uint32]$Type, [long]$RegionSize, [uint32]$Protect) {
+    if ($State -ne 0x1000 -or $Type -ne 0x20000 -or $RegionSize -lt 0x40) { return $false }
+    $execBase = $Protect -band 0xFF
+    return ($execBase -eq 0x10 -or $execBase -eq 0x20 -or $execBase -eq 0x40 -or $execBase -eq 0x80)
+}
+
+# The actual PE-header decision: MZ at the start, a plausible e_lfanew, and
+# 'PE\0\0' at that offset. Given both reads as plain byte arrays so a
+# self-test can construct them without ever calling ReadProcessMemory.
+function Test-ManualMapHeaderBytes([byte[]]$Head64, [byte[]]$SigBytes, [long]$RegionSize) {
+    if ($null -eq $Head64 -or $Head64.Length -lt 64) { return $false }
+    if ($Head64[0] -ne 0x4D -or $Head64[1] -ne 0x5A) { return $false }
+    $lfanew = [System.BitConverter]::ToInt32($Head64, 0x3C)
+    if ($lfanew -lt 0 -or ($lfanew + 4) -gt $RegionSize) { return $false }
+    if ($null -eq $SigBytes -or $SigBytes.Length -lt 4) { return $false }
+    return ($SigBytes[0] -eq 0x50 -and $SigBytes[1] -eq 0x45 -and $SigBytes[2] -eq 0 -and $SigBytes[3] -eq 0)
+}
+
 function Test-InjectedPackage([string]$Package) {
     if ($script:DiskPackages.Count -lt $script:jvmMinDiskPackages) { return $false }
     foreach ($r in $script:jvmRuntimeRoots) { if ($Package.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { return $false } }
@@ -6190,9 +6281,15 @@ function Test-InjectedPackage([string]$Package) {
 
 function New-JvmScanResult {
     return @{
-        Findings = [System.Collections.Generic.List[string]]::new()
-        Notes    = [System.Collections.Generic.List[string]]::new()
-        Gaps     = [System.Collections.Generic.List[string]]::new()
+        Findings    = [System.Collections.Generic.List[string]]::new()
+        Notes       = [System.Collections.Generic.List[string]]::new()
+        Gaps        = [System.Collections.Generic.List[string]]::new()
+        # How many jars the running JVM itself says it loaded, and how many of
+        # those still exist on disk right now - the same fact the "mod loaded,
+        # then deleted" finding is built from, kept as a count so it can be
+        # shown even when nothing individually rose to a finding.
+        JarsKnown   = 0
+        JarsMissing = 0
     }
 }
 
@@ -6261,9 +6358,13 @@ function Run-JVMScan {
             $r.Gaps.Add("Could not read the command line of $where $([char]0x2014) its JVM flags (agents, bootclasspath) were not checked. Run as administrator.")
             $cmdLine = ""
         }
+        # Reset every iteration: a process whose command line could not be read
+        # must not inherit "yes, -javaagent was there" from the previous one.
+        $hasJavaagentFlag = $false
 
         if ($cmdLine) {
             $agentMatches = [regex]::Matches($cmdLine, '-javaagent:([^\s"]+)')
+            $hasJavaagentFlag = $agentMatches.Count -gt 0
             foreach ($m in $agentMatches) {
                 $agentPath = $m.Groups[1].Value.Trim('"').Trim("'")
                 $agentName = [System.IO.Path]::GetFileName($agentPath)
@@ -6367,7 +6468,15 @@ function Run-JVMScan {
                     "killaura","silentaura","autocrystal","crystalaura","aimassist","triggerbot",
                     "scaffoldhack","bunnyhop","freecam","autoanchor","autototem","holefill",
                     "webhookstealer","tokengrabber","reverseshell","connectback",
-                    "walksyoptimizer","baritone","velocitybypass","packetfly","hitboxexpand"
+                    "walksyoptimizer","baritone","velocitybypass","packetfly","hitboxexpand",
+                    # agentmain/Agent-Class are the entry point a DYNAMICALLY attached
+                    # agent uses (java.lang.instrument, the Attach API) - premain is
+                    # for one named on the command line with -javaagent. Seeing this
+                    # string in the heap alongside instrument.dll with no -javaagent
+                    # anywhere in the command line is what an injector's own loader
+                    # leaves behind; a ByteBuddy-based mod can carry the string too,
+                    # which is why this alone is never more than corroboration.
+                    "agentmain","agent-class"
                 )
                 $memClientSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
                 foreach ($ct in $memClientTerms) { [void]$memClientSet.Add([string]$ct) }
@@ -6376,6 +6485,20 @@ function Run-JVMScan {
                 $memAlt = ($memAllTerms | Where-Object { $_ } | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
                 $memRegex = [regex]::new("($memAlt)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                 $memHits = @{}
+                # Base addresses of private, executable regions that start with a
+                # PE header - a DLL copied straight into the process's memory
+                # instead of loaded through LoadLibrary. See the manual-map check
+                # inside the region walk below.
+                $manualMapHits = [System.Collections.Generic.List[string]]::new()
+                # instrument.dll present with no -javaagent anywhere on the command
+                # line is how the JVM Attach API looks from outside: the agent was
+                # attached to an already-running process, not named at startup.
+                $attachInstrumentDll = $false
+                try {
+                    $gpForModules = Get-Process -Id $proc.ProcessId -ErrorAction Stop
+                    $instrumentHit = @($gpForModules.Modules | Where-Object { $_.ModuleName -ieq 'instrument.dll' })
+                    $attachInstrumentDll = $instrumentHit.Count -gt 0
+                } catch {}
                 $scanLimit = 0
                 # Every jar URL the JVM is holding on to. Capped so a pathological
                 # heap cannot turn this into the thing that runs out of memory.
@@ -6406,6 +6529,30 @@ function Run-JVMScan {
                     # .ToInt64() rather than a cast: IntPtr does not implement IConvertible,
                     # so [int64]$ptr throws on PowerShell 5.1.
                     $regionSize = $mbi.RegionSize.ToInt64()
+                    # Manual-mapped DLL: a PE header sitting at the START of a
+                    # PRIVATE, executable region. A real DLL loaded by LoadLibrary
+                    # is MEM_IMAGE (0x1000000), never MEM_PRIVATE (0x20000); the
+                    # JVM's own JIT cache is MEM_PRIVATE and executable but never
+                    # begins a region with 'MZ'. A 64-byte read regardless of the
+                    # region's real size, so this runs on every region every time -
+                    # unlike the string sweep below it needs no time budget.
+                    if (Test-ManualMapRegionShape $mbi.State $mbi.Type $regionSize $mbi.Protect) {
+                        $peHead = New-Object byte[] 64
+                        $peHeadRead = 0
+                        if ([Win32.MemAPI]::ReadProcessMemory($handle, $mbi.BaseAddress, $peHead, 64, [ref]$peHeadRead) -and
+                            $peHeadRead -ge 64 -and $peHead[0] -eq 0x4D -and $peHead[1] -eq 0x5A) {
+                            $lfanew = [System.BitConverter]::ToInt32($peHead, 0x3C)
+                            if ($lfanew -ge 0 -and ($lfanew + 4) -le $regionSize) {
+                                $peSig = New-Object byte[] 4
+                                $peSigRead = 0
+                                $peSigAddr = [IntPtr]($mbi.BaseAddress.ToInt64() + $lfanew)
+                                if ([Win32.MemAPI]::ReadProcessMemory($handle, $peSigAddr, $peSig, 4, [ref]$peSigRead) -and $peSigRead -eq 4 -and
+                                    (Test-ManualMapHeaderBytes $peHead $peSig $regionSize) -and $manualMapHits.Count -lt 10) {
+                                    [void]$manualMapHits.Add(("0x{0:X}" -f $mbi.BaseAddress.ToInt64()))
+                                }
+                            }
+                        }
+                    }
                     # committed, and readable+writable (the JVM heap) or RWX (JIT / injected code)
                     $readable = (($mbi.Protect -band 0x04) -ne 0) -or (($mbi.Protect -band 0x40) -ne 0)
                     if ($mbi.State -eq 0x1000 -and $readable -and $regionSize -gt 0) {
@@ -6476,6 +6623,36 @@ function Run-JVMScan {
                     $r.Gaps.Add("Live-memory check read $pct% of $mb MB in $where before its $memBudget s budget ran out $([char]0x2014) the rest was not looked at. Run with -Deep for a longer sweep.")
                 }
 
+                # ---- Manual-mapped code: a DLL that was never LoadLibrary'd ----
+                if ($manualMapHits.Count -gt 0) {
+                    $r.Findings.Add("MANUAL-MAPPED CODE IN MEMORY: $($manualMapHits.Count) region(s) in $where hold a PE file header (MZ/PE) inside PRIVATE, executable memory not backed by any file Windows knows about $([char]0x2014) at $($manualMapHits -join ', '). This is how an injector loads a DLL without LoadLibrary, so it never appears in a module list and no signature can be checked, because there is no file. Reading the process's own memory is the only way to see it.")
+                    $script:Evidence.ManualMap += $manualMapHits.Count
+                    Add-SessionEvent "JVM" "$where has $($manualMapHits.Count) manually-mapped code region(s) in memory" $null
+                }
+
+                # ---- Attach-API: an agent attached to an already-running JVM ----
+                if ($attachInstrumentDll -and -not $hasJavaagentFlag) {
+                    $agentmainHits = 0
+                    foreach ($amk in @('agentmain', 'agent-class')) {
+                        if ($memHits.ContainsKey($amk)) { $agentmainHits += $memHits[$amk].Hits }
+                    }
+                    $knownLauncherRunning = @(Get-Process -Name @(
+                        "lunar-launcher", "lunarclient", "BadlionClient", "badlionclient",
+                        "feather-launcher", "featherclient"
+                    ) -ErrorAction SilentlyContinue).Count -gt 0
+                    if ($agentmainHits -ge 3 -and -not $knownLauncherRunning) {
+                        $r.Findings.Add("JVM AGENT ATTACHED AFTER LAUNCH: instrument.dll is loaded in $where with no -javaagent anywhere on its command line, and 'agentmain'/'Agent-Class' $([char]0x2014) the entry point ONLY a dynamically attached agent uses, never one started with -javaagent $([char]0x2014) appear $agentmainHits time(s) in its memory. The agent was attached to the game AFTER it was already running, which is what a Java injector does and no launcher does.")
+                        $script:Evidence.AttachAgent++
+                        Add-SessionEvent "JVM" "${where}: agent attached after launch (instrument.dll, no -javaagent, agentmain x$agentmainHits)" $null
+                    } elseif ($agentmainHits -ge 3 -and $knownLauncherRunning) {
+                        $r.Notes.Add("instrument.dll is loaded in $where with no -javaagent on the command line, and 'agentmain'/'Agent-Class' appear $agentmainHits time(s) in its memory $([char]0x2014) that is how the Attach API looks, but a known launcher (Lunar/Badlion/Feather) is running and some of those attach their own agent the same way. Reported, not counted as proof, until the attached agent's own path is checked.")
+                        Add-SessionEvent "JVM" "${where}: attach-API evidence present, capped $([char]0x2014) a known launcher is running" $null
+                    } else {
+                        $r.Notes.Add("instrument.dll is loaded in $where with no -javaagent anywhere on its command line $([char]0x2014) the module the Attach API uses to hook an agent onto an already-running JVM. On its own this is not proof: a profiler or an IDE debugger attaches the same way. It stopped short of a finding because 'agentmain'/'Agent-Class' were not also seen in memory; reported so it can be checked.")
+                        Add-SessionEvent "JVM" "${where}: instrument.dll attached, no -javaagent (weak signal alone)" $null
+                    }
+                }
+
                 # -------------------------------------------------------------
                 # What the live game says it loaded, checked against what is on
                 # disk right now. Deliberately narrow: only jars under a mods
@@ -6522,6 +6699,8 @@ function Run-JVMScan {
                     $r.Findings.Add("Mod loaded, then deleted while the game ran: $mp $([char]0x2014) $where is still running with this jar loaded, and the file is no longer on disk. The game's own memory still holds where it came from, which is why deleting it did not remove the trace.")
                 }
                 $script:Evidence.DeletedJars = $script:DeletedJarPaths.Count
+                $r.JarsKnown   += $jarUrls.Count
+                $r.JarsMissing += $missingMods.Count
                 foreach ($op in $oddMods) {
                     $r.Notes.Add("Jar the running game loaded: $op")
                 }
@@ -6569,6 +6748,10 @@ function Run-JVMScan {
 
                 # Report WHAT was found, WHERE, and whether it is a cheat.
                 foreach ($mk in @($memHits.Keys | Sort-Object)) {
+                    # Handled above, together with instrument.dll and the launcher
+                    # whitelist - reporting it again here as a plain "cheat module"
+                    # would both duplicate the finding and lose that context.
+                    if ($mk -eq 'agentmain' -or $mk -eq 'agent-class') { continue }
                     $mh = $memHits[$mk]
                     $spread = if ($mh.Regions.Count -gt 1) { ", across $($mh.Regions.Count) memory regions" } else { "" }
                     $at = "$where at $($mh.Addr), $($mh.Hits) hit(s)$spread"
@@ -6648,6 +6831,23 @@ function Add-SysCheat([string]$Level, [string]$Title, [string[]]$Items = @()) {
 function Add-SysState([string]$Title, [string[]]$Items = @()) {
     $script:SysArea = "PC state"
     Write-SystemFlag "STATE" $Title $Items
+}
+
+# PendingFileRenameOperations is a REG_MULTI_SZ of [source, destination] pairs;
+# an empty destination means "delete this on reboot" rather than "rename it to
+# this". Pulled out as its own pure function - no registry, no live path check
+# beyond Test-UserWritablePath - so a self-test can pin it without a Windows
+# registry to read.
+function Get-PendingRenameJarDllExe($Pairs) {
+    $out = @()
+    if (-not $Pairs) { return $out }
+    for ($pi = 0; $pi -lt $Pairs.Count; $pi += 2) {
+        $psrc = ([string]$Pairs[$pi]) -replace '^\\\?\?\\', ''
+        if ($psrc -match '(?i)\.(jar|dll|exe)$' -and (Test-UserWritablePath $psrc)) {
+            $out += $psrc
+        }
+    }
+    return $out
 }
 
 # A hosts line that really sends a name that matters to nowhere.
@@ -6843,6 +7043,92 @@ function Run-SystemChecks {
         } else { Write-SystemFlag "OK" "Scheduled tasks $([char]0x2014) none starts a jar, an agent or an encoded command" }
     } catch { Add-ScanGap "Scheduled tasks could not be listed $([char]0x2014) a task starting a cheat at login would not have been seen" }
 
+    # ---- pending delete on reboot: PendingFileRenameOperations --------------
+    # A file still locked by a running process cannot be deleted outright, so
+    # Windows lets the caller queue the delete for the next boot instead -
+    # MoveFileEx with MOVEFILE_DELAY_UNTIL_REBOOT and no new name. A jar or DLL
+    # still loaded by the game landing here is how a cheat finishes cleaning
+    # up after the game closes. No admin needed to READ this value, only to
+    # have written it.
+    try {
+        $pfro = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name "PendingFileRenameOperations" -ErrorAction Stop).PendingFileRenameOperations
+        $pfroFlags = @(Get-PendingRenameJarDllExe $pfro)
+        if ($pfroFlags.Count -gt 0) {
+            Add-SysCheat "FAIL" "Files queued to vanish on the next restart, from a user-writable folder:" $pfroFlags
+            Write-Detail "Windows lets a program that could not delete a locked file queue the delete for the next boot instead." `
+                "A jar, DLL or EXE still loaded by a running process cannot be deleted outright; queuing it for reboot is how a cheat or its loader finishes cleaning up after the game closes." `
+                "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations." `
+                "Do not restart the PC before this is reviewed $([char]0x2014) restarting is exactly what completes the deletion."
+            foreach ($pf in $pfroFlags) { Add-SessionEvent "Disk" "queued to delete on next reboot: $pf" $null }
+        } else { Write-SystemFlag "OK" "Pending reboot deletes $([char]0x2014) nothing queued to vanish from a user-writable folder" }
+    } catch { Write-SystemFlag "OK" "Pending reboot deletes $([char]0x2014) none queued" }
+
+    # ---- mods folder touched while the game was already running -------------
+    if ($script:GameStarted -and $script:ScanTargets) {
+        $mtimeFlags = @()
+        foreach ($mt in @($script:ScanTargets)) {
+            if ([string]::IsNullOrWhiteSpace($mt)) { continue }
+            try {
+                $mlw = [System.IO.Directory]::GetLastWriteTime($mt)
+                if ($mlw -ge $script:GameStarted) {
+                    $mtimeFlags += "$mt  (folder itself last changed $($mlw.ToString('yyyy-MM-dd HH:mm:ss')), game started $($script:GameStarted.ToString('yyyy-MM-dd HH:mm:ss')))"
+                    Add-SessionEvent "Disk" "mods folder changed while the game was running: $mt" $mlw
+                }
+            } catch {}
+        }
+        if ($mtimeFlags.Count -gt 0) {
+            Add-SysCheat "WARN" "A mods folder's own contents changed after the game had already started:" $mtimeFlags
+            Write-Detail "Every scanned mods folder's own last-modified time (a file being added or removed, not a file's own content changing) was compared against when the running game process started." `
+                "A launcher writes mods BEFORE starting the game, not during $([char]0x2014) a folder that changes after launch is either the player managing their own mods live, or something adding or removing a jar mid-session." `
+                "NTFS directory metadata, read directly $([char]0x2014) no admin needed." `
+                "Check what changed: a jar that used to be there and is not any more, or one that appeared after the screenshare started."
+        } else { Write-SystemFlag "OK" "Mods folders $([char]0x2014) none changed after the game started" }
+    }
+
+    # ---- Windows Defender: past detections -----------------------------------
+    # Get-MpThreatDetection is real detection HISTORY, not a fresh scan: the
+    # file existed, Defender recognised and acted on it. An injector's exe
+    # caught and quarantined leaves exactly this, even after the file itself
+    # is gone - which is why this belongs next to the other gone-file evidence
+    # rather than needing its own live scan.
+    try {
+        $mpCutoff = (Get-Date).AddDays(-30)
+        $mpDetections = @(Get-MpThreatDetection -ErrorAction Stop | Where-Object { $_.InitialDetectionTime -and $_.InitialDetectionTime -ge $mpCutoff })
+        $mpFail = @()
+        $mpWarn = @()
+        foreach ($mdet in $mpDetections) {
+            $tname = ""
+            try { $tname = (Get-MpThreat -ThreatID $mdet.ThreatID -ErrorAction Stop).ThreatName } catch {}
+            $mpaths = @($mdet.Resources | ForEach-Object { [string]$_ -replace '^file:_', '' })
+            $mrelevant = @($mpaths | Where-Object { $_ -match '(?i)\\(\.minecraft|temp|downloads)\\' })
+            $isRelevant = ($mrelevant.Count -gt 0) -or ($mdet.ProcessName -match '(?i)^javaw?\.exe$')
+            if (-not $isRelevant) { continue }
+            $pathPart = if ($mpaths.Count -gt 0) { "  " + ($mpaths -join '; ') } else { "" }
+            $line = "$tname  $([char]0x2014) $($mdet.InitialDetectionTime.ToString('yyyy-MM-dd HH:mm'))$pathPart"
+            if ($tname -match '(?i)HackTool|Injector|Trojan') { $mpFail += $line } else { $mpWarn += $line }
+            Add-SessionEvent "Defender" "detection: $tname" $mdet.InitialDetectionTime
+        }
+        if ($mpFail.Count -gt 0) {
+            Add-SysCheat "FAIL" "Windows Defender caught a hacking tool near the game or Java itself:" $mpFail
+            Write-Detail "Defender's own detection history for the last 30 days (Get-MpThreatDetection), filtered to detections touching .minecraft, Temp, Downloads or the Java process." `
+                "HackTool/Injector/Trojan is Defender's own classification, not a name match here $([char]0x2014) Defender inspected the file's actual behaviour before flagging it." `
+                "Windows Security's own detection log." `
+                "The file is very likely already quarantined or removed by Defender itself; check Protection History in Windows Security for what happened to it."
+        }
+        if ($mpWarn.Count -gt 0) {
+            Add-SysCheat "WARN" "Windows Defender recorded other detections near the game or Java itself:" $mpWarn
+            Write-Detail "Same detection history, for anything Defender flagged that was not HackTool/Injector/Trojan." `
+                "Adware, PUA and generic detections are not proof of cheating on their own, but a detection this close to the game is worth a look." `
+                "Windows Security's own detection log." `
+                "Check what it was in Windows Security's Protection History."
+        }
+        if ($mpFail.Count -eq 0 -and $mpWarn.Count -eq 0) {
+            Write-SystemFlag "OK" "Windows Defender detection history $([char]0x2014) nothing near the game or Java in the last 30 days"
+        }
+    } catch {
+        Add-ScanGap "Windows Defender's detection history could not be read (Get-MpThreatDetection) $([char]0x2014) a quarantined injector would not have been seen there"
+    }
+
     # ---- PC state: real, reported, deliberately not counted ----------------
     Write-Host ""
     W "  $([char]0x2502)  PC state $([char]0x2014) not cheat evidence, but a moderator should see it" DarkCyan
@@ -6857,6 +7143,16 @@ function Run-SystemChecks {
                 "" "If no other firewall is installed, turn it back on in Windows Security."
         } else { Write-SystemFlag "OK" "Firewall $([char]0x2014) on for every profile" }
     } catch { Add-ScanGap "Firewall status could not be read" }
+
+    try {
+        $mpStatus = Get-MpComputerStatus -ErrorAction Stop
+        if ($mpStatus -and -not $mpStatus.RealTimeProtectionEnabled) {
+            Add-SysState "Windows Defender real-time protection is turned off"
+            Write-Detail "RealTimeProtectionEnabled from Get-MpComputerStatus." `
+                "Off means nothing new gets scanned as it runs or downloads - including an injector. Plenty of third-party antivirus switches this off too, so it is not counted against anyone by itself." `
+                "" "If no other antivirus is installed, turn real-time protection back on in Windows Security."
+        } else { Write-SystemFlag "OK" "Windows Defender real-time protection $([char]0x2014) enabled" }
+    } catch { Add-ScanGap "Windows Defender's status could not be read (Get-MpComputerStatus)" }
 
     $psLogKey  = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
     $psLogging = if (Test-Path $psLogKey) { (Get-ItemProperty $psLogKey -ErrorAction SilentlyContinue).EnableScriptBlockLogging } else { $null }
@@ -7177,6 +7473,145 @@ function Show-HistoryScan {
 }
 
 # ---------------------------------------------------------------------------
+# "It was opened here once" - three more places Explorer and the shell leave a
+# record of a file that no longer needs to exist for the record to still be
+# there: RecentDocs (every file opened by double-click, per extension),
+# MuiCache (every executable Explorer has ever shown a friendly name for) and
+# the .lnk shortcuts under Recent (the actual target a jump-list entry points
+# at). None of these need Administrator.
+# ---------------------------------------------------------------------------
+
+function Get-RecentDocFileName([byte[]]$Bytes) {
+    # A RecentDocs value is a UTF-16LE file name, null-terminated (two zero
+    # bytes back to back), followed by a binary shell item ID list this tool
+    # has no use for. Stop at the terminator; do not try to parse the rest.
+    if ($null -eq $Bytes -or $Bytes.Length -lt 4) { return "" }
+    $end = -1
+    for ($gi = 0; $gi -lt ($Bytes.Length - 1); $gi += 2) {
+        if ($Bytes[$gi] -eq 0 -and $Bytes[$gi + 1] -eq 0) { $end = $gi; break }
+    }
+    if ($end -le 0) { return "" }
+    try { return [System.Text.Encoding]::Unicode.GetString($Bytes, 0, $end) } catch { return "" }
+}
+
+function Get-MuiCachePath([string]$ValueName) {
+    # MuiCache stores the PATH in the value's NAME, not its data - the data is
+    # just the friendly name Explorer shows for it ("Vape Client", "Notepad").
+    if ([string]::IsNullOrEmpty($ValueName)) { return "" }
+    if ($ValueName -notmatch '(?i)\.FriendlyAppName$') { return "" }
+    return ($ValueName -replace '(?i)\.FriendlyAppName$', '')
+}
+
+function Run-ExecTraceScan {
+    $res  = @{ Fail = [System.Collections.Generic.List[string]]::new(); Warn = [System.Collections.Generic.List[string]]::new(); Read = 0 }
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    # One rule for all three sources: only a .jar/.exe/.dll matters here, and
+    # only one that is GONE - a trace pointing at a file still on disk is what
+    # the file scan itself already judges, on its own evidence, not a leftover
+    # shortcut's say-so. A cheat name is the finding by itself; a plain name is
+    # only worth a look if it sat somewhere a launcher does not put mods.
+    function Add-ExecTraceHit([string]$Path, [string]$Source) {
+        if ([string]::IsNullOrWhiteSpace($Path)) { return }
+        if ($Path -notmatch '(?i)\.(jar|exe|dll)$') { return }
+        if (-not $seen.Add("$Source|$Path")) { return }
+        $res.Read++
+        $hit = Test-CheatName ([System.IO.Path]::GetFileName($Path))
+        $exists = $true
+        try { $exists = [System.IO.File]::Exists($Path) } catch {}
+        if ($exists) { return }
+        $inModsOrTemp = ($Path -match '(?i)\\mods\\') -or (Test-UserWritablePath $Path)
+        if ($hit) {
+            $res.Fail.Add("$Path  ($hit, from $Source, no longer on disk)")
+            Add-SessionEvent "ExecTrace" "$Source remembers $Path ($hit), now gone" $null
+        } elseif ($inModsOrTemp) {
+            $res.Warn.Add("$Path  (from $Source, no longer on disk)")
+            Add-SessionEvent "ExecTrace" "$Source remembers $Path, now gone" $null
+        }
+    }
+
+    try {
+        $rdRoot = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"
+        if (Test-Path $rdRoot) {
+            $rdKeys = @($rdRoot) + @(Get-ChildItem $rdRoot -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSPath)
+            foreach ($rk in $rdKeys) {
+                $rdItem = Get-Item -LiteralPath $rk -ErrorAction SilentlyContinue
+                if (-not $rdItem) { continue }
+                foreach ($vn in @($rdItem.Property)) {
+                    # Only the numbered slots are file entries; MRUListEx is the
+                    # ordering index, not a file.
+                    if ($vn -notmatch '^\d+$') { continue }
+                    $raw = $null
+                    try { $raw = (Get-ItemProperty -LiteralPath $rk -Name $vn -ErrorAction Stop).$vn } catch {}
+                    if ($null -eq $raw) { continue }
+                    $rdName = Get-RecentDocFileName ([byte[]]$raw)
+                    if ($rdName) { Add-ExecTraceHit $rdName "RecentDocs" }
+                }
+            }
+        }
+    } catch { Add-ScanGap "RecentDocs could not be read $([char]0x2014) a deleted jar/exe opened recently would not have been seen there" }
+
+    try {
+        $muiKey = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
+        if (Test-Path $muiKey) {
+            $muiItem = Get-Item -LiteralPath $muiKey -ErrorAction SilentlyContinue
+            foreach ($vn in @($muiItem.Property)) {
+                $muiPath = Get-MuiCachePath $vn
+                if ($muiPath) { Add-ExecTraceHit $muiPath "MuiCache" }
+            }
+        }
+    } catch { Add-ScanGap "MuiCache could not be read $([char]0x2014) an executable that ran and was then deleted would not have been seen there" }
+
+    try {
+        $recentDir = [System.IO.Path]::Combine($env:APPDATA, "Microsoft\Windows\Recent")
+        if ([System.IO.Directory]::Exists($recentDir)) {
+            $lnkShell = New-Object -ComObject WScript.Shell
+            foreach ($lnk in @([System.IO.Directory]::GetFiles($recentDir, "*.lnk"))) {
+                try {
+                    $lnkTarget = $lnkShell.CreateShortcut($lnk).TargetPath
+                    if ($lnkTarget) { Add-ExecTraceHit $lnkTarget "Recent (.lnk)" }
+                } catch {}
+            }
+        }
+    } catch {
+        Add-ScanGap "Recent .lnk shortcuts could not be read $([char]0x2014) a shortcut to a deleted jar/exe would not have been seen there"
+    }
+
+    return $res
+}
+
+function Show-ExecTraceScan {
+    $et = Run-ExecTraceScan
+    if ($et.Read -eq 0 -and $et.Fail.Count -eq 0 -and $et.Warn.Count -eq 0) { return }
+    Write-SysSection "SHORTCUTS AND RECENT-FILE RECORDS TO SOMETHING GONE"
+    $script:SysArea = "Deleted & started"
+    W "  $([char]0x2502)  Checked $($et.Read) recent-file/shortcut record(s) for a .jar/.exe/.dll no longer on disk" DarkGray
+
+    if ($et.Fail.Count -gt 0) {
+        Write-SystemFlag "FAIL" "A known cheat client was opened and is now gone:" @($et.Fail)
+        Write-Detail "RecentDocs, MuiCache and Recent\*.lnk each record a file Explorer opened or ran, independently of the Recycle Bin, UserAssist or BAM." `
+            "The recorded name matches a known cheat client, and the file it points at no longer exists." `
+            "HKCU\...\Explorer\RecentDocs, HKCU\...\Shell\MuiCache, and the .lnk shortcuts under %APPDATA%\Microsoft\Windows\Recent $([char]0x2014) none need Administrator." `
+            "Nothing to fix: this is evidence."
+        $script:SystemIssues += $et.Fail.Count
+        $script:Evidence.ExecTrace += $et.Fail.Count
+    }
+    if ($et.Warn.Count -gt 0) {
+        Write-SystemFlag "WARN" "Something was opened from mods\ or a Temp/AppData folder and is now gone:" @($et.Warn)
+        Write-Detail "Same three sources, for a jar/exe/DLL that is not named after a known client but sat in mods\ or a folder the user can write to." `
+            "Not proof by itself - files get moved and renamed for ordinary reasons - but it is exactly where an injector's own loader lives, and it is gone now." `
+            "HKCU\...\Explorer\RecentDocs, HKCU\...\Shell\MuiCache, and Recent\*.lnk." `
+            "Ask what it was before drawing a conclusion."
+        $script:SystemIssues += $et.Warn.Count
+        $script:Evidence.ExecTrace += $et.Warn.Count
+    }
+    if ($et.Fail.Count -eq 0 -and $et.Warn.Count -eq 0) {
+        Write-SystemFlag "OK" "Recent-file and shortcut records $([char]0x2014) nothing pointing at a missing jar/exe/DLL"
+    }
+    Write-SysSectionEnd
+}
+
+# ---------------------------------------------------------------------------
 # Two records of files that are gone, for the case the Recycle Bin cannot cover.
 #
 # Shift+Delete leaves no $I file. Two things still see it:
@@ -7281,8 +7716,29 @@ function Test-UsnDelete([string]$Block) {
     return @{ Name = $m.Groups[1].Value; Reason = $reason; When = $(if ($t.Success) { $t.Groups[1].Value } else { "" }) }
 }
 
+# Folder names, not paths - the journal only ever gives a bare file name, never
+# its parent. A directory-delete record for one of these names is as close as
+# this reader can get to "a mods-adjacent folder was removed while the game
+# was running", without inventing a path the journal never supplied.
+$script:usnConfigDirNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+@('config', 'shaderpacks', 'resourcepacks', 'texturepacks', 'saves') | ForEach-Object { [void]$script:usnConfigDirNames.Add($_) }
+
+# A bare file/folder name -> what kind of delete/rename record this is, for
+# everything that is not a cheat-named file (Test-CheatName is checked first,
+# separately, in Run-UsnScan). Pulled out as its own pure function so the
+# classification can be pinned by a self-test without needing fsutil, a real
+# journal or Administrator.
+function Get-UsnDeleteCategory([string]$Name) {
+    if ([string]::IsNullOrEmpty($Name)) { return "None" }
+    if ($Name -match '(?i)\.(jar|litemod)$') { return "Jar" }
+    if ($Name -match '(?i)\.pf$') { return "Prefetch" }
+    if ($Name -ieq 'latest.log') { return "Log" }
+    if ($script:usnConfigDirNames.Contains($Name)) { return "ConfigDir" }
+    return "None"
+}
+
 function Run-UsnScan {
-    $res = @{ Hits = [System.Collections.Generic.List[string]]::new(); Read = 0 }
+    $res = @{ Hits = [System.Collections.Generic.List[string]]::new(); Warn = [System.Collections.Generic.List[string]]::new(); Read = 0 }
     if (-not (Test-IsAdmin)) {
         Add-ScanGap "The NTFS change journal needs Administrator $([char]0x2014) files removed with Shift+Delete, which leave no Recycle Bin record, were not checked"
         return $res
@@ -7319,18 +7775,50 @@ function Run-UsnScan {
             $res.Read++
             $d = Test-UsnDelete $block
             if ($null -eq $d) { continue }
-            $hit = Test-CheatName $d.Name
-            $isJar = $d.Name -match '(?i)\.(jar|litemod)$'
+            $hit    = Test-CheatName $d.Name
+            $usnCat = Get-UsnDeleteCategory $d.Name
+            $isJar  = $usnCat -eq "Jar"
+            $isPf   = $usnCat -eq "Prefetch"
+            $isLog  = $usnCat -eq "Log"
+            $isCfgD = $usnCat -eq "ConfigDir"
             # Built before the string, not inside it. A $( ) subexpression that
             # contains a double quote cannot sit inside a double-quoted string:
             # the inner quote closes the outer one and the whole file stops
             # parsing. That is what broke the first Windows run of this tool.
             $whenPart = ""
             if ($d.When) { $whenPart = ", " + $d.When }
+            $whenDt = $null
+            if ($d.When) { $whenDt = [DateTime]::MinValue; if (-not [DateTime]::TryParse($d.When, [ref]$whenDt)) { $whenDt = $null } }
+            $duringSession = ($null -ne $whenDt) -and (Test-DeletedDuringSession $whenDt)
             if ($hit) {
                 $res.Hits.Add("$($d.Name)  ($hit, $($d.Reason.Trim())$whenPart)")
-            } elseif ($isJar -and $script:FlaggedModsList.Contains($d.Name)) {
-                $res.Hits.Add("$($d.Name)  (a jar this scan flagged, $($d.Reason.Trim())$whenPart)")
+                Add-SessionEvent "USN" "$($d.Name) ($hit) $($d.Reason.Trim())" $whenDt
+            } elseif ($isJar) {
+                # Every jar now, not only one this scan already flagged or one
+                # named after a known client - a client renamed to look like a
+                # library still shows up here, because the journal does not
+                # care what a file is called. The journal has no parent
+                # folder, so this cannot say "from mods\"; it says what it
+                # actually knows.
+                $already = if ($script:FlaggedModsList.Contains($d.Name)) { " (a jar this scan flagged)" } else { "" }
+                $res.Hits.Add("$($d.Name)$already  ($($d.Reason.Trim())$whenPart)")
+                [void]$script:DeletedJarPaths.Add([string]$d.Name)
+                $script:Evidence.DeletedJars = $script:DeletedJarPaths.Count
+                Add-SessionEvent "USN" "$($d.Name) removed from disk$already" $whenDt
+            } elseif ($isPf) {
+                # Nothing legitimate deletes its own Prefetch entry - Windows
+                # writes and ages these out itself. A .pf gone before its own
+                # ageing cycle is someone clearing the record of a program
+                # that ran, which is exactly the record this scan also reads
+                # from Prefetch directly.
+                $res.Hits.Add("$($d.Name)  (Prefetch entry removed, not by Windows' own ageing $([char]0x2014) $($d.Reason.Trim())$whenPart)")
+                Add-SessionEvent "USN" "Prefetch record wiped: $($d.Name)" $whenDt
+            } elseif ($isLog -and $duringSession) {
+                $res.Warn.Add("latest.log  (removed while the game was running, $($d.Reason.Trim())$whenPart)")
+                Add-SessionEvent "USN" "latest.log deleted during this session" $whenDt
+            } elseif ($isCfgD -and $duringSession) {
+                $res.Warn.Add("$($d.Name)\  (folder removed while the game was running, $($d.Reason.Trim())$whenPart)")
+                Add-SessionEvent "USN" "$($d.Name)\ folder removed during this session" $whenDt
             }
         }
     } catch {
@@ -7369,7 +7857,15 @@ function Show-UsnScan {
             "Do not let the PC be restarted before this is reviewed $([char]0x2014) the journal is a ring buffer and old records fall out of it."
         $script:SystemIssues += $usn.Hits.Count
     }
-    if ($shim.Hits.Count -eq 0 -and $usn.Hits.Count -eq 0) {
+    if ($usn.Warn.Count -gt 0) {
+        Write-SystemFlag "WARN" "The filesystem journal recorded these being removed while the game was running:" @($usn.Warn)
+        Write-Detail "The same NTFS journal, matched against the log file and the folders a modpack keeps its settings in." `
+            "latest.log or a config/shaderpacks/resourcepacks folder disappearing mid-session is not proof by itself - a player can clean up their own settings - but it is also how a resource-pack x-ray or a config-based cheat hides what it changed." `
+            "fsutil usn readjournal, same record, matched against known file and folder names instead of a cheat name." `
+            "Ask what was in it before it was removed."
+        $script:SystemIssues += $usn.Warn.Count
+    }
+    if ($shim.Hits.Count -eq 0 -and $usn.Hits.Count -eq 0 -and $usn.Warn.Count -eq 0) {
         Write-SystemFlag "OK" "Deleted-file history $([char]0x2014) no cheat client in the compatibility cache or the change journal"
     }
     Write-SysSectionEnd
@@ -9849,9 +10345,15 @@ function Run-PCscan {
     # boundary-anchored client matcher recognises. That is deliberately strict
     # and misses an injector with a dull name; an unsigned DLL out of a
     # user-writable folder is still shown, as a note that counts for nothing.
-    $dllFlags = [System.Collections.Generic.List[object]]::new()
-    $dllNotes = [System.Collections.Generic.List[object]]::new()
+    $dllFlags  = [System.Collections.Generic.List[object]]::new()
+    $dllNotes  = [System.Collections.Generic.List[object]]::new()
+    $dllReview = [System.Collections.Generic.List[object]]::new()
     $dllScanned = 0
+    # Vendors that legitimately hook into every game they touch - OBS's own
+    # graphics-hook, RivaTuner's overlay, Discord's overlay, Overwolf, NVIDIA's
+    # capture stack. An unsigned DLL of theirs from a user-writable folder stays
+    # a Note; anything else unsigned from Temp/AppData/Downloads is now Review.
+    $dllVendorWhitelist = '(?i)(graphics-hook|RTSSHooks|obs-browser|obs-|discord|overwolf|nvidia|GeForce ?Experience|NahimicOSD)'
     $javaProcs = Get-Process -Name @("javaw","java") -ErrorAction SilentlyContinue
     foreach ($jp in $javaProcs) {
         try {
@@ -9860,6 +10362,20 @@ function Run-PCscan {
                 $dllScanned++
                 $dllShort = [System.IO.Path]::GetFileName($dll)
                 Write-Host "`r  Scanning DLL: $($dllShort.Substring(0,[Math]::Min($dllShort.Length,38)).PadRight(38))  checked: $dllScanned  flagged: $($dllFlags.Count)" -NoNewline -ForegroundColor DarkGray
+                # A module the process still has mapped, but whose file is gone
+                # from disk - the injector move of loading, then deleting itself
+                # so nothing is left to find on a file scan. No signature can be
+                # checked on a file that no longer exists; that absence IS the
+                # finding, so this runs before the user-writable-path filter and
+                # skips it entirely.
+                $dllExists = $true
+                try { $dllExists = [System.IO.File]::Exists($dll) } catch {}
+                if (-not $dllExists) {
+                    $dllFlags.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "loaded into the game right now, but the file is gone from disk $([char]0x2014) nothing legitimate deletes its own DLL while still mapped into the process" })
+                    $script:Evidence.DllGoneMissing++
+                    Add-SessionEvent "PC" "$($jp.Name) (PID $($jp.Id)): loaded DLL missing from disk $([char]0x2014) $dllShort" $null
+                    continue
+                }
                 # Only DLLs out of a folder the user can write to get their
                 # signature checked. Everything under System32 or Program Files
                 # is a product, and Get-AuthenticodeSignature over a hundred
@@ -9874,23 +10390,31 @@ function Run-PCscan {
                 $hit = Test-CheatName ([System.IO.Path]::GetFileName($dll))
                 if ($hit) {
                     $dllFlags.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, and named after a known cheat client ($hit)" })
+                } elseif ($dll -match $dllVendorWhitelist) {
+                    $dllNotes.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded from a folder the user can write to $([char]0x2014) matches a known overlay/capture vendor" })
                 } else {
-                    $dllNotes.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded from a folder the user can write to" })
+                    $dllReview.Add([PSCustomObject]@{ PID = $jp.Id; Process = $jp.Name; DLL = $dll; Why = "unsigned, loaded into the game from a folder the user can write to (Temp/AppData/Downloads)" })
                 }
             }
         } catch {}
     }
     Write-Host "`r$(' ' * 80)`r" -NoNewline
-    $pcIssues += $dllFlags.Count
+    $pcIssues += $dllFlags.Count + $dllReview.Count
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) INJECTABLE DLL SCAN (javaw) " + "$([char]0x2500)" * 42 + "$([char]0x2510)") DarkCyan
     $dllScannedLine = "  $([char]0x2502)  Scanned $dllScanned module(s) in Java process"
     W ($dllScannedLine + (" " * [Math]::Max(0, 75 - $dllScannedLine.Length)) + "$([char]0x2502)") DarkGray
-    if ($dllFlags.Count -eq 0 -and $dllNotes.Count -eq 0) {
+    if ($dllFlags.Count -eq 0 -and $dllNotes.Count -eq 0 -and $dllReview.Count -eq 0) {
         W ("  $([char]0x2502)   OK $([char]0x2014) every module in the game process is signed or from a system folder" + (" " * 3) + "$([char]0x2502)") DarkCyan
     }
     foreach ($f in $dllFlags) {
         Write-Host ""
         W "  $([char]0x2502)  $([char]0x26A0) FLAGGED  PID $($f.PID) ($($f.Process))" Red
+        W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
+        W "  $([char]0x2502)    Why    : $($f.Why)" DarkGray
+    }
+    foreach ($f in $dllReview) {
+        Write-Host ""
+        W "  $([char]0x2502)  $([char]0x2139) REVIEW  PID $($f.PID) ($($f.Process))" Yellow
         W "  $([char]0x2502)    DLL    : $($f.DLL)" DarkYellow
         W "  $([char]0x2502)    Why    : $($f.Why)" DarkGray
     }
@@ -9955,11 +10479,18 @@ function Run-PCscan {
             "It is here because an injector is almost never signed, and this is the shortest list a moderator can eyeball." `
             "Look at what each file is before drawing any conclusion."
     }
+    if ($dllReview.Count -gt 0) {
+        Add-Finding "WARN" "Rest of the PC" "$($dllReview.Count) unsigned DLL(s) loaded into the game from Temp/AppData/Downloads" `
+            @($dllReview | ForEach-Object { "PID $($_.PID) ($($_.Process))  $($_.DLL)" }) `
+            "Every module loaded inside the running javaw/java process was listed, and the ones from a user-writable folder had their digital signature checked." `
+            "Unsigned and out of the folder is not proof by itself - small tools are unsigned too - but it is exactly where an injector's payload lives, and it is not a known overlay/capture vendor." `
+            "" "Look at what each file is before drawing a conclusion." | Out-Null
+    }
     if ($dllFlags.Count -gt 0) {
         Add-Finding "FAIL" "Rest of the PC" "$($dllFlags.Count) suspicious DLL(s) loaded inside the Java process" `
             @($dllFlags | ForEach-Object { "PID $($_.PID) ($($_.Process))  $($_.DLL)" }) `
-            "The module list of the running Java process was read and compared against known injector DLLs." `
-            "A DLL loaded into javaw.exe is running inside the game with full access to it." | Out-Null
+            "The module list of the running Java process was read: each module was matched against known injector DLLs by name, and checked against the disk to see if its file still exists." `
+            "A DLL loaded into javaw.exe is running inside the game with full access to it. One whose file is gone was deleted while still loaded $([char]0x2014) the classic injector self-cleanup, and something no ordinary DLL does to itself." | Out-Null
     }
     if ($startupFlags.Count -gt 0) {
         Add-Finding "WARN" "Rest of the PC" "$($startupFlags.Count) suspicious autostart entr(y/ies)" `
@@ -9971,7 +10502,7 @@ function Run-PCscan {
     # every scan rather than only when something was found: a macro burned into a
     # mouse's ONBOARD memory runs on the device and leaves nothing here at all.
     if ($flaggedProcs.Count -eq 0 -and $foundFolders.Count -eq 0 -and $fsFlags.Count -eq 0 -and
-        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $startupFlags.Count -eq 0) {
+        $pyFlags.Count -eq 0 -and $exeFlags.Count -eq 0 -and $dllFlags.Count -eq 0 -and $dllReview.Count -eq 0 -and $startupFlags.Count -eq 0) {
         Add-Finding "OK" "Rest of the PC" "Processes, folders, stray jars, scripts, executables, loaded DLLs and autostart $([char]0x2014) nothing cheat-like" | Out-Null
     }
     W "  Startup flags       : " DarkGray -NoNewline; W "$($startupFlags.Count)" $(if($startupFlags.Count -gt 0){"Red"}else{"Green"})
@@ -9983,6 +10514,7 @@ function Run-PCscan {
     W "  Click macros        : " DarkGray -NoNewline; W "$macroHard" $(if($macroHard -gt 0){"Red"}else{"Green"})
     W "  Flagged EXE files   : " DarkGray -NoNewline; W "$($exeFlags.Count)" $(if($exeFlags.Count -gt 0){"Red"}else{"Green"})
     W "  Injected DLLs       : " DarkGray -NoNewline; W "$($dllFlags.Count)" $(if($dllFlags.Count -gt 0){"Red"}else{"Green"})
+    W "  DLLs worth review   : " DarkGray -NoNewline; W "$($dllReview.Count)" $(if($dllReview.Count -gt 0){"Yellow"}else{"Green"})
     W "  Flagged mods (scan) : " DarkGray -NoNewline; W "$($script:FlaggedModsList.Count)" $(if($script:FlaggedModsList.Count -gt 0){"Red"}else{"Green"})
     if ($script:FlaggedModsList.Count -gt 0) {
         foreach ($m in $script:FlaggedModsList) {
@@ -10049,8 +10581,102 @@ function Invoke-PackScanSelfTest {
     Write-Host ""
 }
 
+function Invoke-InjectionSelfTest {
+    <#
+        Injected-client / self-destructing-client detection, pinned the same
+        way the other self-tests are: real bytes and real values in, exact
+        answer checked out. What is NOT pinned here is anything that needs a
+        live process - the Attach-API/instrument.dll check, the memory-region
+        walk itself, Get-MpThreatDetection, WScript.Shell .lnk resolution -
+        those need a real running javaw and a real Windows to mean anything,
+        and are exercised by hand on a real PC instead (see STATUS.md).
+    #>
+    W "  AsyncAnalyzer self-test $([char]0x2014) injected/self-destructing client detection" Cyan
+    Write-Host ""
+    $script:injPass = 0; $script:injFail = 0
+    function InjCheck([string]$Label, [bool]$Ok) {
+        if ($Ok) { $script:injPass++ } else { $script:injFail++ }
+        W ("  [$(if($Ok){'PASS'}else{'FAIL'})] " + $Label) $(if ($Ok) { "Green" } else { "Red" })
+    }
 
-if ($SelfTest) { Invoke-SelfTest; Invoke-PackScanSelfTest; return }
+    # ---- Get-RecentDocFileName: RecentDocs binary value -> file name -------
+    $rdName = [System.Text.Encoding]::Unicode.GetBytes("vape.exe") + [byte[]]@(0, 0, 1, 2, 3, 4, 5, 6)
+    InjCheck "RecentDocs: name before the null terminator is read" ((Get-RecentDocFileName $rdName) -eq "vape.exe")
+    $rdNoTerm = [System.Text.Encoding]::Unicode.GetBytes("nofinalzero")
+    InjCheck "RecentDocs: no null terminator -> empty, not a truncated guess" ((Get-RecentDocFileName $rdNoTerm) -eq "")
+    InjCheck "RecentDocs: too short -> empty" ((Get-RecentDocFileName ([byte[]]@(1, 2))) -eq "")
+    InjCheck "RecentDocs: null input -> empty, no throw" ((Get-RecentDocFileName $null) -eq "")
+
+    # ---- Get-MuiCachePath: the path is in the VALUE NAME, not its data -----
+    InjCheck "MuiCache: .FriendlyAppName suffix is stripped" ((Get-MuiCachePath 'C:\Users\s\AppData\Local\Temp\vape.exe.FriendlyAppName') -eq 'C:\Users\s\AppData\Local\Temp\vape.exe')
+    InjCheck "MuiCache: a value name without the suffix is not a path" ((Get-MuiCachePath 'SomeOtherValue') -eq "")
+    InjCheck "MuiCache: empty input -> empty" ((Get-MuiCachePath "") -eq "")
+
+    # ---- Get-PendingRenameJarDllExe: [source, destination] MULTI_SZ pairs --
+    $pfroHit  = @('\??\C:\Users\s\AppData\Local\Temp\injector.dll', '', '\??\C:\Users\s\Downloads\loader.exe', '')
+    $pfroGot  = @(Get-PendingRenameJarDllExe $pfroHit)
+    InjCheck "PendingFileRename: user-writable jar/dll/exe pairs are both kept" ($pfroGot.Count -eq 2 -and $pfroGot -contains 'C:\Users\s\AppData\Local\Temp\injector.dll' -and $pfroGot -contains 'C:\Users\s\Downloads\loader.exe')
+    $pfroSys  = @('C:\Windows\System32\somefile.dll', '')
+    InjCheck "PendingFileRename: a System32 path is not user-writable, so it is not kept" ((Get-PendingRenameJarDllExe $pfroSys).Count -eq 0)
+    $pfroTxt  = @('C:\Users\s\Documents\notes.txt', '')
+    InjCheck "PendingFileRename: a non jar/dll/exe file is not kept" ((Get-PendingRenameJarDllExe $pfroTxt).Count -eq 0)
+    InjCheck "PendingFileRename: null input -> empty, no throw" ((Get-PendingRenameJarDllExe $null).Count -eq 0)
+
+    # ---- Get-UsnDeleteCategory: what kind of delete/rename record this is --
+    InjCheck "USN category: a .jar is Jar" ((Get-UsnDeleteCategory "sodium-extra.jar") -eq "Jar")
+    InjCheck "USN category: a .litemod is Jar" ((Get-UsnDeleteCategory "old.litemod") -eq "Jar")
+    InjCheck "USN category: a .pf is Prefetch" ((Get-UsnDeleteCategory "JAVAW.EXE-1A2B3C4D.pf") -eq "Prefetch")
+    InjCheck "USN category: latest.log is Log, case-insensitively" ((Get-UsnDeleteCategory "Latest.LOG") -eq "Log")
+    InjCheck "USN category: a known config-adjacent folder name is ConfigDir" ((Get-UsnDeleteCategory "shaderpacks") -eq "ConfigDir")
+    InjCheck "USN category: an unrelated file is None" ((Get-UsnDeleteCategory "randomfile.txt") -eq "None")
+    InjCheck "USN category: empty name -> None, no throw" ((Get-UsnDeleteCategory "") -eq "None")
+
+    # ---- Test-ManualMapRegionShape: which regions are even worth a header read
+    InjCheck "Manual-map shape: committed, private, RWX -> a candidate" (Test-ManualMapRegionShape 0x1000 0x20000 0x1000 0x40)
+    InjCheck "Manual-map shape: committed, private, RX -> a candidate" (Test-ManualMapRegionShape 0x1000 0x20000 0x1000 0x20)
+    InjCheck "Manual-map shape: private but read-write only, not executable -> not a candidate" (-not (Test-ManualMapRegionShape 0x1000 0x20000 0x1000 0x04))
+    InjCheck "Manual-map shape: MEM_IMAGE (a real loaded DLL) -> not a candidate" (-not (Test-ManualMapRegionShape 0x1000 0x1000000 0x1000 0x40))
+    InjCheck "Manual-map shape: MEM_RESERVE (not committed) -> not a candidate" (-not (Test-ManualMapRegionShape 0x2000 0x20000 0x1000 0x40))
+    InjCheck "Manual-map shape: region too small to hold a header -> not a candidate" (-not (Test-ManualMapRegionShape 0x1000 0x20000 0x10 0x40))
+
+    # ---- Test-ManualMapHeaderBytes: MZ + a sane e_lfanew + 'PE00' -----------
+    $peHead = New-Object byte[] 64
+    $peHead[0] = 0x4D; $peHead[1] = 0x5A   # 'MZ'
+    $lfanewBytes = [System.BitConverter]::GetBytes([int32]0x80)
+    [Array]::Copy($lfanewBytes, 0, $peHead, 0x3C, 4)
+    $peSigGood = [byte[]]@(0x50, 0x45, 0, 0)   # 'PE\0\0'
+    InjCheck "Manual-map header: MZ + sane e_lfanew + PE00 -> a real PE header" (Test-ManualMapHeaderBytes $peHead $peSigGood 0x1000)
+    $peHeadNoMz = $peHead.Clone()
+    $peHeadNoMz[0] = 0x00
+    InjCheck "Manual-map header: no MZ -> not a PE header" (-not (Test-ManualMapHeaderBytes $peHeadNoMz $peSigGood 0x1000))
+    $peHeadFarLfanew = $peHead.Clone()
+    [Array]::Copy([System.BitConverter]::GetBytes([int32]0x2000), 0, $peHeadFarLfanew, 0x3C, 4)
+    InjCheck "Manual-map header: e_lfanew past the end of the region -> not trusted" (-not (Test-ManualMapHeaderBytes $peHeadFarLfanew $peSigGood 0x1000))
+    $peSigBad = [byte[]]@(0, 0, 0, 0)
+    InjCheck "Manual-map header: MZ present but no PE00 at e_lfanew -> not a PE header" (-not (Test-ManualMapHeaderBytes $peHead $peSigBad 0x1000))
+    InjCheck "Manual-map header: header shorter than 64 bytes -> not trusted" (-not (Test-ManualMapHeaderBytes ([byte[]]@(0x4D, 0x5A)) $peSigGood 0x1000))
+
+    # ---- Add-SessionEvent: the +X min offset a timeline entry gets ---------
+    $savedEvents = $script:SessionEvents
+    $savedStart  = $script:GameStarted
+    $script:SessionEvents = [System.Collections.Generic.List[object]]::new()
+    $script:GameStarted   = Get-Date "2026-09-04 12:00:00"
+    Add-SessionEvent "Test" "five minutes after game start" (Get-Date "2026-09-04 12:05:00")
+    InjCheck "Session timeline: an event 5 minutes after start is offset '+5 min'" ($script:SessionEvents[0].Offset -eq "+5 min")
+    Add-SessionEvent "Test" "no timestamp at all" $null
+    InjCheck "Session timeline: an event with no timestamp has no offset, not a guessed one" (-not $script:SessionEvents[1].Offset)
+    $script:SessionEvents = $savedEvents
+    $script:GameStarted   = $savedStart
+
+    $pass = $script:injPass; $fail = $script:injFail
+    Write-Host ""
+    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) injected/self-destructing client detection OK on this machine." Green }
+    else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
+    Write-Host ""
+}
+
+
+if ($SelfTest) { Invoke-SelfTest; Invoke-PackScanSelfTest; Invoke-InjectionSelfTest; return }
 if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
@@ -10436,6 +11062,11 @@ if (-not $SkipModCheck) {
             "Calling any of them an injection on its own would flag innocent players, so they are reported and left to a person." `
             "Look at the path or the port named above and decide from what is actually there." | Out-Null
     }
+    if ($jvm.JarsKnown -gt 0) {
+        $jarsOnDisk = $jvm.JarsKnown - $jvm.JarsMissing
+        Write-Host ""
+        W "  $([char]0x2139) The running JVM knows $($jvm.JarsKnown) jar(s); $jarsOnDisk still exist on disk right now" DarkGray
+    }
 }
 
 Write-Host ""
@@ -10509,6 +11140,11 @@ if (-not $script:_DevMode) {
 Show-HistoryScan
 # Needs Administrator, so it is announced separately when it cannot run.
 Show-UsnScan
+# None of these three need Administrator, so they run regardless of it.
+Show-ExecTraceScan
+# Every source above has had its chance to add to the timeline by now - show
+# it once, all together, instead of one clock per finding.
+Show-SessionTimeline
 
 # Every stage has now run (mods, system, JVM, PC, BAM) - so the session AI can
 # finally judge the scan AS A WHOLE, learn from it, and upload it to the team.

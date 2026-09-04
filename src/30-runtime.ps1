@@ -2,6 +2,28 @@ function Add-ScanGap([string]$What) {
     if (-not $script:ScanGaps.Contains($What)) { [void]$script:ScanGaps.Add($What) }
 }
 
+function Add-SessionEvent([string]$Source, [string]$Text, $When = $null) {
+    # $When is untyped on purpose: BAM/UserAssist/USN all hand back strings that
+    # may or may not parse (a corrupt timestamp is not a reason to lose the rest
+    # of the line), and a typed [DateTime] parameter throws on a bad string
+    # before this function gets a chance to say so.
+    $t = $null
+    if ($When -is [DateTime]) { $t = $When }
+    elseif ($When) { try { $t = [DateTime]$When } catch {} }
+    $anchor = if ($script:GameStarted) { $script:GameStarted } else { $script:ScanStart }
+    $offset = $null
+    if ($t -and $anchor) {
+        $mins = [Math]::Round(($t - [DateTime]$anchor).TotalMinutes, 1)
+        $offset = if ($mins -ge 0) { "+$mins min" } else { "$mins min" }
+    }
+    [void]$script:SessionEvents.Add([PSCustomObject]@{
+        Time   = $t
+        Offset = $offset
+        Source = $Source
+        Text   = $Text
+    })
+}
+
 function Get-WmiOrCim([string]$Class, [string]$Filter = "") {
     <#
         Win32_* without caring which PowerShell this is.

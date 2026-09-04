@@ -42,6 +42,28 @@ $script:jvmGenerated = '\$\$|\$Proxy|GeneratedConstructorAccessor|GeneratedMetho
 # disk side is not trustworthy enough to call anything injected.
 $script:jvmMinDiskPackages = 200
 
+# Manual-map region shape: PRIVATE (not backed by any file), COMMITTED, and
+# executable. Pulled out as its own pure function so the gate that decides
+# WHICH regions get their first 64 bytes read can be pinned by a self-test,
+# separately from the two live ReadProcessMemory calls that follow it.
+function Test-ManualMapRegionShape([uint32]$State, [uint32]$Type, [long]$RegionSize, [uint32]$Protect) {
+    if ($State -ne 0x1000 -or $Type -ne 0x20000 -or $RegionSize -lt 0x40) { return $false }
+    $execBase = $Protect -band 0xFF
+    return ($execBase -eq 0x10 -or $execBase -eq 0x20 -or $execBase -eq 0x40 -or $execBase -eq 0x80)
+}
+
+# The actual PE-header decision: MZ at the start, a plausible e_lfanew, and
+# 'PE\0\0' at that offset. Given both reads as plain byte arrays so a
+# self-test can construct them without ever calling ReadProcessMemory.
+function Test-ManualMapHeaderBytes([byte[]]$Head64, [byte[]]$SigBytes, [long]$RegionSize) {
+    if ($null -eq $Head64 -or $Head64.Length -lt 64) { return $false }
+    if ($Head64[0] -ne 0x4D -or $Head64[1] -ne 0x5A) { return $false }
+    $lfanew = [System.BitConverter]::ToInt32($Head64, 0x3C)
+    if ($lfanew -lt 0 -or ($lfanew + 4) -gt $RegionSize) { return $false }
+    if ($null -eq $SigBytes -or $SigBytes.Length -lt 4) { return $false }
+    return ($SigBytes[0] -eq 0x50 -and $SigBytes[1] -eq 0x45 -and $SigBytes[2] -eq 0 -and $SigBytes[3] -eq 0)
+}
+
 function Test-InjectedPackage([string]$Package) {
     if ($script:DiskPackages.Count -lt $script:jvmMinDiskPackages) { return $false }
     foreach ($r in $script:jvmRuntimeRoots) { if ($Package.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { return $false } }
@@ -57,9 +79,15 @@ function Test-InjectedPackage([string]$Package) {
 
 function New-JvmScanResult {
     return @{
-        Findings = [System.Collections.Generic.List[string]]::new()
-        Notes    = [System.Collections.Generic.List[string]]::new()
-        Gaps     = [System.Collections.Generic.List[string]]::new()
+        Findings    = [System.Collections.Generic.List[string]]::new()
+        Notes       = [System.Collections.Generic.List[string]]::new()
+        Gaps        = [System.Collections.Generic.List[string]]::new()
+        # How many jars the running JVM itself says it loaded, and how many of
+        # those still exist on disk right now - the same fact the "mod loaded,
+        # then deleted" finding is built from, kept as a count so it can be
+        # shown even when nothing individually rose to a finding.
+        JarsKnown   = 0
+        JarsMissing = 0
     }
 }
 
@@ -128,9 +156,13 @@ function Run-JVMScan {
             $r.Gaps.Add("Could not read the command line of $where $([char]0x2014) its JVM flags (agents, bootclasspath) were not checked. Run as administrator.")
             $cmdLine = ""
         }
+        # Reset every iteration: a process whose command line could not be read
+        # must not inherit "yes, -javaagent was there" from the previous one.
+        $hasJavaagentFlag = $false
 
         if ($cmdLine) {
             $agentMatches = [regex]::Matches($cmdLine, '-javaagent:([^\s"]+)')
+            $hasJavaagentFlag = $agentMatches.Count -gt 0
             foreach ($m in $agentMatches) {
                 $agentPath = $m.Groups[1].Value.Trim('"').Trim("'")
                 $agentName = [System.IO.Path]::GetFileName($agentPath)
@@ -234,7 +266,15 @@ function Run-JVMScan {
                     "killaura","silentaura","autocrystal","crystalaura","aimassist","triggerbot",
                     "scaffoldhack","bunnyhop","freecam","autoanchor","autototem","holefill",
                     "webhookstealer","tokengrabber","reverseshell","connectback",
-                    "walksyoptimizer","baritone","velocitybypass","packetfly","hitboxexpand"
+                    "walksyoptimizer","baritone","velocitybypass","packetfly","hitboxexpand",
+                    # agentmain/Agent-Class are the entry point a DYNAMICALLY attached
+                    # agent uses (java.lang.instrument, the Attach API) - premain is
+                    # for one named on the command line with -javaagent. Seeing this
+                    # string in the heap alongside instrument.dll with no -javaagent
+                    # anywhere in the command line is what an injector's own loader
+                    # leaves behind; a ByteBuddy-based mod can carry the string too,
+                    # which is why this alone is never more than corroboration.
+                    "agentmain","agent-class"
                 )
                 $memClientSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
                 foreach ($ct in $memClientTerms) { [void]$memClientSet.Add([string]$ct) }
@@ -243,6 +283,20 @@ function Run-JVMScan {
                 $memAlt = ($memAllTerms | Where-Object { $_ } | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
                 $memRegex = [regex]::new("($memAlt)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                 $memHits = @{}
+                # Base addresses of private, executable regions that start with a
+                # PE header - a DLL copied straight into the process's memory
+                # instead of loaded through LoadLibrary. See the manual-map check
+                # inside the region walk below.
+                $manualMapHits = [System.Collections.Generic.List[string]]::new()
+                # instrument.dll present with no -javaagent anywhere on the command
+                # line is how the JVM Attach API looks from outside: the agent was
+                # attached to an already-running process, not named at startup.
+                $attachInstrumentDll = $false
+                try {
+                    $gpForModules = Get-Process -Id $proc.ProcessId -ErrorAction Stop
+                    $instrumentHit = @($gpForModules.Modules | Where-Object { $_.ModuleName -ieq 'instrument.dll' })
+                    $attachInstrumentDll = $instrumentHit.Count -gt 0
+                } catch {}
                 $scanLimit = 0
                 # Every jar URL the JVM is holding on to. Capped so a pathological
                 # heap cannot turn this into the thing that runs out of memory.
@@ -273,6 +327,30 @@ function Run-JVMScan {
                     # .ToInt64() rather than a cast: IntPtr does not implement IConvertible,
                     # so [int64]$ptr throws on PowerShell 5.1.
                     $regionSize = $mbi.RegionSize.ToInt64()
+                    # Manual-mapped DLL: a PE header sitting at the START of a
+                    # PRIVATE, executable region. A real DLL loaded by LoadLibrary
+                    # is MEM_IMAGE (0x1000000), never MEM_PRIVATE (0x20000); the
+                    # JVM's own JIT cache is MEM_PRIVATE and executable but never
+                    # begins a region with 'MZ'. A 64-byte read regardless of the
+                    # region's real size, so this runs on every region every time -
+                    # unlike the string sweep below it needs no time budget.
+                    if (Test-ManualMapRegionShape $mbi.State $mbi.Type $regionSize $mbi.Protect) {
+                        $peHead = New-Object byte[] 64
+                        $peHeadRead = 0
+                        if ([Win32.MemAPI]::ReadProcessMemory($handle, $mbi.BaseAddress, $peHead, 64, [ref]$peHeadRead) -and
+                            $peHeadRead -ge 64 -and $peHead[0] -eq 0x4D -and $peHead[1] -eq 0x5A) {
+                            $lfanew = [System.BitConverter]::ToInt32($peHead, 0x3C)
+                            if ($lfanew -ge 0 -and ($lfanew + 4) -le $regionSize) {
+                                $peSig = New-Object byte[] 4
+                                $peSigRead = 0
+                                $peSigAddr = [IntPtr]($mbi.BaseAddress.ToInt64() + $lfanew)
+                                if ([Win32.MemAPI]::ReadProcessMemory($handle, $peSigAddr, $peSig, 4, [ref]$peSigRead) -and $peSigRead -eq 4 -and
+                                    (Test-ManualMapHeaderBytes $peHead $peSig $regionSize) -and $manualMapHits.Count -lt 10) {
+                                    [void]$manualMapHits.Add(("0x{0:X}" -f $mbi.BaseAddress.ToInt64()))
+                                }
+                            }
+                        }
+                    }
                     # committed, and readable+writable (the JVM heap) or RWX (JIT / injected code)
                     $readable = (($mbi.Protect -band 0x04) -ne 0) -or (($mbi.Protect -band 0x40) -ne 0)
                     if ($mbi.State -eq 0x1000 -and $readable -and $regionSize -gt 0) {
@@ -343,6 +421,36 @@ function Run-JVMScan {
                     $r.Gaps.Add("Live-memory check read $pct% of $mb MB in $where before its $memBudget s budget ran out $([char]0x2014) the rest was not looked at. Run with -Deep for a longer sweep.")
                 }
 
+                # ---- Manual-mapped code: a DLL that was never LoadLibrary'd ----
+                if ($manualMapHits.Count -gt 0) {
+                    $r.Findings.Add("MANUAL-MAPPED CODE IN MEMORY: $($manualMapHits.Count) region(s) in $where hold a PE file header (MZ/PE) inside PRIVATE, executable memory not backed by any file Windows knows about $([char]0x2014) at $($manualMapHits -join ', '). This is how an injector loads a DLL without LoadLibrary, so it never appears in a module list and no signature can be checked, because there is no file. Reading the process's own memory is the only way to see it.")
+                    $script:Evidence.ManualMap += $manualMapHits.Count
+                    Add-SessionEvent "JVM" "$where has $($manualMapHits.Count) manually-mapped code region(s) in memory" $null
+                }
+
+                # ---- Attach-API: an agent attached to an already-running JVM ----
+                if ($attachInstrumentDll -and -not $hasJavaagentFlag) {
+                    $agentmainHits = 0
+                    foreach ($amk in @('agentmain', 'agent-class')) {
+                        if ($memHits.ContainsKey($amk)) { $agentmainHits += $memHits[$amk].Hits }
+                    }
+                    $knownLauncherRunning = @(Get-Process -Name @(
+                        "lunar-launcher", "lunarclient", "BadlionClient", "badlionclient",
+                        "feather-launcher", "featherclient"
+                    ) -ErrorAction SilentlyContinue).Count -gt 0
+                    if ($agentmainHits -ge 3 -and -not $knownLauncherRunning) {
+                        $r.Findings.Add("JVM AGENT ATTACHED AFTER LAUNCH: instrument.dll is loaded in $where with no -javaagent anywhere on its command line, and 'agentmain'/'Agent-Class' $([char]0x2014) the entry point ONLY a dynamically attached agent uses, never one started with -javaagent $([char]0x2014) appear $agentmainHits time(s) in its memory. The agent was attached to the game AFTER it was already running, which is what a Java injector does and no launcher does.")
+                        $script:Evidence.AttachAgent++
+                        Add-SessionEvent "JVM" "${where}: agent attached after launch (instrument.dll, no -javaagent, agentmain x$agentmainHits)" $null
+                    } elseif ($agentmainHits -ge 3 -and $knownLauncherRunning) {
+                        $r.Notes.Add("instrument.dll is loaded in $where with no -javaagent on the command line, and 'agentmain'/'Agent-Class' appear $agentmainHits time(s) in its memory $([char]0x2014) that is how the Attach API looks, but a known launcher (Lunar/Badlion/Feather) is running and some of those attach their own agent the same way. Reported, not counted as proof, until the attached agent's own path is checked.")
+                        Add-SessionEvent "JVM" "${where}: attach-API evidence present, capped $([char]0x2014) a known launcher is running" $null
+                    } else {
+                        $r.Notes.Add("instrument.dll is loaded in $where with no -javaagent anywhere on its command line $([char]0x2014) the module the Attach API uses to hook an agent onto an already-running JVM. On its own this is not proof: a profiler or an IDE debugger attaches the same way. It stopped short of a finding because 'agentmain'/'Agent-Class' were not also seen in memory; reported so it can be checked.")
+                        Add-SessionEvent "JVM" "${where}: instrument.dll attached, no -javaagent (weak signal alone)" $null
+                    }
+                }
+
                 # -------------------------------------------------------------
                 # What the live game says it loaded, checked against what is on
                 # disk right now. Deliberately narrow: only jars under a mods
@@ -389,6 +497,8 @@ function Run-JVMScan {
                     $r.Findings.Add("Mod loaded, then deleted while the game ran: $mp $([char]0x2014) $where is still running with this jar loaded, and the file is no longer on disk. The game's own memory still holds where it came from, which is why deleting it did not remove the trace.")
                 }
                 $script:Evidence.DeletedJars = $script:DeletedJarPaths.Count
+                $r.JarsKnown   += $jarUrls.Count
+                $r.JarsMissing += $missingMods.Count
                 foreach ($op in $oddMods) {
                     $r.Notes.Add("Jar the running game loaded: $op")
                 }
@@ -436,6 +546,10 @@ function Run-JVMScan {
 
                 # Report WHAT was found, WHERE, and whether it is a cheat.
                 foreach ($mk in @($memHits.Keys | Sort-Object)) {
+                    # Handled above, together with instrument.dll and the launcher
+                    # whitelist - reporting it again here as a plain "cheat module"
+                    # would both duplicate the finding and lose that context.
+                    if ($mk -eq 'agentmain' -or $mk -eq 'agent-class') { continue }
                     $mh = $memHits[$mk]
                     $spread = if ($mh.Regions.Count -gt 1) { ", across $($mh.Regions.Count) memory regions" } else { "" }
                     $at = "$where at $($mh.Addr), $($mh.Hits) hit(s)$spread"

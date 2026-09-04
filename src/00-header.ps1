@@ -101,7 +101,13 @@ $script:sessionCheat = [System.Collections.Generic.List[string]]::new()
 $script:sessionSamples = [System.Collections.Generic.List[object]]::new()
 # Evidence collected across the WHOLE scan (not just the mods folder). Feeds the
 # session AI at the end so it can judge the scan as a whole, and learn from it.
-$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0 }
+$script:Evidence = @{ RandomNamed = 0; CheatSiteDl = 0; HardConfirmed = 0; JvmInject = 0; CheatProcs = 0; StrayJars = 0; CheatFolders = 0; MemCheatClient = 0; MemModule = 0; MemInjectedOnly = 0; DeletedJars = 0; MacroCheat = 0; MacroNamed = 0; BehaviourCheat = 0; BehaviourLikely = 0; HiddenApi = 0; AttachAgent = 0; ManualMap = 0; DllGoneMissing = 0; DefenderDetect = 0; ExecTrace = 0 }
+# A chronological trail across every evidence source (BAM, USN, Prefetch,
+# Defender, the JVM memory sweep, exec traces), all keyed to the same clock -
+# GameStarted. One line here does not prove anything by itself; "an .exe ran
+# 2 minutes after the game started, then vanished 3 seconds later" is a
+# pattern no single source shows, because no single source has both halves.
+$script:SessionEvents = [System.Collections.Generic.List[object]]::new()
 $script:AltClients = [System.Collections.Generic.List[string]]::new()
 # The folders that were actually scanned, so the log reader knows which
 # instances' logs/ and crash-reports/ to read.

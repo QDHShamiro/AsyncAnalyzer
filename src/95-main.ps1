@@ -1,4 +1,4 @@
-if ($SelfTest) { Invoke-SelfTest; Invoke-PackScanSelfTest; return }
+if ($SelfTest) { Invoke-SelfTest; Invoke-PackScanSelfTest; Invoke-InjectionSelfTest; return }
 if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here

@@ -54,6 +54,11 @@
             "Calling any of them an injection on its own would flag innocent players, so they are reported and left to a person." `
             "Look at the path or the port named above and decide from what is actually there." | Out-Null
     }
+    if ($jvm.JarsKnown -gt 0) {
+        $jarsOnDisk = $jvm.JarsKnown - $jvm.JarsMissing
+        Write-Host ""
+        W "  $([char]0x2139) The running JVM knows $($jvm.JarsKnown) jar(s); $jarsOnDisk still exist on disk right now" DarkGray
+    }
 }
 
 Write-Host ""
@@ -127,6 +132,11 @@ if (-not $script:_DevMode) {
 Show-HistoryScan
 # Needs Administrator, so it is announced separately when it cannot run.
 Show-UsnScan
+# None of these three need Administrator, so they run regardless of it.
+Show-ExecTraceScan
+# Every source above has had its chance to add to the timeline by now - show
+# it once, all together, instead of one clock per finding.
+Show-SessionTimeline
 
 # Every stage has now run (mods, system, JVM, PC, BAM) - so the session AI can
 # finally judge the scan AS A WHOLE, learn from it, and upload it to the team.

@@ -92,3 +92,25 @@ function Get-LauncherName([string]$path) {
     if ($path -match 'modrinth|theseus|ModrinthApp') { return "Modrinth" }
     return "Unknown"
 }
+
+function Show-SessionTimeline {
+    # One line here proves nothing by itself. The pattern that matters -
+    # "an .exe ran 2 minutes after the game started, then the BAM record for
+    # it vanished 3 seconds later, and a jar with the same timestamp is gone
+    # from mods\" - only shows up once every source is on the SAME clock. No
+    # single source (BAM, USN, Defender, the JVM sweep, RecentDocs) has both
+    # halves of that story; only reading them side by side does.
+    if ($script:SessionEvents.Count -eq 0) { return }
+    Write-SysSection "SESSION TIMELINE"
+    $anchorLabel = if ($script:GameStarted) { "game start" } else { "scan start" }
+    $anchorTime  = if ($script:GameStarted) { $script:GameStarted } else { $script:ScanStart }
+    W "  $([char]0x2502)  Zero point: $anchorLabel at $($anchorTime.ToString('yyyy-MM-dd HH:mm:ss'))" DarkGray
+    W "  $([char]0x2502)" DarkGray
+    $ordered = @($script:SessionEvents | Sort-Object -Property @{ Expression = { if ($_.Time) { $_.Time } else { [DateTime]::MaxValue } } })
+    foreach ($ev in $ordered) {
+        $stamp = if ($ev.Offset) { $ev.Offset } else { "time unknown" }
+        $stampPadded = $stamp.PadLeft(11)
+        W "  $([char]0x2502)  $stampPadded  [$($ev.Source.PadRight(9))]  $($ev.Text)" DarkYellow
+    }
+    Write-SysSectionEnd
+}

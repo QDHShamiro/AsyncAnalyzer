@@ -213,3 +213,142 @@ function Show-HistoryScan {
     }
     Write-SysSectionEnd
 }
+
+# ---------------------------------------------------------------------------
+# "It was opened here once" - three more places Explorer and the shell leave a
+# record of a file that no longer needs to exist for the record to still be
+# there: RecentDocs (every file opened by double-click, per extension),
+# MuiCache (every executable Explorer has ever shown a friendly name for) and
+# the .lnk shortcuts under Recent (the actual target a jump-list entry points
+# at). None of these need Administrator.
+# ---------------------------------------------------------------------------
+
+function Get-RecentDocFileName([byte[]]$Bytes) {
+    # A RecentDocs value is a UTF-16LE file name, null-terminated (two zero
+    # bytes back to back), followed by a binary shell item ID list this tool
+    # has no use for. Stop at the terminator; do not try to parse the rest.
+    if ($null -eq $Bytes -or $Bytes.Length -lt 4) { return "" }
+    $end = -1
+    for ($gi = 0; $gi -lt ($Bytes.Length - 1); $gi += 2) {
+        if ($Bytes[$gi] -eq 0 -and $Bytes[$gi + 1] -eq 0) { $end = $gi; break }
+    }
+    if ($end -le 0) { return "" }
+    try { return [System.Text.Encoding]::Unicode.GetString($Bytes, 0, $end) } catch { return "" }
+}
+
+function Get-MuiCachePath([string]$ValueName) {
+    # MuiCache stores the PATH in the value's NAME, not its data - the data is
+    # just the friendly name Explorer shows for it ("Vape Client", "Notepad").
+    if ([string]::IsNullOrEmpty($ValueName)) { return "" }
+    if ($ValueName -notmatch '(?i)\.FriendlyAppName$') { return "" }
+    return ($ValueName -replace '(?i)\.FriendlyAppName$', '')
+}
+
+function Run-ExecTraceScan {
+    $res  = @{ Fail = [System.Collections.Generic.List[string]]::new(); Warn = [System.Collections.Generic.List[string]]::new(); Read = 0 }
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    # One rule for all three sources: only a .jar/.exe/.dll matters here, and
+    # only one that is GONE - a trace pointing at a file still on disk is what
+    # the file scan itself already judges, on its own evidence, not a leftover
+    # shortcut's say-so. A cheat name is the finding by itself; a plain name is
+    # only worth a look if it sat somewhere a launcher does not put mods.
+    function Add-ExecTraceHit([string]$Path, [string]$Source) {
+        if ([string]::IsNullOrWhiteSpace($Path)) { return }
+        if ($Path -notmatch '(?i)\.(jar|exe|dll)$') { return }
+        if (-not $seen.Add("$Source|$Path")) { return }
+        $res.Read++
+        $hit = Test-CheatName ([System.IO.Path]::GetFileName($Path))
+        $exists = $true
+        try { $exists = [System.IO.File]::Exists($Path) } catch {}
+        if ($exists) { return }
+        $inModsOrTemp = ($Path -match '(?i)\\mods\\') -or (Test-UserWritablePath $Path)
+        if ($hit) {
+            $res.Fail.Add("$Path  ($hit, from $Source, no longer on disk)")
+            Add-SessionEvent "ExecTrace" "$Source remembers $Path ($hit), now gone" $null
+        } elseif ($inModsOrTemp) {
+            $res.Warn.Add("$Path  (from $Source, no longer on disk)")
+            Add-SessionEvent "ExecTrace" "$Source remembers $Path, now gone" $null
+        }
+    }
+
+    try {
+        $rdRoot = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs"
+        if (Test-Path $rdRoot) {
+            $rdKeys = @($rdRoot) + @(Get-ChildItem $rdRoot -ErrorAction SilentlyContinue | Select-Object -ExpandProperty PSPath)
+            foreach ($rk in $rdKeys) {
+                $rdItem = Get-Item -LiteralPath $rk -ErrorAction SilentlyContinue
+                if (-not $rdItem) { continue }
+                foreach ($vn in @($rdItem.Property)) {
+                    # Only the numbered slots are file entries; MRUListEx is the
+                    # ordering index, not a file.
+                    if ($vn -notmatch '^\d+$') { continue }
+                    $raw = $null
+                    try { $raw = (Get-ItemProperty -LiteralPath $rk -Name $vn -ErrorAction Stop).$vn } catch {}
+                    if ($null -eq $raw) { continue }
+                    $rdName = Get-RecentDocFileName ([byte[]]$raw)
+                    if ($rdName) { Add-ExecTraceHit $rdName "RecentDocs" }
+                }
+            }
+        }
+    } catch { Add-ScanGap "RecentDocs could not be read $([char]0x2014) a deleted jar/exe opened recently would not have been seen there" }
+
+    try {
+        $muiKey = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
+        if (Test-Path $muiKey) {
+            $muiItem = Get-Item -LiteralPath $muiKey -ErrorAction SilentlyContinue
+            foreach ($vn in @($muiItem.Property)) {
+                $muiPath = Get-MuiCachePath $vn
+                if ($muiPath) { Add-ExecTraceHit $muiPath "MuiCache" }
+            }
+        }
+    } catch { Add-ScanGap "MuiCache could not be read $([char]0x2014) an executable that ran and was then deleted would not have been seen there" }
+
+    try {
+        $recentDir = [System.IO.Path]::Combine($env:APPDATA, "Microsoft\Windows\Recent")
+        if ([System.IO.Directory]::Exists($recentDir)) {
+            $lnkShell = New-Object -ComObject WScript.Shell
+            foreach ($lnk in @([System.IO.Directory]::GetFiles($recentDir, "*.lnk"))) {
+                try {
+                    $lnkTarget = $lnkShell.CreateShortcut($lnk).TargetPath
+                    if ($lnkTarget) { Add-ExecTraceHit $lnkTarget "Recent (.lnk)" }
+                } catch {}
+            }
+        }
+    } catch {
+        Add-ScanGap "Recent .lnk shortcuts could not be read $([char]0x2014) a shortcut to a deleted jar/exe would not have been seen there"
+    }
+
+    return $res
+}
+
+function Show-ExecTraceScan {
+    $et = Run-ExecTraceScan
+    if ($et.Read -eq 0 -and $et.Fail.Count -eq 0 -and $et.Warn.Count -eq 0) { return }
+    Write-SysSection "SHORTCUTS AND RECENT-FILE RECORDS TO SOMETHING GONE"
+    $script:SysArea = "Deleted & started"
+    W "  $([char]0x2502)  Checked $($et.Read) recent-file/shortcut record(s) for a .jar/.exe/.dll no longer on disk" DarkGray
+
+    if ($et.Fail.Count -gt 0) {
+        Write-SystemFlag "FAIL" "A known cheat client was opened and is now gone:" @($et.Fail)
+        Write-Detail "RecentDocs, MuiCache and Recent\*.lnk each record a file Explorer opened or ran, independently of the Recycle Bin, UserAssist or BAM." `
+            "The recorded name matches a known cheat client, and the file it points at no longer exists." `
+            "HKCU\...\Explorer\RecentDocs, HKCU\...\Shell\MuiCache, and the .lnk shortcuts under %APPDATA%\Microsoft\Windows\Recent $([char]0x2014) none need Administrator." `
+            "Nothing to fix: this is evidence."
+        $script:SystemIssues += $et.Fail.Count
+        $script:Evidence.ExecTrace += $et.Fail.Count
+    }
+    if ($et.Warn.Count -gt 0) {
+        Write-SystemFlag "WARN" "Something was opened from mods\ or a Temp/AppData folder and is now gone:" @($et.Warn)
+        Write-Detail "Same three sources, for a jar/exe/DLL that is not named after a known client but sat in mods\ or a folder the user can write to." `
+            "Not proof by itself - files get moved and renamed for ordinary reasons - but it is exactly where an injector's own loader lives, and it is gone now." `
+            "HKCU\...\Explorer\RecentDocs, HKCU\...\Shell\MuiCache, and Recent\*.lnk." `
+            "Ask what it was before drawing a conclusion."
+        $script:SystemIssues += $et.Warn.Count
+        $script:Evidence.ExecTrace += $et.Warn.Count
+    }
+    if ($et.Fail.Count -eq 0 -and $et.Warn.Count -eq 0) {
+        Write-SystemFlag "OK" "Recent-file and shortcut records $([char]0x2014) nothing pointing at a missing jar/exe/DLL"
+    }
+    Write-SysSectionEnd
+}

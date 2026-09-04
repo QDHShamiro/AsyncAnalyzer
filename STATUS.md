@@ -554,3 +554,67 @@ Two bugs found while doing this, both only visible on Windows:
   produced phantom rows in the file inventory.
 - `Write-SystemFlag` printed its evidence items via loose `foreach` loops at each call
   site, so none of them reached the report. Items are now passed to the flag itself.
+
+## Injected and self-destructing clients (newest work)
+Everything before this either read the mods folder (a wiped jar is gone) or read named
+client strings in memory (an obfuscated loader has no name). This closes both gaps with
+evidence that survives deletion and needs no name:
+
+- **JVM Attach API** (`src/90-jvm.ps1`, `Run-JVMScan`): `instrument.dll` loaded in
+  javaw/java with **no** `-javaagent` on the command line is how a *dynamically*
+  attached agent looks (Vape Lite, Slinky and most free injectables use `Class-Attach`,
+  not `-javaagent`). Alone it is a `Note` (a profiler/IDE debugger attaches the same
+  way). Combined with `agentmain`/`Agent-Class` (the entry point only a dynamic agent
+  uses) seen ≥3x in the heap, it is a **Finding** - capped back to a `Note` when a known
+  launcher (Lunar/Badlion/Feather) is running, since some of those attach their own.
+- **Manual-mapped code** (same function, same memory walk, no extra pass): every
+  `VirtualQueryEx` region is checked for a PE header (`MZ` + `PE\0\0` at `e_lfanew`)
+  sitting in **private**, executable memory - `MEM_IMAGE` (a real `LoadLibrary`) can
+  never look like this, and HotSpot's own JIT cache never starts a region with `MZ`. A
+  hit is a **Confirmed**-strength Finding: this is a DLL that bypassed `LoadLibrary`
+  entirely, so no module list and no signature check could ever have seen it.
+  `Test-ManualMapRegionShape` / `Test-ManualMapHeaderBytes` are pulled out pure so the
+  decision is self-tested without a live process.
+- **DLLs the game still has loaded, but whose FILE is gone from disk** (`src/94-pcscan.ps1`
+  DLL scan): now Confirmed-band, ahead of the signature check (a deleted file has no
+  signature to check). Unsigned DLLs from Temp/AppData/Downloads (previously a
+  never-counted Note) are now their own Review tier, with a small vendor whitelist
+  (OBS's own graphics-hook, RTSS, Discord, Overwolf, NVIDIA) kept at Note.
+- **NTFS journal (USN) widened** (`src/93-usn.ps1`): every `.jar`/`.litemod` delete now
+  counts, not only ones already flagged by name - a client renamed to look like a
+  library still shows up, because the journal does not care what a file is called.
+  Prefetch (`.pf`) deletion is its own Confirmed-strength signal (nothing legitimate
+  wipes its own execution record). `latest.log` and known settings folders
+  (config/shaderpacks/resourcepacks/…) deleted mid-session are Review.
+  `Get-UsnDeleteCategory` is the pure classifier, self-tested.
+- **Three checks that need no Administrator** (`src/91-system.ps1`): `PendingFileRename
+  Operations` (a jar/dll/exe still locked by a running process, queued to vanish on
+  reboot - `Get-PendingRenameJarDllExe`, pure + self-tested), the mods folder's own
+  `LastWriteTime` moving after the game already started, and Windows Defender's real
+  detection **history** (`Get-MpThreatDetection`, last 30 days, filtered to
+  `.minecraft`/Temp/Downloads/javaw - HackTool/Injector/Trojan is Confirmed, anything
+  else Defender still flagged is Review) plus its real-time-protection state
+  (PC-state, never counted).
+- **Explorer's own memory of a file that is gone** (`src/92-history.ps1`,
+  `Run-ExecTraceScan`): RecentDocs (`Get-RecentDocFileName`, a UTF-16LE name up to its
+  null terminator), MuiCache (`Get-MuiCachePath` - the path is in the *value name*, not
+  its data) and the `.lnk` targets under `Recent\` (via `WScript.Shell`, live-only).
+  A cheat-named hit is Confirmed; a plain jar/exe/dll that sat in `mods\` or a
+  user-writable folder and is now gone is Review.
+- **Session timeline** (`$script:SessionEvents`, `Add-SessionEvent` in
+  `src/30-runtime.ps1`): every source above now writes one line to a shared,
+  chronological list zeroed to when the game itself started (`+N min`). No single
+  source has the whole story - an `.exe` that ran for three seconds and vanished is one
+  BAM line and a different journal line - only reading them next to each other shows
+  the pattern. Rendered as its own console section (`Show-SessionTimeline`,
+  `src/70-console.ps1`) and its own HTML report section (`src/60-report.ps1`), always
+  on (not gated behind `-Deep`), since a self-destructing client leaves nothing else to
+  escalate on.
+
+Everything decision-shaped here has a pure, extracted function and a pinned self-test
+(`Invoke-InjectionSelfTest`, `src/94-pcscan.ps1`, 31 cases, wired into `-SelfTest`
+alongside the other two self-test passes). What is **not** self-tested, because it
+needs a real running javaw and a real Windows to mean anything: the Attach-API /
+`instrument.dll` module read, the live memory walk itself, `Get-MpThreatDetection`, and
+`WScript.Shell` `.lnk` resolution - these were exercised only by build/parse/lint here
+(no Windows in this environment) and need a real-PC pass before being trusted blind.

@@ -40,6 +40,23 @@ function Add-SysState([string]$Title, [string[]]$Items = @()) {
     Write-SystemFlag "STATE" $Title $Items
 }
 
+# PendingFileRenameOperations is a REG_MULTI_SZ of [source, destination] pairs;
+# an empty destination means "delete this on reboot" rather than "rename it to
+# this". Pulled out as its own pure function - no registry, no live path check
+# beyond Test-UserWritablePath - so a self-test can pin it without a Windows
+# registry to read.
+function Get-PendingRenameJarDllExe($Pairs) {
+    $out = @()
+    if (-not $Pairs) { return $out }
+    for ($pi = 0; $pi -lt $Pairs.Count; $pi += 2) {
+        $psrc = ([string]$Pairs[$pi]) -replace '^\\\?\?\\', ''
+        if ($psrc -match '(?i)\.(jar|dll|exe)$' -and (Test-UserWritablePath $psrc)) {
+            $out += $psrc
+        }
+    }
+    return $out
+}
+
 # A hosts line that really sends a name that matters to nowhere.
 # Returns "cheatsite", "auth" or "" - see hosts_block() in ml/sysscan.py.
 function Test-HostsBlock([string]$Line, [string[]]$CheatDomains) {
@@ -233,6 +250,92 @@ function Run-SystemChecks {
         } else { Write-SystemFlag "OK" "Scheduled tasks $([char]0x2014) none starts a jar, an agent or an encoded command" }
     } catch { Add-ScanGap "Scheduled tasks could not be listed $([char]0x2014) a task starting a cheat at login would not have been seen" }
 
+    # ---- pending delete on reboot: PendingFileRenameOperations --------------
+    # A file still locked by a running process cannot be deleted outright, so
+    # Windows lets the caller queue the delete for the next boot instead -
+    # MoveFileEx with MOVEFILE_DELAY_UNTIL_REBOOT and no new name. A jar or DLL
+    # still loaded by the game landing here is how a cheat finishes cleaning
+    # up after the game closes. No admin needed to READ this value, only to
+    # have written it.
+    try {
+        $pfro = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name "PendingFileRenameOperations" -ErrorAction Stop).PendingFileRenameOperations
+        $pfroFlags = @(Get-PendingRenameJarDllExe $pfro)
+        if ($pfroFlags.Count -gt 0) {
+            Add-SysCheat "FAIL" "Files queued to vanish on the next restart, from a user-writable folder:" $pfroFlags
+            Write-Detail "Windows lets a program that could not delete a locked file queue the delete for the next boot instead." `
+                "A jar, DLL or EXE still loaded by a running process cannot be deleted outright; queuing it for reboot is how a cheat or its loader finishes cleaning up after the game closes." `
+                "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations." `
+                "Do not restart the PC before this is reviewed $([char]0x2014) restarting is exactly what completes the deletion."
+            foreach ($pf in $pfroFlags) { Add-SessionEvent "Disk" "queued to delete on next reboot: $pf" $null }
+        } else { Write-SystemFlag "OK" "Pending reboot deletes $([char]0x2014) nothing queued to vanish from a user-writable folder" }
+    } catch { Write-SystemFlag "OK" "Pending reboot deletes $([char]0x2014) none queued" }
+
+    # ---- mods folder touched while the game was already running -------------
+    if ($script:GameStarted -and $script:ScanTargets) {
+        $mtimeFlags = @()
+        foreach ($mt in @($script:ScanTargets)) {
+            if ([string]::IsNullOrWhiteSpace($mt)) { continue }
+            try {
+                $mlw = [System.IO.Directory]::GetLastWriteTime($mt)
+                if ($mlw -ge $script:GameStarted) {
+                    $mtimeFlags += "$mt  (folder itself last changed $($mlw.ToString('yyyy-MM-dd HH:mm:ss')), game started $($script:GameStarted.ToString('yyyy-MM-dd HH:mm:ss')))"
+                    Add-SessionEvent "Disk" "mods folder changed while the game was running: $mt" $mlw
+                }
+            } catch {}
+        }
+        if ($mtimeFlags.Count -gt 0) {
+            Add-SysCheat "WARN" "A mods folder's own contents changed after the game had already started:" $mtimeFlags
+            Write-Detail "Every scanned mods folder's own last-modified time (a file being added or removed, not a file's own content changing) was compared against when the running game process started." `
+                "A launcher writes mods BEFORE starting the game, not during $([char]0x2014) a folder that changes after launch is either the player managing their own mods live, or something adding or removing a jar mid-session." `
+                "NTFS directory metadata, read directly $([char]0x2014) no admin needed." `
+                "Check what changed: a jar that used to be there and is not any more, or one that appeared after the screenshare started."
+        } else { Write-SystemFlag "OK" "Mods folders $([char]0x2014) none changed after the game started" }
+    }
+
+    # ---- Windows Defender: past detections -----------------------------------
+    # Get-MpThreatDetection is real detection HISTORY, not a fresh scan: the
+    # file existed, Defender recognised and acted on it. An injector's exe
+    # caught and quarantined leaves exactly this, even after the file itself
+    # is gone - which is why this belongs next to the other gone-file evidence
+    # rather than needing its own live scan.
+    try {
+        $mpCutoff = (Get-Date).AddDays(-30)
+        $mpDetections = @(Get-MpThreatDetection -ErrorAction Stop | Where-Object { $_.InitialDetectionTime -and $_.InitialDetectionTime -ge $mpCutoff })
+        $mpFail = @()
+        $mpWarn = @()
+        foreach ($mdet in $mpDetections) {
+            $tname = ""
+            try { $tname = (Get-MpThreat -ThreatID $mdet.ThreatID -ErrorAction Stop).ThreatName } catch {}
+            $mpaths = @($mdet.Resources | ForEach-Object { [string]$_ -replace '^file:_', '' })
+            $mrelevant = @($mpaths | Where-Object { $_ -match '(?i)\\(\.minecraft|temp|downloads)\\' })
+            $isRelevant = ($mrelevant.Count -gt 0) -or ($mdet.ProcessName -match '(?i)^javaw?\.exe$')
+            if (-not $isRelevant) { continue }
+            $pathPart = if ($mpaths.Count -gt 0) { "  " + ($mpaths -join '; ') } else { "" }
+            $line = "$tname  $([char]0x2014) $($mdet.InitialDetectionTime.ToString('yyyy-MM-dd HH:mm'))$pathPart"
+            if ($tname -match '(?i)HackTool|Injector|Trojan') { $mpFail += $line } else { $mpWarn += $line }
+            Add-SessionEvent "Defender" "detection: $tname" $mdet.InitialDetectionTime
+        }
+        if ($mpFail.Count -gt 0) {
+            Add-SysCheat "FAIL" "Windows Defender caught a hacking tool near the game or Java itself:" $mpFail
+            Write-Detail "Defender's own detection history for the last 30 days (Get-MpThreatDetection), filtered to detections touching .minecraft, Temp, Downloads or the Java process." `
+                "HackTool/Injector/Trojan is Defender's own classification, not a name match here $([char]0x2014) Defender inspected the file's actual behaviour before flagging it." `
+                "Windows Security's own detection log." `
+                "The file is very likely already quarantined or removed by Defender itself; check Protection History in Windows Security for what happened to it."
+        }
+        if ($mpWarn.Count -gt 0) {
+            Add-SysCheat "WARN" "Windows Defender recorded other detections near the game or Java itself:" $mpWarn
+            Write-Detail "Same detection history, for anything Defender flagged that was not HackTool/Injector/Trojan." `
+                "Adware, PUA and generic detections are not proof of cheating on their own, but a detection this close to the game is worth a look." `
+                "Windows Security's own detection log." `
+                "Check what it was in Windows Security's Protection History."
+        }
+        if ($mpFail.Count -eq 0 -and $mpWarn.Count -eq 0) {
+            Write-SystemFlag "OK" "Windows Defender detection history $([char]0x2014) nothing near the game or Java in the last 30 days"
+        }
+    } catch {
+        Add-ScanGap "Windows Defender's detection history could not be read (Get-MpThreatDetection) $([char]0x2014) a quarantined injector would not have been seen there"
+    }
+
     # ---- PC state: real, reported, deliberately not counted ----------------
     Write-Host ""
     W "  $([char]0x2502)  PC state $([char]0x2014) not cheat evidence, but a moderator should see it" DarkCyan
@@ -247,6 +350,16 @@ function Run-SystemChecks {
                 "" "If no other firewall is installed, turn it back on in Windows Security."
         } else { Write-SystemFlag "OK" "Firewall $([char]0x2014) on for every profile" }
     } catch { Add-ScanGap "Firewall status could not be read" }
+
+    try {
+        $mpStatus = Get-MpComputerStatus -ErrorAction Stop
+        if ($mpStatus -and -not $mpStatus.RealTimeProtectionEnabled) {
+            Add-SysState "Windows Defender real-time protection is turned off"
+            Write-Detail "RealTimeProtectionEnabled from Get-MpComputerStatus." `
+                "Off means nothing new gets scanned as it runs or downloads - including an injector. Plenty of third-party antivirus switches this off too, so it is not counted against anyone by itself." `
+                "" "If no other antivirus is installed, turn real-time protection back on in Windows Security."
+        } else { Write-SystemFlag "OK" "Windows Defender real-time protection $([char]0x2014) enabled" }
+    } catch { Add-ScanGap "Windows Defender's status could not be read (Get-MpComputerStatus)" }
 
     $psLogKey  = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
     $psLogging = if (Test-Path $psLogKey) { (Get-ItemProperty $psLogKey -ErrorAction SilentlyContinue).EnableScriptBlockLogging } else { $null }
