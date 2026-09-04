@@ -563,6 +563,7 @@ function Run-RecentActivity {
     $since = (Get-Date).AddHours(-48)
     $anyFound = $false
     $cheatExeNames = @($script:cheatProcessNames) + @("cheat","hack","inject","bypass","aimbot","killaura","autoclicker","nofall","freecam","xray","stealer","grabber")
+    $cheatExeNamesLower = @($cheatExeNames | ForEach-Object { $_.ToLower() })
 
     W "  $([char]0x25CF) Checking currently running processes for suspicious activity..." DarkGray
     Write-Host ""
@@ -718,12 +719,25 @@ function Run-RecentActivity {
     try {
         $secEvents = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4689; StartTime = $since } -MaxEvents 300 -ErrorAction SilentlyContinue
         foreach ($ev in $secEvents) {
-            $msg = $ev.Message
-            $procName = if ($msg -match '(?m)Process Name:\s+(.+)') { [System.IO.Path]::GetFileName($matches[1].Trim()) } else { $null }
+            # The name is read from the event's own data field. .Message FORMATS
+            # the text through the provider on every read, and with process
+            # auditing on, 300 of these exist within seconds of any login. The
+            # field is named in the event XML, so there is no position to guess;
+            # an event without it is read from the message as before.
+            $procName = $null
+            try {
+                if ($ev.ToXml() -match '<Data Name="ProcessName">([^<]+)</Data>') {
+                    $procName = [System.IO.Path]::GetFileName([System.Net.WebUtility]::HtmlDecode($matches[1]).Trim())
+                }
+            } catch {}
+            if (-not $procName) {
+                $msg = $ev.Message
+                $procName = if ($msg -match '(?m)Process Name:\s+(.+)') { [System.IO.Path]::GetFileName($matches[1].Trim()) } else { $null }
+            }
             if (-not $procName) { continue }
             $procNameLower = $procName.ToLower()
             $isSusp = $false
-            foreach ($n in $cheatExeNames) { if ($procNameLower.Contains($n.ToLower())) { $isSusp = $true; break } }
+            foreach ($n in $cheatExeNamesLower) { if ($procNameLower.Contains($n)) { $isSusp = $true; break } }
             if ($isSusp) { $closedProcs.Add([PSCustomObject]@{ Name = $procName; Time = $ev.TimeCreated; Source = "Security" }) }
         }
     } catch {}
@@ -739,7 +753,7 @@ function Run-RecentActivity {
             if (-not $procName) { continue }
             $procNameLower = $procName.ToLower()
             $isSusp = $false
-            foreach ($n in $cheatExeNames) { if ($procNameLower.Contains($n.ToLower())) { $isSusp = $true; break } }
+            foreach ($n in $cheatExeNamesLower) { if ($procNameLower.Contains($n)) { $isSusp = $true; break } }
             if ($isSusp) { $closedProcs.Add([PSCustomObject]@{ Name = $procName; Time = $ev.TimeCreated; Source = "Crash" }) }
         }
     } catch {}
@@ -756,16 +770,23 @@ function Run-RecentActivity {
             foreach ($prop in $vals.PSObject.Properties) {
                 $name = $prop.Name
                 if ($name -in @('PSPath','PSParentPath','PSChildName','PSProvider','PSDrive')) { continue }
-                $decoded = -join ($name.ToCharArray() | ForEach-Object {
-                    $c = [int]$_
-                    if    ($c -ge 65 -and $c -le 90)  { [char](($c - 65 + 13) % 26 + 65) }
-                    elseif($c -ge 97 -and $c -le 122) { [char](($c - 97 + 13) % 26 + 97) }
-                    else  { $_ }
-                })
+                # ROT13 turns .exe into .rkr, so an entry that is not a program is
+                # known before it is decoded - and most of UserAssist is shortcuts
+                # and folder GUIDs. The decode is a loop over a char array; the
+                # pipeline it replaces ran a script block per CHARACTER of every
+                # entry, which is how one registry key came to take seconds.
+                if (-not $name.EndsWith('.rkr', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+                $chars = $name.ToCharArray()
+                for ($ci = 0; $ci -lt $chars.Length; $ci++) {
+                    $c = [int]$chars[$ci]
+                    if    ($c -ge 65 -and $c -le 90)  { $chars[$ci] = [char](($c - 65 + 13) % 26 + 65) }
+                    elseif($c -ge 97 -and $c -le 122) { $chars[$ci] = [char](($c - 97 + 13) % 26 + 97) }
+                }
+                $decoded = [string]::new($chars)
                 $exeName = [System.IO.Path]::GetFileName($decoded).ToLower()
                 if (-not $exeName.EndsWith('.exe')) { continue }
                 $isSusp = $false
-                foreach ($n in $cheatExeNames) { if ($exeName.Contains($n.ToLower())) { $isSusp = $true; break } }
+                foreach ($n in $cheatExeNamesLower) { if ($exeName.Contains($n)) { $isSusp = $true; break } }
                 if (-not $isSusp) { continue }
                 $raw = $prop.Value
                 if ($raw -isnot [byte[]] -or $raw.Length -lt 72) { continue }

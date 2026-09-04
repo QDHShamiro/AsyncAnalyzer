@@ -36,6 +36,7 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 # Actions sets for pwsh by default. The script then died here, on line 33, before
 # one check had run - and the CI self-test could never have passed.
 if (Get-Command chcp -ErrorAction SilentlyContinue) { $null = chcp 65001 }
+$script:ScanClock = [System.Diagnostics.Stopwatch]::StartNew()
 $ModPath = ""
 
 # The elevated window runs a temp copy of this file (see Invoke-SelfElevate). By

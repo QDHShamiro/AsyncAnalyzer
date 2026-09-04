@@ -166,6 +166,7 @@ if ($script:_DevMode) {
 }
 
 Write-Host ""
+if ($script:ScanClock) { W ("  Finished in " + ("{0:N1}" -f $script:ScanClock.Elapsed.TotalSeconds) + " s.") DarkGray }
 W "  Done." Green
 Write-Host ""
 # Nothing waits for a keypress any more, so the result must survive the window
