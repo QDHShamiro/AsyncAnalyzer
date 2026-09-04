@@ -297,8 +297,8 @@ And if a client is installed but no mods/addons folder turns up under it, that g
 
 ### 📁 The rest of the Minecraft folder
 
-Four things live outside `mods/`, and none of them needs a heuristic — either the launcher
-starts a cheat's class or it doesn't:
+Several things live outside `mods/`, and most of them need no heuristic — either the
+launcher starts a cheat's class or it doesn't:
 
 | where | what is read | why |
 |---|---|---|
@@ -306,11 +306,23 @@ starts a cheat's class or it doesn't:
 | `launcher_profiles.json` | JVM arguments | `-javaagent:` is how a ghost client gets attached at launch |
 | `resourcepacks/`, `shaderpacks/` | the entry names inside each `.zip` | a pack is textures, sounds, json and shader source. A `.class` or a `.jar` in one is **a jar in a costume**, and packs don't load from the mods folder |
 | `config/<name>` | folder names | a config folder **outlives the jar** — it's what's left when somebody deletes the mod and not its settings, and the date says when it was last used |
+| `resourcepacks/`, `shaderpacks/` | block textures decoded and checked for transparency, block models checked for empty geometry | **x-ray without a single mod.** No legitimate pack makes stone, ore or bedrock see-through — the block is still solid, only the texture (or the model) is gone. Decoded by a from-scratch PNG reader; zero external dependencies |
+| `assets/minecraft/shaders/core/`, `shaderpacks/…/shaders/` | terrain fragment shaders, pattern-matched | a **heuristic**: a hardcoded, unconditional low alpha makes every solid block uniformly see-through, which is the x-ray shader's actual mechanism. Plain `discard` alone is reported too, but far weaker — cutout rendering for leaves and glass legitimately uses it |
+| `options.txt` | `gamma`, `resourcePacks` | a gamma above the slider's own 0.0–1.0 range is fullbright — usually OptiFine's "Full Bright" toggle, sometimes a hand-edited value. `resourcePacks` says which pack is actually **active**, not just installed |
+| `config/`, instance root | Xaero / Tweakeroo / Litematica / Freecam / Baritone config, name-matched | these are ordinary, widely-used utility mods — never a finding by themselves. Where a config file can be read, it is checked for text that looks like a free camera, cave/entity radar, or flexible-placement setting turned **on** |
 
 A cheat named in a launcher profile, a pack carrying bytecode, or a client's config folder
 is **Confirmed**. The `-javaagent` line is deliberately one step lower (🟠 **Likely**): a
 profiler or a dev setup can carry one too, so it goes to a person with the path attached
 rather than being called proof.
+
+The x-ray texture/model check is Confirmed when the pack is **currently active** in
+`options.txt`, Review when it is merely present — installed is not the same as loaded. The
+shader heuristic is Review either way, always, because it is pattern-matched GLSL text, not
+a real shader compiler. The utility-mod config check never rises past Review: owning
+Tweakeroo or Xaero's Minimap is completely normal, and the flag match is a loose,
+name-based pattern rather than one exact config schema, because different mod versions
+spell the same setting differently.
 
 The config-folder match is **exact on the normalised name**, and that isn't academic —
 `ml/test_instscan.py` has `doomsday-realms-datapack-helper` in it, which a substring match

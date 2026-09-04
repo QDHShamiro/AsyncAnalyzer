@@ -269,6 +269,66 @@ silently), and that the PS feature ORDER equals the Python one.
 - The transparency notice now lists what is read inside Minecraft, because "only
   scans your mods folder" stopped being true.
 
+## Vanilla cheating (no mod required): x-ray packs, shaders, gamma, utility configs
+Everything above assumes the cheat is a mod. It doesn't have to be - a resource pack
+with a transparent stone texture, or `gamma` hand-set above 1.0, needs zero Java and
+was invisible to every check that came before this.
+- `Get-PngAlphaStats` (`src/94-pcscan.ps1`) is a **from-scratch PNG decoder** - chunk
+  parse, zlib-header-strip + `DeflateStream` for the IDAT inflate, all five filter
+  types (None/Sub/Up/Average/Paeth), color types 0/2/3/4/6 at 8-bit. No
+  System.Drawing (needs libgdiplus off Windows, not a dependency this tool takes
+  anywhere else). Interlaced (Adam7) and non-8-bit PNGs return `Ok=$false` - a
+  coverage gap, not a guess. Pinned by `Invoke-PackScanSelfTest`
+  (`src/94-pcscan.ps1`, run after `Invoke-SelfTest` under `-SelfTest`) against
+  three base64-embedded 4x4 PNGs (opaque RGBA, x-ray-shaped RGBA, RGB with no
+  alpha channel) plus malformed/null input.
+- `Test-XrayPack`: `$script:xrayOpaqueTextures` (`src/10-signatures.ps1`) is the
+  block list - stone, deepslate, every ore, bedrock, obsidian, etc. A texture
+  decoding to >=50% pixels below alpha 32 is a texture hit; a model JSON with a
+  literal `"elements": []` is a model hit (parent-model inheritance is NOT
+  resolved - a model that only overrides textures is correctly left alone). Both
+  a `.zip` pack and an unpacked folder pack are read the same way.
+- `Test-XrayShaders`: two SEPARATE signals in a terrain fragment shader
+  (`gbuffers_terrain`/`rendertype_solid`/`rendertype_cutout`, core shaders under
+  `assets/minecraft/shaders/core` since 1.17, or an Iris/OptiFine shaderpack's
+  `shaders/`). A hardcoded, unconditional low alpha (`\.a\s*=\s*0\.[0-4]\d*\s*;`)
+  is the x-ray shader's actual mechanism - no legitimate shader makes every solid
+  block uniformly translucent as a rendering style. Plain `discard` is reported
+  too, kept separate and always weaker, because cutout rendering for leaf/glass
+  edges is a completely ordinary reason to discard a fragment. Verified against a
+  real hand-written pair: a `fragColor.a = 0.15;` shader read as low-alpha, a
+  `if (albedo.a < 0.1) discard;` cutout shader read as discard-only, never the
+  other way round.
+- `Test-HighGamma`: `options.txt`'s `gamma` above 1.0 is outside the brightness
+  slider's own range - most often OptiFine's "Full Bright" toggle (a supported
+  client feature, not an exploit), sometimes a hand-edited value doing the same
+  thing without OptiFine. Always Review: a rule question, the same as x-ray is on
+  plenty of servers, never proof by itself. `Get-ActiveResourcePackNames` parses
+  the same file's `resourcePacks:["file/Name.zip",...]` line, so a pack that is
+  merely INSTALLED and one that is actually LOADED score differently - Confirmed
+  vs Review for the texture/model hits above.
+- `Test-CheatFeatureConfigs`: Xaero/Tweakeroo/Litematica/Freecam/Baritone,
+  matched by filename SUBSTRING (`$script:xrayConfigMods`) because different mod
+  versions spell their config differently. `$script:xrayConfigFlagPattern` has NO
+  leading `\b` before the keyword - real keys are camelCase and prefixed
+  (`tweakFreeCamera`), so there is no word boundary there - and `.{0,10}` rather
+  than `.?` between the two halves of a compound keyword, because the real
+  Tweakeroo setting is `tweakFlexibleBlockPlacement`: "Flexible" and "Placement"
+  with a whole extra word between them. Found both bugs by testing against that
+  exact real setting name rather than a name I made up. Never scores past Review
+  - these are some of the most-used utility mods there are.
+- End to end, not just unit-tested: a synthetic instance (`-Dev -DevPath`) with an
+  active x-ray pack, an inactive one, a clean pack (0 false positives), an
+  unpacked hollow-model pack, both shader shapes, `gamma:1000000`, and a
+  Tweakeroo config with two settings on - every one of the eight findings came
+  back correct, and the same run's HTML report renders them with proper
+  encoding (verified: tag-balanced, `&quot;`/`&#39;` escaped, no broken markup).
+- `-Dev -DevPath` itself had never worked: it set `$ModPath` for the banner and
+  nothing else, so `$script:ScanTargets` (0 jars) and `$script:ScanTargetDirs`
+  (0 instance roots for `Run-InstanceScan`) both stayed empty regardless of what
+  was in the folder. Fixed alongside this, in `src/95-main.ps1` - it is what
+  made testing any of the above against real files possible at all.
+
 ## Game logs and crash reports (the evidence that outlives the jar)
 - `ml/logscan.py` is the source of truth; `$script:logChatLine` / `logCodeContext`
   in `src/10-signatures.ps1` are generated from it and parity-checked by

@@ -1,4 +1,4 @@
-if ($SelfTest) { Invoke-SelfTest; return }
+if ($SelfTest) { Invoke-SelfTest; Invoke-PackScanSelfTest; return }
 if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
@@ -85,8 +85,11 @@ if ($Dev) {
     Write-Host ""
     # The jar-finding loop below reads $script:ScanTargets, not $ModPath - Dev
     # mode set $ModPath for the banner and nothing else, so every -Dev -DevPath
-    # run found 0 jars regardless of what was actually in the folder.
+    # run found 0 jars regardless of what was actually in the folder. Same story
+    # for Run-InstanceScan, which reads $script:ScanTargetDirs (only ever filled
+    # by Get-ScanTargets, which Dev mode skips) - it silently checked 0 folders.
     $script:ScanTargets = @($ModPath)
+    if (-not $script:ScanTargetDirs.Contains($ModPath)) { [void]$script:ScanTargetDirs.Add($ModPath) }
     $SkipSystemCheck  = $true
     $SkipServiceCheck = $true
     $SkipMemoryCheck  = $true

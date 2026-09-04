@@ -782,3 +782,49 @@ $script:instTweakClass = '--tweakClass["\s,:]+([\w.$]+)'
 # Entries a resource pack has no business containing. .jar is in there because a
 # pack that ships one is a jar in a costume.
 $script:instPackExec   = '\.(class|jar|dll|so|dylib|exe)$'
+
+# ---------------------------------------------------------------------------
+# Resource pack / shader / options.txt cheat surface. Vanilla-cheating moved
+# here once servers started reading .minecraft: a X-ray TEXTURE or a fullbright
+# GAMMA value never touches the mods folder at all, and neither does the
+# resourcePacks: line in options.txt that says which pack is actually loaded.
+# ---------------------------------------------------------------------------
+# Blocks with no legitimate reason to render as anything but fully opaque.
+# Doubles as the model-check list (assets/.../models/block/<name>.json) - the
+# same block, the same reason a hollow model or a see-through texture on it
+# means the same thing: the block is still solid, it is just not being SHOWN.
+$script:xrayOpaqueTextures = @(
+    'stone', 'deepslate', 'cobblestone', 'cobbled_deepslate', 'dirt', 'coarse_dirt',
+    'netherrack', 'obsidian', 'bedrock', 'andesite', 'diorite', 'granite', 'tuff', 'calcite',
+    'blackstone', 'end_stone', 'sandstone', 'gravel',
+    'coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+    'copper_ore', 'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore',
+    'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore',
+    'deepslate_copper_ore', 'nether_gold_ore', 'nether_quartz_ore', 'ancient_debris'
+)
+# Named mods whose CONFIG (not their presence, not their code) can carry a
+# feature that is a rule question rather than a technical fact - a free camera,
+# a cave/entity radar, easier building through blocks. Owning the mod is
+# completely normal; these are among the most-used utility mods there are.
+# The match is a filename SUBSTRING on purpose (not an exact path): different
+# versions of the same mod spell their config differently, and a folder/file
+# name containing the mod's name is enough to know it is worth a look.
+$script:xrayConfigMods = [ordered]@{
+    'Xaero (Minimap / World Map)' = 'xaero'
+    'Tweakeroo'                    = 'tweakeroo'
+    'Litematica'                   = 'litematica'
+    'Freecam'                      = 'freecam'
+    'Baritone'                     = 'baritone'
+}
+# Loose and substring-based on purpose - not one exact key spelling, because
+# different mod versions use different ones. This finds what a SUSPICIOUS
+# setting tends to be called; it is never proof on its own; a moderator reads
+# the matched line and decides.
+# No leading \b before the keyword: real config keys are camelCase and
+# prefixed by the mod ("tweakFreeCamera"), so there is no word boundary
+# between the prefix and the part that matters - requiring one meant this
+# never matched a single real Tweakeroo key. ".{0,10}" rather than ".?"
+# between the two halves for the same reason: the real Tweakeroo setting is
+# "tweakFlexibleBlockPlacement" - "Flexible" and "Placement" with a whole
+# extra word between them, which one optional character cannot span.
+$script:xrayConfigFlagPattern = '(?i)(free.{0,10}cam(era)?|cave.{0,10}mode|entity.{0,10}radar|flexible.{0,10}place(ment)?|easy.{0,10}place|x.?ray)"?\s*[:=]\s*"?true\b'

@@ -930,6 +930,52 @@ $script:instTweakClass = '--tweakClass["\s,:]+([\w.$]+)'
 # pack that ships one is a jar in a costume.
 $script:instPackExec   = '\.(class|jar|dll|so|dylib|exe)$'
 
+# ---------------------------------------------------------------------------
+# Resource pack / shader / options.txt cheat surface. Vanilla-cheating moved
+# here once servers started reading .minecraft: a X-ray TEXTURE or a fullbright
+# GAMMA value never touches the mods folder at all, and neither does the
+# resourcePacks: line in options.txt that says which pack is actually loaded.
+# ---------------------------------------------------------------------------
+# Blocks with no legitimate reason to render as anything but fully opaque.
+# Doubles as the model-check list (assets/.../models/block/<name>.json) - the
+# same block, the same reason a hollow model or a see-through texture on it
+# means the same thing: the block is still solid, it is just not being SHOWN.
+$script:xrayOpaqueTextures = @(
+    'stone', 'deepslate', 'cobblestone', 'cobbled_deepslate', 'dirt', 'coarse_dirt',
+    'netherrack', 'obsidian', 'bedrock', 'andesite', 'diorite', 'granite', 'tuff', 'calcite',
+    'blackstone', 'end_stone', 'sandstone', 'gravel',
+    'coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
+    'copper_ore', 'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore',
+    'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore', 'deepslate_emerald_ore',
+    'deepslate_copper_ore', 'nether_gold_ore', 'nether_quartz_ore', 'ancient_debris'
+)
+# Named mods whose CONFIG (not their presence, not their code) can carry a
+# feature that is a rule question rather than a technical fact - a free camera,
+# a cave/entity radar, easier building through blocks. Owning the mod is
+# completely normal; these are among the most-used utility mods there are.
+# The match is a filename SUBSTRING on purpose (not an exact path): different
+# versions of the same mod spell their config differently, and a folder/file
+# name containing the mod's name is enough to know it is worth a look.
+$script:xrayConfigMods = [ordered]@{
+    'Xaero (Minimap / World Map)' = 'xaero'
+    'Tweakeroo'                    = 'tweakeroo'
+    'Litematica'                   = 'litematica'
+    'Freecam'                      = 'freecam'
+    'Baritone'                     = 'baritone'
+}
+# Loose and substring-based on purpose - not one exact key spelling, because
+# different mod versions use different ones. This finds what a SUSPICIOUS
+# setting tends to be called; it is never proof on its own; a moderator reads
+# the matched line and decides.
+# No leading \b before the keyword: real config keys are camelCase and
+# prefixed by the mod ("tweakFreeCamera"), so there is no word boundary
+# between the prefix and the part that matters - requiring one meant this
+# never matched a single real Tweakeroo key. ".{0,10}" rather than ".?"
+# between the two halves for the same reason: the real Tweakeroo setting is
+# "tweakFlexibleBlockPlacement" - "Flexible" and "Placement" with a whole
+# extra word between them, which one optional character cannot span.
+$script:xrayConfigFlagPattern = '(?i)(free.{0,10}cam(era)?|cave.{0,10}mode|entity.{0,10}radar|flexible.{0,10}place(ment)?|easy.{0,10}place|x.?ray)"?\s*[:=]\s*"?true\b'
+
 $script:mlModelVersion = 2
 $script:mlIntercept = -3.595535
 $script:mlFeatureOrder = @('pkgpath','cheatsite','strong_sig','weak_sig','fullwidth_str','fullwidth_cls','japanese_cls','singlechar_cls','numeric_cls','novowel_cls','avg_entropy','high_entropy','reflection','runtime_exec','http_download','http_exfil','nested_hollow','fake_identity','filename_client','random_name','verified','legit_modid')
@@ -7911,6 +7957,366 @@ function Show-ClientJarScan {
     Write-SysSectionEnd
 }
 
+function Get-PngAlphaStats([byte[]]$Bytes) {
+    <#
+        How much of a texture is transparent, without System.Drawing (which
+        needs libgdiplus off Windows and is not a dependency this tool takes on
+        anywhere else). Reads just enough of PNG to answer one question: what
+        fraction of pixels have an alpha below a threshold.
+
+        Supports the color types and bit depth every real Minecraft texture
+        actually uses (8-bit Grayscale/RGB/Indexed/GrayAlpha/RGBA,
+        non-interlaced). Anything else - 16-bit, Adam7 interlacing, a corrupt
+        or truncated file - returns Ok=$false: a coverage gap, not a guess.
+    #>
+    $r = @{ Ok = $false; Width = 0; Height = 0; HasAlpha = $false; TransparentFraction = 0.0; Reason = "" }
+    try {
+        if ($null -eq $Bytes -or $Bytes.Length -lt 8) { $r.Reason = "too short"; return $r }
+        $sig = [byte[]]@(0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A)
+        for ($i = 0; $i -lt 8; $i++) { if ($Bytes[$i] -ne $sig[$i]) { $r.Reason = "not a PNG"; return $r } }
+
+        $pos = 8
+        $width = 0; $height = 0; $bitDepth = 0; $colorType = -1; $interlace = 0
+        $palette = $null
+        $trns = $null
+        $idatChunks = [System.Collections.Generic.List[byte[]]]::new()
+        $haveIHDR = $false
+
+        while ($pos + 8 -le $Bytes.Length) {
+            $len = ([int]$Bytes[$pos] -shl 24) -bor ([int]$Bytes[$pos+1] -shl 16) -bor ([int]$Bytes[$pos+2] -shl 8) -bor [int]$Bytes[$pos+3]
+            if ($len -lt 0 -or $pos + 8 + $len + 4 -gt $Bytes.Length) { break }
+            $tag = [System.Text.Encoding]::ASCII.GetString($Bytes, $pos + 4, 4)
+            $dataStart = $pos + 8
+            switch ($tag) {
+                'IHDR' {
+                    $width     = ([int]$Bytes[$dataStart] -shl 24) -bor ([int]$Bytes[$dataStart+1] -shl 16) -bor ([int]$Bytes[$dataStart+2] -shl 8) -bor [int]$Bytes[$dataStart+3]
+                    $height    = ([int]$Bytes[$dataStart+4] -shl 24) -bor ([int]$Bytes[$dataStart+5] -shl 16) -bor ([int]$Bytes[$dataStart+6] -shl 8) -bor [int]$Bytes[$dataStart+7]
+                    $bitDepth  = [int]$Bytes[$dataStart+8]
+                    $colorType = [int]$Bytes[$dataStart+9]
+                    $interlace = [int]$Bytes[$dataStart+12]
+                    $haveIHDR = $true
+                }
+                'PLTE' { $palette = $Bytes[$dataStart..($dataStart+$len-1)] }
+                'tRNS' { $trns    = $Bytes[$dataStart..($dataStart+$len-1)] }
+                'IDAT' { [void]$idatChunks.Add($Bytes[$dataStart..($dataStart+$len-1)]) }
+                'IEND' { $pos = $Bytes.Length; break }
+            }
+            $pos = $dataStart + $len + 4
+        }
+
+        if (-not $haveIHDR) { $r.Reason = "no IHDR"; return $r }
+        $r.Width = $width; $r.Height = $height
+        if ($width -le 0 -or $height -le 0 -or $width -gt 8192 -or $height -gt 8192) { $r.Reason = "unreasonable dimensions"; return $r }
+        if ($interlace -ne 0) { $r.Reason = "interlaced (Adam7) - not decoded"; return $r }
+        if ($bitDepth -ne 8) { $r.Reason = "bit depth $bitDepth not decoded (only 8-bit)"; return $r }
+        if ($idatChunks.Count -eq 0) { $r.Reason = "no image data"; return $r }
+
+        $channels = switch ($colorType) { 0 {1} 2 {3} 3 {1} 4 {2} 6 {4} default { -1 } }
+        if ($channels -lt 0) { $r.Reason = "unknown color type $colorType"; return $r }
+
+        $total = 0; foreach ($c in $idatChunks) { $total += $c.Length }
+        $z = New-Object byte[] $total
+        $off = 0
+        foreach ($c in $idatChunks) { [Array]::Copy($c, 0, $z, $off, $c.Length); $off += $c.Length }
+        if ($z.Length -lt 6) { $r.Reason = "IDAT too short"; return $r }
+        $ms = New-Object System.IO.MemoryStream(,$z)
+        [void]$ms.Seek(2, [System.IO.SeekOrigin]::Begin)
+        $raw = $null
+        $inflate = $null; $outMs = $null
+        try {
+            $inflate = New-Object System.IO.Compression.DeflateStream($ms, [System.IO.Compression.CompressionMode]::Decompress)
+            $outMs = New-Object System.IO.MemoryStream
+            $inflate.CopyTo($outMs)
+            $raw = $outMs.ToArray()
+        } catch { $r.Reason = "inflate failed: $($_.Exception.Message)"; return $r }
+        finally { if ($inflate) { $inflate.Dispose() }; if ($outMs) { $outMs.Dispose() }; $ms.Dispose() }
+
+        $stride = [int][Math]::Ceiling(($width * $channels * $bitDepth) / 8.0)
+        $bpp = [Math]::Max(1, [int][Math]::Ceiling(($channels * $bitDepth) / 8.0))
+        $need = $height * ($stride + 1)
+        if ($raw.Length -lt $need) { $r.Reason = "truncated pixel data ($($raw.Length) of $need bytes)"; return $r }
+
+        $prevRow = New-Object byte[] $stride
+        $currRow = New-Object byte[] $stride
+        $transparent = 0L
+        $counted = 0L
+        # Below this (out of 255) counts as "transparent" for an x-ray texture -
+        # not zero, because a soft anti-aliased edge against nothing still reads
+        # as see-through in game.
+        $alphaCut = 32
+        $hasAlphaChannel = ($colorType -eq 4 -or $colorType -eq 6 -or ($colorType -eq 3 -and $null -ne $trns) -or (($colorType -eq 0 -or $colorType -eq 2) -and $null -ne $trns))
+        $r.HasAlpha = $hasAlphaChannel
+
+        $srcPos = 0
+        for ($y = 0; $y -lt $height; $y++) {
+            $ftype = $raw[$srcPos]; $srcPos++
+            [Array]::Copy($raw, $srcPos, $currRow, 0, $stride); $srcPos += $stride
+            switch ($ftype) {
+                0 { }
+                1 { for ($x = 0; $x -lt $stride; $x++) { $a = if ($x -ge $bpp) { $currRow[$x-$bpp] } else { 0 }; $currRow[$x] = [byte](($currRow[$x] + $a) -band 0xFF) } }
+                2 { for ($x = 0; $x -lt $stride; $x++) { $b = $prevRow[$x]; $currRow[$x] = [byte](($currRow[$x] + $b) -band 0xFF) } }
+                3 { for ($x = 0; $x -lt $stride; $x++) { $a = if ($x -ge $bpp) { [int]$currRow[$x-$bpp] } else { 0 }; $b = [int]$prevRow[$x]; $currRow[$x] = [byte](($currRow[$x] + [Math]::Floor(($a+$b)/2.0)) -band 0xFF) } }
+                4 {
+                    for ($x = 0; $x -lt $stride; $x++) {
+                        $a = if ($x -ge $bpp) { [int]$currRow[$x-$bpp] } else { 0 }
+                        $b = [int]$prevRow[$x]
+                        $c = if ($x -ge $bpp) { [int]$prevRow[$x-$bpp] } else { 0 }
+                        $p = $a + $b - $c
+                        $pa = [Math]::Abs($p - $a); $pb = [Math]::Abs($p - $b); $pc = [Math]::Abs($p - $c)
+                        $pr = if ($pa -le $pb -and $pa -le $pc) { $a } elseif ($pb -le $pc) { $b } else { $c }
+                        $currRow[$x] = [byte](($currRow[$x] + $pr) -band 0xFF)
+                    }
+                }
+                default { $r.Reason = "unknown filter type $ftype at row $y"; return $r }
+            }
+
+            for ($x = 0; $x -lt $width; $x++) {
+                $counted++
+                $alpha = 255
+                switch ($colorType) {
+                    6 { $alpha = $currRow[$x*4 + 3] }
+                    4 { $alpha = $currRow[$x*2 + 1] }
+                    3 {
+                        $idx = $currRow[$x]
+                        if ($trns -and $idx -lt $trns.Length) { $alpha = $trns[$idx] }
+                    }
+                    2 {
+                        if ($trns -and $trns.Length -ge 6) {
+                            $rr = ([int]$trns[0] -shl 8) -bor [int]$trns[1]
+                            $gg = ([int]$trns[2] -shl 8) -bor [int]$trns[3]
+                            $bb = ([int]$trns[4] -shl 8) -bor [int]$trns[5]
+                            if ([int]$currRow[$x*3] -eq $rr -and [int]$currRow[$x*3+1] -eq $gg -and [int]$currRow[$x*3+2] -eq $bb) { $alpha = 0 }
+                        }
+                    }
+                    0 {
+                        if ($trns -and $trns.Length -ge 2) {
+                            $gv = ([int]$trns[0] -shl 8) -bor [int]$trns[1]
+                            if ([int]$currRow[$x] -eq $gv) { $alpha = 0 }
+                        }
+                    }
+                }
+                if ($alpha -lt $alphaCut) { $transparent++ }
+            }
+
+            $tmp = $prevRow; $prevRow = $currRow; $currRow = $tmp
+        }
+
+        $r.TransparentFraction = if ($counted -gt 0) { [double]$transparent / [double]$counted } else { 0.0 }
+        $r.Ok = $true
+        return $r
+    } catch {
+        $r.Reason = "exception: $($_.Exception.Message)"
+        return $r
+    }
+}
+
+function Get-OptionsTxtValue([string]$OptionsPath, [string]$Key) {
+    # options.txt is one "key:value" per line. Returns $null if the file or the
+    # key is not there - never guessed at, since a missing file just means the
+    # game has not written one with this launcher/profile yet.
+    if (-not [System.IO.File]::Exists($OptionsPath)) { return $null }
+    try {
+        foreach ($line in [System.IO.File]::ReadLines($OptionsPath)) {
+            $ci = $line.IndexOf(':')
+            if ($ci -lt 0) { continue }
+            if ($line.Substring(0, $ci) -eq $Key) { return $line.Substring($ci + 1) }
+        }
+    } catch {}
+    return $null
+}
+
+function Get-ActiveResourcePackNames([string]$OptionsPath) {
+    # resourcePacks:["vanilla","file/SomePack.zip","file/Other (1)"] - only the
+    # file/ entries name an actual file on disk; "vanilla" and a loader's own
+    # programmatic entries are not files and are skipped.
+    $out = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $raw = Get-OptionsTxtValue $OptionsPath 'resourcePacks'
+    if (-not $raw) { return $out }
+    foreach ($m in [regex]::Matches($raw, '"file/([^"]+)"')) { [void]$out.Add($m.Groups[1].Value) }
+    return $out
+}
+
+function Test-HighGamma([string]$OptionsPath) {
+    # Above 1.0 is outside the brightness slider's own range (0.0-1.0). Most
+    # often OptiFine's "Full Bright" three-way toggle, which writes an
+    # extreme value here - a supported client feature, not an exploit, and
+    # banned on plenty of servers anyway for the same reason x-ray is: it
+    # shows something the game is not supposed to let you see. Sometimes a
+    # hand-edited value doing the same thing without OptiFine at all. Either
+    # way it is a rule question, never proof by itself.
+    $raw = Get-OptionsTxtValue $OptionsPath 'gamma'
+    if (-not $raw) { return $null }
+    $val = 0.0
+    if (-not [double]::TryParse($raw, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$val)) { return $null }
+    if ($val -le 1.0) { return $null }
+    return $val
+}
+
+function Get-PackEntryBytes($Zip, [string]$DirPath, [string]$RelPath, [long]$MaxBytes) {
+    # One texture/model/shader file, wherever the pack actually is - a .zip
+    # (via the open ZipArchive the caller already holds) or a plain unpacked
+    # folder. Returns $null on anything from "not present" to "too large to
+    # read safely", which the caller treats the same way: skip, do not guess.
+    if ($Zip) {
+        $e = $Zip.GetEntry($RelPath)
+        if (-not $e -or $e.Length -gt $MaxBytes) { return $null }
+        try {
+            $ms = New-Object System.IO.MemoryStream
+            $st = $e.Open(); $st.CopyTo($ms); $st.Close()
+            return $ms.ToArray()
+        } catch { return $null }
+    }
+    $fp = Join-Path $DirPath ($RelPath -replace '/', '\')
+    if (-not [System.IO.File]::Exists($fp)) { return $null }
+    try {
+        if ([System.IO.FileInfo]::new($fp).Length -gt $MaxBytes) { return $null }
+        return [System.IO.File]::ReadAllBytes($fp)
+    } catch { return $null }
+}
+
+function Test-XrayPack([string]$PackPath) {
+    <#
+        Decodes a curated list of always-opaque block textures out of a
+        resource pack and reports which ones are mostly see-through, plus any
+        block model whose "elements" array is literally empty - a model that
+        renders nothing while the block stays solid. No legitimate resource
+        pack, whatever its art style, has a reason to do either to stone, ore
+        or bedrock: the block is still there, it is just not being SHOWN.
+
+        Model matching does not resolve "parent" inheritance - a model that
+        gets its shape from a parent and only overrides textures is correctly
+        left alone; only a model that says outright "no elements" is named.
+    #>
+    $textureHits = [System.Collections.Generic.List[object]]::new()
+    $modelHits   = [System.Collections.Generic.List[string]]::new()
+    $gaps        = [System.Collections.Generic.List[string]]::new()
+    $isZip = $PackPath.EndsWith('.zip', [System.StringComparison]::OrdinalIgnoreCase)
+    $zip = $null
+    try {
+        if ($isZip) {
+            $fi = [System.IO.FileInfo]::new($PackPath)
+            if ($fi.Length -gt 1GB) { return @{ TextureHits = @(); ModelHits = @(); Gaps = @("$PackPath is too large to open safely") } }
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($PackPath)
+        } elseif (-not [System.IO.Directory]::Exists($PackPath)) {
+            return @{ TextureHits = @(); ModelHits = @(); Gaps = @() }
+        }
+        foreach ($blk in $script:xrayOpaqueTextures) {
+            $texBytes = Get-PackEntryBytes $zip $PackPath "assets/minecraft/textures/block/$blk.png" 8MB
+            if ($texBytes) {
+                $stats = Get-PngAlphaStats $texBytes
+                if (-not $stats.Ok) {
+                    if ($stats.Reason -notin @('no IHDR', 'not a PNG')) { [void]$gaps.Add("$PackPath : textures/block/$blk.png $($stats.Reason)") }
+                } elseif ($stats.HasAlpha -and $stats.TransparentFraction -ge 0.5) {
+                    [void]$textureHits.Add(@{ Texture = $blk; TransparentFraction = $stats.TransparentFraction })
+                }
+            }
+            $modelBytes = Get-PackEntryBytes $zip $PackPath "assets/minecraft/models/block/$blk.json" 256KB
+            if ($modelBytes) {
+                try { $modelTxt = [System.Text.Encoding]::UTF8.GetString($modelBytes) } catch { $modelTxt = $null }
+                if ($modelTxt -match '"elements"\s*:\s*\[\s*\]') { [void]$modelHits.Add($blk) }
+            }
+        }
+    } catch {
+    } finally { if ($zip) { $zip.Dispose() } }
+    return @{ TextureHits = @($textureHits); ModelHits = @($modelHits); Gaps = @($gaps) }
+}
+
+function Test-XrayShaders([string]$PackPath) {
+    <#
+        A heuristic, and the report says so. Two signals:
+          - a HARDCODED low alpha written to a terrain fragment's output,
+            unconditionally: no legitimate shader makes every solid block
+            uniformly translucent as a rendering STYLE - that is the x-ray
+            shader's actual mechanism, not an artistic choice.
+          - 'discard' present in a terrain shader at all, kept SEPARATE and
+            always weaker: cutout rendering for leaf and glass edges is a
+            completely ordinary reason a terrain shader discards a fragment,
+            so this alone is worth a look and never proof.
+        Covers both a core-shader resource pack (assets/minecraft/shaders/core,
+        1.17+) and an Iris/OptiFine shaderpack (shaders/ at the pack root).
+    #>
+    $lowAlpha = [System.Collections.Generic.List[string]]::new()
+    $discardOnly = [System.Collections.Generic.List[string]]::new()
+    $isZip = $PackPath.EndsWith('.zip', [System.StringComparison]::OrdinalIgnoreCase)
+    $zip = $null
+    $isTerrainShader = '^(gbuffers_terrain|rendertype_solid|rendertype_cutout)'
+    try {
+        $names = [System.Collections.Generic.List[string]]::new()
+        if ($isZip) {
+            try { $zip = [System.IO.Compression.ZipFile]::OpenRead($PackPath) } catch { return @{ LowAlpha = @(); DiscardOnly = @() } }
+            foreach ($e in $zip.Entries) {
+                if ($e.Length -gt 512KB) { continue }
+                if ($e.FullName -notmatch '\.fsh$') { continue }
+                if ([System.IO.Path]::GetFileNameWithoutExtension($e.FullName) -match $isTerrainShader) { [void]$names.Add($e.FullName) }
+            }
+        } else {
+            if (-not [System.IO.Directory]::Exists($PackPath)) { return @{ LowAlpha = @(); DiscardOnly = @() } }
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($PackPath, '*.fsh', [System.IO.SearchOption]::AllDirectories)) {
+                if ([System.IO.Path]::GetFileNameWithoutExtension($f) -match $isTerrainShader) { [void]$names.Add($f) }
+            }
+        }
+        foreach ($n in $names) {
+            # $n is a zip-relative entry name in the zip case, an already-
+            # resolved full path in the folder case - read each the way it
+            # actually needs, not through Get-PackEntryBytes's pack-root-plus-
+            # relative-path join, which assumes the zip shape.
+            $bytes = $null
+            if ($isZip) { $bytes = Get-PackEntryBytes $zip $PackPath $n 512KB }
+            else { try { if ([System.IO.FileInfo]::new($n).Length -le 512KB) { $bytes = [System.IO.File]::ReadAllBytes($n) } } catch {} }
+            if (-not $bytes) { continue }
+            $txt = [System.Text.Encoding]::UTF8.GetString($bytes)
+            if ($txt -match '(?im)\.a\s*=\s*0\.[0-4]\d*\s*;') { [void]$lowAlpha.Add($n) }
+            elseif ($txt -match '\bdiscard\b') { [void]$discardOnly.Add($n) }
+        }
+    } catch {
+    } finally { if ($zip) { $zip.Dispose() } }
+    return @{ LowAlpha = @($lowAlpha); DiscardOnly = @($discardOnly) }
+}
+
+function Test-CheatFeatureConfigs([string]$InstanceRoot) {
+    <#
+        A named mod's OWN config, not its code. Owning Xaero's minimap,
+        Tweakeroo or Litematica is completely ordinary - among the most-used
+        utility mods there are - so this never scores anything on its own; it
+        surfaces the mod and, where a config file could be read, whatever in
+        it LOOKS like a feature worth asking about, for a moderator to judge.
+    #>
+    $out = [System.Collections.Generic.List[object]]::new()
+    $searchDirs = @($InstanceRoot, (Join-Path $InstanceRoot 'config')) | Where-Object { [System.IO.Directory]::Exists($_) }
+    foreach ($modLabel in $script:xrayConfigMods.Keys) {
+        $needle = $script:xrayConfigMods[$modLabel]
+        $matches = [System.Collections.Generic.List[string]]::new()
+        $flagHits = [System.Collections.Generic.List[string]]::new()
+        foreach ($sd in $searchDirs) {
+            try {
+                foreach ($entry in [System.IO.Directory]::EnumerateFileSystemEntries($sd)) {
+                    $nm = [System.IO.Path]::GetFileName($entry)
+                    if ($nm.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+                    if (-not $matches.Contains($entry)) { [void]$matches.Add($entry) }
+                    $filesToRead = @()
+                    if ([System.IO.File]::Exists($entry)) {
+                        $filesToRead = @($entry)
+                    } elseif ([System.IO.Directory]::Exists($entry)) {
+                        try { $filesToRead = @([System.IO.Directory]::GetFiles($entry, '*.*', [System.IO.SearchOption]::TopDirectoryOnly) | Select-Object -First 20) } catch {}
+                    }
+                    foreach ($f in $filesToRead) {
+                        try {
+                            if ([System.IO.FileInfo]::new($f).Length -gt 512KB) { continue }
+                            $txt = [System.IO.File]::ReadAllText($f)
+                            foreach ($m in [regex]::Matches($txt, $script:xrayConfigFlagPattern)) {
+                                $v = $m.Value.Trim()
+                                if (-not $flagHits.Contains($v)) { [void]$flagHits.Add($v) }
+                            }
+                        } catch {}
+                    }
+                }
+            } catch {}
+        }
+        if ($matches.Count -gt 0) { [void]$out.Add(@{ Mod = $modLabel; Paths = @($matches); Flags = @($flagHits) }) }
+    }
+    return @($out)
+}
+
 function Run-InstanceScan {
     # Everything in a .minecraft folder that is not the mods folder.
     $res = @{
@@ -7918,6 +8324,11 @@ function Run-InstanceScan {
         Packs  = [System.Collections.Generic.List[object]]::new()   # packs carrying bytecode
         Configs = [System.Collections.Generic.List[string]]::new()  # cheat config folders
         UnknownMain = [System.Collections.Generic.List[string]]::new()
+        XrayTextures = [System.Collections.Generic.List[object]]::new()  # x-ray via transparent block textures
+        XrayModels   = [System.Collections.Generic.List[object]]::new()  # x-ray via hollow block models
+        ShaderXray   = [System.Collections.Generic.List[object]]::new()  # x-ray/ESP heuristic in a core/Iris/OptiFine shader
+        HighGamma    = [System.Collections.Generic.List[object]]::new()  # fullbright via options.txt gamma > 1.0
+        ConfigMods   = [System.Collections.Generic.List[object]]::new()  # Xaero/Tweakeroo/Litematica/Freecam/Baritone configs
         Checked = 0
     }
     $roots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -7926,6 +8337,14 @@ function Run-InstanceScan {
         try { $d = [System.IO.Path]::GetDirectoryName($t.TrimEnd('\')); if ($d) { [void]$roots.Add($d) } } catch {}
     }
     foreach ($root in $roots) {
+        # --- options.txt: fullbright via gamma ------------------------------------
+        $optionsPath = [System.IO.Path]::Combine($root, 'options.txt')
+        $gammaVal = Test-HighGamma $optionsPath
+        if ($null -ne $gammaVal) {
+            $res.Checked++
+            [void]$res.HighGamma.Add(@{ Root = $root; Gamma = $gammaVal })
+        }
+        $activePacks = Get-ActiveResourcePackNames $optionsPath
         # --- version profiles: what the launcher actually starts -----------------
         $vdir = [System.IO.Path]::Combine($root, 'versions')
         if ([System.IO.Directory]::Exists($vdir)) {
@@ -7973,13 +8392,20 @@ function Run-InstanceScan {
                 [void]$res.Launch.Add([PSCustomObject]@{ Kind='javaagent'; Value=$m.Groups[1].Value; File=$lpf })
             }
         }
-        # --- resource and shader packs carrying bytecode -------------------------
+        # --- resource and shader packs: bytecode, x-ray, shader heuristics -------
         foreach ($pdir in @('resourcepacks', 'shaderpacks')) {
             $pd = [System.IO.Path]::Combine($root, $pdir)
             if (-not [System.IO.Directory]::Exists($pd)) { continue }
-            try {
-                foreach ($pk in ([System.IO.Directory]::GetFiles($pd, '*.zip') | Select-Object -First 80)) {
-                    $res.Checked++
+            $packPaths = [System.Collections.Generic.List[string]]::new()
+            try { foreach ($z in ([System.IO.Directory]::GetFiles($pd, '*.zip') | Select-Object -First 80)) { [void]$packPaths.Add($z) } } catch {}
+            # Unpacked (folder) packs too - a pack being actively edited, or one
+            # extracted rather than left zipped, is exactly as capable of shipping
+            # an x-ray texture as a zip is.
+            try { foreach ($d in ([System.IO.Directory]::GetDirectories($pd) | Select-Object -First 40)) { [void]$packPaths.Add($d) } } catch {}
+            foreach ($pk in $packPaths) {
+                $res.Checked++
+                $isActive = $activePacks.Contains([System.IO.Path]::GetFileName($pk))
+                if ($pk.EndsWith('.zip', [System.StringComparison]::OrdinalIgnoreCase)) {
                     try {
                         $fi = [System.IO.FileInfo]::new($pk)
                         if ($fi.Length -gt 512MB) { continue }
@@ -7998,7 +8424,20 @@ function Run-InstanceScan {
                         }
                     } finally { $zip.Dispose() }
                 }
-            } catch {}
+
+                $xray = Test-XrayPack $pk
+                foreach ($th in $xray.TextureHits) {
+                    [void]$res.XrayTextures.Add(@{ Pack = $pk; Texture = $th.Texture; TransparentFraction = $th.TransparentFraction; Active = $isActive })
+                }
+                foreach ($mh in $xray.ModelHits) {
+                    [void]$res.XrayModels.Add(@{ Pack = $pk; Block = $mh; Active = $isActive })
+                }
+                foreach ($g in $xray.Gaps) { Add-ScanGap $g }
+
+                $shd = Test-XrayShaders $pk
+                foreach ($la in $shd.LowAlpha) { [void]$res.ShaderXray.Add(@{ Pack = $pk; File = $la; Kind = 'lowalpha'; Active = $isActive }) }
+                foreach ($dc in $shd.DiscardOnly) { [void]$res.ShaderXray.Add(@{ Pack = $pk; File = $dc; Kind = 'discard'; Active = $isActive }) }
+            }
         }
         # --- config folders named after a client ---------------------------------
         $cd = [System.IO.Path]::Combine($root, 'config')
@@ -8015,6 +8454,11 @@ function Run-InstanceScan {
                 }
             } catch {}
         }
+        # --- named mods whose CONFIG can carry a rule-question feature -----------
+        foreach ($cm in (Test-CheatFeatureConfigs $root)) {
+            $res.Checked++
+            [void]$res.ConfigMods.Add($cm)
+        }
     }
     return $res
 }
@@ -8026,7 +8470,9 @@ function Show-InstanceScan {
     # rather than joining the things that are proof.
     $agents = @($inst.Launch | Where-Object { $_.Kind -eq 'javaagent' })
     $script:InstanceAgents = $agents.Count
-    $script:InstanceHits = ($inst.Launch.Count - $agents.Count) + $inst.Packs.Count + $inst.Configs.Count
+    $configModFlagged = @($inst.ConfigMods | Where-Object { @($_.Flags).Count -gt 0 })
+    $script:InstanceHits = ($inst.Launch.Count - $agents.Count) + $inst.Packs.Count + $inst.Configs.Count +
+        $inst.XrayTextures.Count + $inst.XrayModels.Count + $inst.ShaderXray.Count + $inst.HighGamma.Count + $configModFlagged.Count
     W ("  $([char]0x250C)$([char]0x2500)$([char]0x2500) THE REST OF THE MINECRAFT FOLDER " + "$([char]0x2500)" * 37 + "$([char]0x2510)") DarkCyan
     $iLine = "  $([char]0x2502)  Checked $($inst.Checked) profile(s) and pack(s)"
     W ($iLine + (" " * [Math]::Max(0, 75 - $iLine.Length)) + "$([char]0x2502)") DarkGray
@@ -8046,6 +8492,36 @@ function Show-InstanceScan {
         foreach ($c in $inst.Configs) {
             Write-Host ""
             W "  $([char]0x2502)  $([char]0x26A0) CHEAT CONFIG  $c" Red
+        }
+        foreach ($t in $inst.XrayTextures) {
+            Write-Host ""
+            $tag = if ($t.Active) { "X-RAY TEXTURE (active)" } else { "X-RAY TEXTURE (present)" }
+            $col = if ($t.Active) { "Red" } else { "DarkYellow" }
+            W "  $([char]0x2502)  $([char]0x26A0) $tag  $($t.Pack)" $col
+            W "  $([char]0x2502)    $($t.Texture).png is $([int]($t.TransparentFraction * 100))% transparent" DarkYellow
+        }
+        foreach ($m in $inst.XrayModels) {
+            Write-Host ""
+            $tag = if ($m.Active) { "X-RAY MODEL (active)" } else { "X-RAY MODEL (present)" }
+            $col = if ($m.Active) { "Red" } else { "DarkYellow" }
+            W "  $([char]0x2502)  $([char]0x26A0) $tag  $($m.Pack)" $col
+            W "  $([char]0x2502)    $($m.Block).json has no visible elements" DarkYellow
+        }
+        foreach ($sh in $inst.ShaderXray) {
+            Write-Host ""
+            $what = if ($sh.Kind -eq 'lowalpha') { "SHADER $([char]0x2014) hardcoded low alpha" } else { "SHADER $([char]0x2014) discard in terrain (not proof alone)" }
+            W "  $([char]0x2502)  $([char]0x26A0) $what  $($sh.Pack)" DarkYellow
+            W "  $([char]0x2502)    $($sh.File)" DarkGray
+        }
+        foreach ($g in $inst.HighGamma) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) GAMMA $($g.Gamma) $([char]0x2014) above the slider's 0.0-1.0 range" DarkYellow
+            W "  $([char]0x2502)    $($g.Root)\options.txt" DarkGray
+        }
+        foreach ($cm in $configModFlagged) {
+            Write-Host ""
+            W "  $([char]0x2502)  $([char]0x26A0) $($cm.Mod) config $([char]0x2014) looks like an enabled feature worth asking about" DarkYellow
+            foreach ($fl in $cm.Flags) { W "  $([char]0x2502)    $fl" DarkGray }
         }
     }
     foreach ($u in ($inst.UnknownMain | Select-Object -First 5)) {
@@ -8079,6 +8555,42 @@ function Show-InstanceScan {
             @($inst.UnknownMain) `
             "The mainClass of every version profile was compared against the ones vanilla, Forge, Fabric and Quilt use." `
             "Not a finding $([char]0x2014) custom launchers and wrappers are ordinary. It is listed because an injected client also looks exactly like this." | Out-Null
+    }
+    if ($inst.XrayTextures.Count -gt 0) {
+        $activeT = @($inst.XrayTextures | Where-Object { $_.Active })
+        $level = if ($activeT.Count -gt 0) { "FAIL" } else { "WARN" }
+        Add-Finding $level "Launcher, packs & configs" "$($inst.XrayTextures.Count) resource-pack texture(s) make a solid block mostly transparent" `
+            @($inst.XrayTextures | ForEach-Object { "$($_.Texture).png $([int]($_.TransparentFraction * 100))% transparent, $(if($_.Active){'ACTIVE'}else{'present, not currently active'}) $([char]0x2014) $($_.Pack)" }) `
+            "Every resource pack's stone/deepslate/ore/bedrock textures were decoded (a from-scratch PNG reader, no external dependency) and checked for how much of the image is see-through." `
+            "The block is still solid $([char]0x2014) only the texture is gone. No legitimate pack, whatever its art style, has a reason to make ore or bedrock transparent; this is how x-ray works without a single line of Java." `
+            "" "$(if($activeT.Count -gt 0){'This pack is currently selected in options.txt - remove it and check what the person can see through walls without it.'}else{'This pack is not currently active. It is still worth asking why it is installed.'})" | Out-Null
+    }
+    if ($inst.XrayModels.Count -gt 0) {
+        $activeM = @($inst.XrayModels | Where-Object { $_.Active })
+        $level = if ($activeM.Count -gt 0) { "FAIL" } else { "WARN" }
+        Add-Finding $level "Launcher, packs & configs" "$($inst.XrayModels.Count) resource-pack block model(s) render nothing" `
+            @($inst.XrayModels | ForEach-Object { "$($_.Block).json $(if($_.Active){'ACTIVE'}else{'present, not currently active'}) $([char]0x2014) $($_.Pack)" }) `
+            "Every resource pack's block models for the same always-solid blocks were read for a literal empty elements array - the JSON says outright that the model has nothing to draw." `
+            "A block with no model renders nothing while the game still treats it as solid. Same effect as an x-ray texture, done through the model instead of the image." | Out-Null
+    }
+    if ($inst.ShaderXray.Count -gt 0) {
+        Add-Finding "WARN" "Launcher, packs & configs" "$($inst.ShaderXray.Count) shader file(s) in a resource/shaderpack worth a manual look" `
+            @($inst.ShaderXray | ForEach-Object { "$($_.Kind): $($_.File) $(if($_.Active){'(pack active)'}else{'(pack present)'})" }) `
+            "Core shaders (assets/minecraft/shaders/core, built into resource packs since 1.17) and Iris/OptiFine shaderpacks were scanned for a terrain fragment shader that either hardcodes a low, unconditional alpha or contains 'discard' at all." `
+            "A hardcoded low alpha makes every solid block uniformly see-through - that is the x-ray shader's actual mechanism, not a rendering style. 'discard' alone is much weaker: cutout rendering for leaves and glass edges is a completely ordinary reason a terrain shader discards a fragment." `
+            "" "This is pattern-matched GLSL text, not a real shader compiler $([char]0x2014) treat it as a lead to check by eye or by disabling the pack, never as proof on its own." | Out-Null
+    }
+    if ($inst.HighGamma.Count -gt 0) {
+        Add-Finding "WARN" "Launcher, packs & configs" "Gamma above the slider's own range (fullbright)" `
+            @($inst.HighGamma | ForEach-Object { "gamma $($_.Gamma) $([char]0x2014) $($_.Root)\options.txt" }) `
+            "options.txt's gamma value was read directly; the in-game brightness slider only ever writes 0.0 to 1.0." `
+            "A value above 1.0 most often comes from OptiFine's 'Full Bright' video setting - a supported client feature, not a technical exploit - and sometimes from a hand-edited options.txt doing the same thing without OptiFine. Either way it lights areas the game means to leave dark, which plenty of servers treat as a rule question the same way they treat x-ray." | Out-Null
+    }
+    if ($configModFlagged.Count -gt 0) {
+        Add-Finding "WARN" "Launcher, packs & configs" "$($configModFlagged.Count) mod config(s) contain what looks like an enabled feature worth asking about" `
+            @($configModFlagged | ForEach-Object { $mm = $_; @($mm.Flags | ForEach-Object { "$($mm.Mod): $_" }) }) `
+            "Xaero's Minimap/World Map, Tweakeroo, Litematica, Freecam and Baritone are among the most-used utility mods there are, so owning one is not a finding. Where a config file for one could be read, it was checked for text that LOOKS like a free-camera, cave-mode, entity-radar, flexible-placement or x-ray-style setting turned on." `
+            "The match is a loose, name-based pattern - not one exact config schema, since different mod versions spell the same setting differently - so it is never proof. A moderator has to open the file and read the line to know what it actually means for this server's rules." | Out-Null
     }
     if ($script:InstanceHits -eq 0 -and $inst.Checked -gt 0) {
         Add-Finding "OK" "Launcher, packs & configs" "Launcher profiles, resource packs and config folders $([char]0x2014) nothing out of place" `
@@ -9487,7 +9999,58 @@ function Run-PCscan {
 }
 
 if (-not $SkipMemoryCheck) {
-if ($SelfTest) { Invoke-SelfTest; return }
+
+function Invoke-PackScanSelfTest {
+    <#
+        Resource-pack / shader / config detection, pinned the same way
+        Invoke-SelfTest pins the verdict logic: real bytes in, exact answer
+        checked out. The PNG fixtures are tiny (4x4) real PNGs, base64-embedded
+        so this needs no test-data files shipped alongside the script.
+    #>
+    W "  AsyncAnalyzer self-test $([char]0x2014) resource pack / shader / config detection" Cyan
+    Write-Host ""
+    $pass = 0; $fail = 0
+    function Check([string]$Label, [bool]$Ok) {
+        if ($Ok) { $script:pngPass++ } else { $script:pngFail++ }
+        W ("  [$(if($Ok){'PASS'}else{'FAIL'})] " + $Label) $(if ($Ok) { "Green" } else { "Red" })
+    }
+    $script:pngPass = 0; $script:pngFail = 0
+
+    $opaquePng  = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR42mNISUn5j4wZSBcAAI1YIrHuBbCJAAAAAElFTkSuQmCC')
+    $xrayPng    = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFklEQVR42mNISUn5D8QMMMyAzCFOAADHAhPA4bXRxwAAAABJRU5ErkJggg==')
+    $rgbonlyPng = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR42mPgEpGDIwbiOABgdAPBBG3GkAAAAABJRU5ErkJggg==')
+
+    $o = Get-PngAlphaStats $opaquePng
+    Check "Opaque 4x4 RGBA decodes, low transparent fraction" ($o.Ok -and $o.HasAlpha -and $o.TransparentFraction -lt 0.3)
+    $x = Get-PngAlphaStats $xrayPng
+    Check "X-ray-shaped 4x4 RGBA decodes, high transparent fraction" ($x.Ok -and $x.HasAlpha -and $x.TransparentFraction -gt 0.5)
+    $g = Get-PngAlphaStats $rgbonlyPng
+    Check "RGB (no alpha channel) decodes, HasAlpha=false" ($g.Ok -and (-not $g.HasAlpha))
+    $bad = Get-PngAlphaStats ([byte[]]@(1,2,3))
+    Check "Malformed bytes: Ok=false, no throw" (-not $bad.Ok)
+    $empty = Get-PngAlphaStats $null
+    Check "Null input: Ok=false, no throw" (-not $empty.Ok)
+
+    Check "Config flag: tweakFreeCamera=true matches" ('"tweakFreeCamera": true' -match $script:xrayConfigFlagPattern)
+    Check "Config flag: tweakFlexibleBlockPlacement=true matches (word between halves)" ('"tweakFlexibleBlockPlacement": true' -match $script:xrayConfigFlagPattern)
+    Check "Config flag: caveMode=true matches" ('caveMode = true' -match $script:xrayConfigFlagPattern)
+    Check "Config flag: tweakFreeCamera=FALSE does not match" (-not ('"tweakFreeCamera": false' -match $script:xrayConfigFlagPattern))
+    Check "Config flag: unrelated setting does not match" (-not ('"someOtherSetting": true' -match $script:xrayConfigFlagPattern))
+
+    Check "Shader: hardcoded low alpha constant matches" ('fragColor.a = 0.15;' -match '(?im)\.a\s*=\s*0\.[0-4]\d*\s*;')
+    Check "Shader: alpha read from a variable does not match the constant pattern" (-not ('fragColor.a = albedo.a;' -match '(?im)\.a\s*=\s*0\.[0-4]\d*\s*;'))
+    Check "Shader: alpha assigned a high constant does not match (not low)" (-not ('fragColor.a = 0.9;' -match '(?im)\.a\s*=\s*0\.[0-4]\d*\s*;'))
+    Check "Shader: legitimate cutout discard is recognised (weaker signal)" ('if (albedo.a < 0.1) discard;' -match '\bdiscard\b')
+
+    $pass = $script:pngPass; $fail = $script:pngFail
+    Write-Host ""
+    if ($fail -eq 0) { W "  All $pass self-tests passed $([char]0x2014) pack/shader/config detection OK on this machine." Green }
+    else { W "  $fail self-test(s) FAILED $([char]0x2014) do not trust results until fixed." Red }
+    Write-Host ""
+}
+
+
+if ($SelfTest) { Invoke-SelfTest; Invoke-PackScanSelfTest; return }
 if ($HashOnly) { Invoke-HashOnly $HashOnly; return }
 
 if (Invoke-SelfElevate) { return }   # an elevated window took over; nothing left to do here
@@ -9574,8 +10137,11 @@ if ($Dev) {
     Write-Host ""
     # The jar-finding loop below reads $script:ScanTargets, not $ModPath - Dev
     # mode set $ModPath for the banner and nothing else, so every -Dev -DevPath
-    # run found 0 jars regardless of what was actually in the folder.
+    # run found 0 jars regardless of what was actually in the folder. Same story
+    # for Run-InstanceScan, which reads $script:ScanTargetDirs (only ever filled
+    # by Get-ScanTargets, which Dev mode skips) - it silently checked 0 folders.
     $script:ScanTargets = @($ModPath)
+    if (-not $script:ScanTargetDirs.Contains($ModPath)) { [void]$script:ScanTargetDirs.Add($ModPath) }
     $SkipSystemCheck  = $true
     $SkipServiceCheck = $true
     $SkipMemoryCheck  = $true
