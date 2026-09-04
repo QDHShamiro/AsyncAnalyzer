@@ -83,6 +83,10 @@ if ($Dev) {
     }
     W "  Target : " DarkGray -NoNewline; W $ModPath White
     Write-Host ""
+    # The jar-finding loop below reads $script:ScanTargets, not $ModPath - Dev
+    # mode set $ModPath for the banner and nothing else, so every -Dev -DevPath
+    # run found 0 jars regardless of what was actually in the folder.
+    $script:ScanTargets = @($ModPath)
     $SkipSystemCheck  = $true
     $SkipServiceCheck = $true
     $SkipMemoryCheck  = $true
@@ -142,13 +146,22 @@ if (-not $SkipModCheck) {
     # instance cannot hide. Everything downstream works per jar and records
     # FilePath, so nothing else in the loop has to change.
     $jarFiles = @()
+    # Which target each jar came from, so the loop below knows whether it may
+    # start on the cheap bytecode budget (an idle profile) or must always use
+    # the full one (the instance actually being watched). $script:IdleScanTargets
+    # is populated by Get-ScanTargets; empty when -Path/-Ask named a single
+    # folder directly, which then behaves like any primary target.
+    $script:JarOriginIdle = @{}
     foreach ($t in $script:ScanTargets) {
         if (-not (Test-Path $t -PathType Container)) {
             Add-ScanGap "Folder could not be read: $t"
             continue
         }
-        $jarFiles += @(Get-ChildItem -Path $t -Filter "*.jar" -ErrorAction SilentlyContinue)
-        $jarFiles += @(Get-ChildItem -Path $t -Filter "*.litemod" -ErrorAction SilentlyContinue)
+        $isIdleTarget = ($null -ne $script:IdleScanTargets) -and $script:IdleScanTargets.Contains($t)
+        $tJars = @(Get-ChildItem -Path $t -Filter "*.jar" -ErrorAction SilentlyContinue)
+        $tJars += @(Get-ChildItem -Path $t -Filter "*.litemod" -ErrorAction SilentlyContinue)
+        foreach ($tj in $tJars) { $script:JarOriginIdle[$tj.FullName] = $isIdleTarget }
+        $jarFiles += $tJars
     }
     $jarFiles = @($jarFiles)
     if ($script:_DevLimit) { $jarFiles = @($jarFiles | Select-Object -First $script:_DevLimit) }
@@ -183,11 +196,25 @@ if (-not $SkipModCheck) {
         $pre = Invoke-JarPrecompute $jarFiles
 
         $idx = 0
+        # An idle profile's own jars run on a fixed, cheap bytecode budget until
+        # something in THIS run earns the deep one - not $script:BcMaxClasses,
+        # which Set-AutoDepth may already have raised to 400 for the instance
+        # actually running. Once anything scores Review (30) or above, every jar
+        # after it - idle profiles included - gets the full budget: the same
+        # "widen the search" rule Request-DeepEscalation already applies to the
+        # PC-wide checks, reaching backward into the mod pass that finds it.
+        $idleQuickBudget = 40
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            Invoke-JarAnalysis $jar $pre[$jar.FullName]
+            $isIdleJar = [bool]$script:JarOriginIdle[$jar.FullName]
+            $budget = if ($isIdleJar -and -not $script:Escalated) { $idleQuickBudget } else { 0 }
+            $rec = Invoke-JarAnalysis $jar $pre[$jar.FullName] $budget
+            if (-not $script:Escalated -and $rec -and [int]$rec.Score -ge 50) {
+                SpinClear
+                Request-DeepEscalation "$($jar.Name) scored $($rec.Score)/100 during the quick pass"
+            }
         }
         SpinClear
 

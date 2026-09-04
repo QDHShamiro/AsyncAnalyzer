@@ -11,7 +11,7 @@
 # The four result lists are script-scope, so this appends to the same lists the
 # main loop fills. Counters are $script:-qualified for the same reason.
 # ---------------------------------------------------------------------------
-function Invoke-JarAnalysis($jar, $Pre = $null) {
+function Invoke-JarAnalysis($jar, $Pre = $null, [int]$MaxClassesOverride = 0) {
 
     # $Pre is the file reading done ahead of time on another core (84-parallel).
     # It is the SAME functions' output, so this is only a question of when the work
@@ -59,7 +59,15 @@ function Invoke-JarAnalysis($jar, $Pre = $null) {
         $feat = Get-JarFeatures $jar.FullName
     }
     $bcFeat = $null
-    if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }
+    # An idle profile's jars start on a cheaper budget than the global one Set-
+    # AutoDepth chose - it costs real time across a PC with several profiles, and
+    # the pre-filter already fully parses every class whose SYMBOLS look
+    # interesting regardless of this number (it only bounds the entropy/obfuscation
+    # STAT sample). The moment any jar this run scores Review or above, the caller
+    # escalates $script:BcMaxClasses for everything after it - including the rest
+    # of this same idle profile.
+    $bcBudget = if ($MaxClassesOverride -gt 0) { $MaxClassesOverride } else { $script:BcMaxClasses }
+    if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $bcBudget }
 
     $checkName = $jar.Name -replace '\.(temp|disabled|bak|old|backup)(\.jar)$','$2'
     $fnMatch   = Get-FilenameSimilarityMatch $checkName
@@ -147,6 +155,7 @@ function Invoke-JarAnalysis($jar, $Pre = $null) {
             if ($script:Share) { [void]$script:shareHashes.Add($hash) }
         }
     }
+    return $rec
 }
 
 # ---------------------------------------------------------------------------
@@ -205,7 +214,9 @@ function Invoke-LateFolderScan {
     foreach ($jar in $extra) {
         $i++
         Spin "[$i/$($extra.Count)] $($jar.Name)"
-        Invoke-JarAnalysis $jar $prel[$jar.FullName]
+        # The record is not used here (see the main loop for where it is) - voided
+        # so it does not leak into this function's own output stream.
+        [void](Invoke-JarAnalysis $jar $prel[$jar.FullName])
     }
     SpinClear
 

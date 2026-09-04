@@ -4727,6 +4727,7 @@ function Get-ScanTargets {
     W "  $([char]0x25CF) Finding what to scan..." DarkGray
     $targets = [System.Collections.Generic.List[string]]::new()
     $script:DuplicateFolderNotes = [System.Collections.Generic.List[string]]::new()
+    $script:IdleScanTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $found   = @(Find-MinecraftModFolders)
     # Alternative clients are handled separately below and are ALWAYS scanned, so
     # they must not be counted here - neither as the best guess nor as a skipped
@@ -4744,15 +4745,18 @@ function Get-ScanTargets {
             W "  ($($r.JarCount) mods)" DarkGray
             Write-DuplicatePathsNote $r
         }
-        # An install that is NOT open is scanned too. It used to be reported as a
-        # gap and skipped, which is backwards: the profile somebody is not playing
-        # is exactly where a jar gets parked while the one they ARE playing is
-        # being watched. A second Modrinth profile called "Cheats test" sat right
-        # next to the running one and was listed as "not scanned".
+        # An install that is NOT open is scanned too - the profile nobody is
+        # playing right now is exactly where a jar gets parked while the open one
+        # is watched. It is scanned CHEAPLY, not skipped and not scanned at full
+        # cost: see $script:IdleScanTargets / the bytecode-budget choice in
+        # 95-main.ps1. A jar scoring Review or above during that quick pass
+        # escalates the REST of the run - idle profiles included - to full depth,
+        # the same way a flagged mod already escalated the PC-wide checks.
         $idle = @($plain | Where-Object { -not $_.IsRunning })
         foreach ($i in $idle) {
             if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
-            W "  $([char]0x2713) Also scanning (not open): " DarkGray -NoNewline
+            [void]$script:IdleScanTargets.Add($i.Path)
+            W "  $([char]0x2713) Also scanning (not open, quick pass): " DarkGray -NoNewline
             W "$($i.Launcher)" Cyan -NoNewline
             if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
             W "  ($($i.JarCount) mods)" DarkGray
@@ -5843,7 +5847,7 @@ function Invoke-JarPrecompute($Jars) {
 # The four result lists are script-scope, so this appends to the same lists the
 # main loop fills. Counters are $script:-qualified for the same reason.
 # ---------------------------------------------------------------------------
-function Invoke-JarAnalysis($jar, $Pre = $null) {
+function Invoke-JarAnalysis($jar, $Pre = $null, [int]$MaxClassesOverride = 0) {
 
     # $Pre is the file reading done ahead of time on another core (84-parallel).
     # It is the SAME functions' output, so this is only a question of when the work
@@ -5891,7 +5895,15 @@ function Invoke-JarAnalysis($jar, $Pre = $null) {
         $feat = Get-JarFeatures $jar.FullName
     }
     $bcFeat = $null
-    if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $script:BcMaxClasses }
+    # An idle profile's jars start on a cheaper budget than the global one Set-
+    # AutoDepth chose - it costs real time across a PC with several profiles, and
+    # the pre-filter already fully parses every class whose SYMBOLS look
+    # interesting regardless of this number (it only bounds the entropy/obfuscation
+    # STAT sample). The moment any jar this run scores Review or above, the caller
+    # escalates $script:BcMaxClasses for everything after it - including the rest
+    # of this same idle profile.
+    $bcBudget = if ($MaxClassesOverride -gt 0) { $MaxClassesOverride } else { $script:BcMaxClasses }
+    if (-not $verified) { $bcFeat = Get-BytecodeFeatures $jar.FullName $bcBudget }
 
     $checkName = $jar.Name -replace '\.(temp|disabled|bak|old|backup)(\.jar)$','$2'
     $fnMatch   = Get-FilenameSimilarityMatch $checkName
@@ -5979,6 +5991,7 @@ function Invoke-JarAnalysis($jar, $Pre = $null) {
             if ($script:Share) { [void]$script:shareHashes.Add($hash) }
         }
     }
+    return $rec
 }
 
 # ---------------------------------------------------------------------------
@@ -6037,7 +6050,9 @@ function Invoke-LateFolderScan {
     foreach ($jar in $extra) {
         $i++
         Spin "[$i/$($extra.Count)] $($jar.Name)"
-        Invoke-JarAnalysis $jar $prel[$jar.FullName]
+        # The record is not used here (see the main loop for where it is) - voided
+        # so it does not leak into this function's own output stream.
+        [void](Invoke-JarAnalysis $jar $prel[$jar.FullName])
     }
     SpinClear
 
@@ -9557,6 +9572,10 @@ if ($Dev) {
     }
     W "  Target : " DarkGray -NoNewline; W $ModPath White
     Write-Host ""
+    # The jar-finding loop below reads $script:ScanTargets, not $ModPath - Dev
+    # mode set $ModPath for the banner and nothing else, so every -Dev -DevPath
+    # run found 0 jars regardless of what was actually in the folder.
+    $script:ScanTargets = @($ModPath)
     $SkipSystemCheck  = $true
     $SkipServiceCheck = $true
     $SkipMemoryCheck  = $true
@@ -9616,13 +9635,22 @@ if (-not $SkipModCheck) {
     # instance cannot hide. Everything downstream works per jar and records
     # FilePath, so nothing else in the loop has to change.
     $jarFiles = @()
+    # Which target each jar came from, so the loop below knows whether it may
+    # start on the cheap bytecode budget (an idle profile) or must always use
+    # the full one (the instance actually being watched). $script:IdleScanTargets
+    # is populated by Get-ScanTargets; empty when -Path/-Ask named a single
+    # folder directly, which then behaves like any primary target.
+    $script:JarOriginIdle = @{}
     foreach ($t in $script:ScanTargets) {
         if (-not (Test-Path $t -PathType Container)) {
             Add-ScanGap "Folder could not be read: $t"
             continue
         }
-        $jarFiles += @(Get-ChildItem -Path $t -Filter "*.jar" -ErrorAction SilentlyContinue)
-        $jarFiles += @(Get-ChildItem -Path $t -Filter "*.litemod" -ErrorAction SilentlyContinue)
+        $isIdleTarget = ($null -ne $script:IdleScanTargets) -and $script:IdleScanTargets.Contains($t)
+        $tJars = @(Get-ChildItem -Path $t -Filter "*.jar" -ErrorAction SilentlyContinue)
+        $tJars += @(Get-ChildItem -Path $t -Filter "*.litemod" -ErrorAction SilentlyContinue)
+        foreach ($tj in $tJars) { $script:JarOriginIdle[$tj.FullName] = $isIdleTarget }
+        $jarFiles += $tJars
     }
     $jarFiles = @($jarFiles)
     if ($script:_DevLimit) { $jarFiles = @($jarFiles | Select-Object -First $script:_DevLimit) }
@@ -9657,11 +9685,25 @@ if (-not $SkipModCheck) {
         $pre = Invoke-JarPrecompute $jarFiles
 
         $idx = 0
+        # An idle profile's own jars run on a fixed, cheap bytecode budget until
+        # something in THIS run earns the deep one - not $script:BcMaxClasses,
+        # which Set-AutoDepth may already have raised to 400 for the instance
+        # actually running. Once anything scores Review (30) or above, every jar
+        # after it - idle profiles included - gets the full budget: the same
+        # "widen the search" rule Request-DeepEscalation already applies to the
+        # PC-wide checks, reaching backward into the mod pass that finds it.
+        $idleQuickBudget = 40
         W "  Analyzing mods $([char]0x2014) verify hash, extract features, AI score..." DarkGray
         foreach ($jar in $jarFiles) {
             $idx++
             Spin "[$idx/$($script:TotalMods)] $($jar.Name)"
-            Invoke-JarAnalysis $jar $pre[$jar.FullName]
+            $isIdleJar = [bool]$script:JarOriginIdle[$jar.FullName]
+            $budget = if ($isIdleJar -and -not $script:Escalated) { $idleQuickBudget } else { 0 }
+            $rec = Invoke-JarAnalysis $jar $pre[$jar.FullName] $budget
+            if (-not $script:Escalated -and $rec -and [int]$rec.Score -ge 50) {
+                SpinClear
+                Request-DeepEscalation "$($jar.Name) scored $($rec.Score)/100 during the quick pass"
+            }
         }
         SpinClear
 

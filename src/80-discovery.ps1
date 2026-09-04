@@ -507,6 +507,7 @@ function Get-ScanTargets {
     W "  $([char]0x25CF) Finding what to scan..." DarkGray
     $targets = [System.Collections.Generic.List[string]]::new()
     $script:DuplicateFolderNotes = [System.Collections.Generic.List[string]]::new()
+    $script:IdleScanTargets = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $found   = @(Find-MinecraftModFolders)
     # Alternative clients are handled separately below and are ALWAYS scanned, so
     # they must not be counted here - neither as the best guess nor as a skipped
@@ -524,15 +525,18 @@ function Get-ScanTargets {
             W "  ($($r.JarCount) mods)" DarkGray
             Write-DuplicatePathsNote $r
         }
-        # An install that is NOT open is scanned too. It used to be reported as a
-        # gap and skipped, which is backwards: the profile somebody is not playing
-        # is exactly where a jar gets parked while the one they ARE playing is
-        # being watched. A second Modrinth profile called "Cheats test" sat right
-        # next to the running one and was listed as "not scanned".
+        # An install that is NOT open is scanned too - the profile nobody is
+        # playing right now is exactly where a jar gets parked while the open one
+        # is watched. It is scanned CHEAPLY, not skipped and not scanned at full
+        # cost: see $script:IdleScanTargets / the bytecode-budget choice in
+        # 95-main.ps1. A jar scoring Review or above during that quick pass
+        # escalates the REST of the run - idle profiles included - to full depth,
+        # the same way a flagged mod already escalated the PC-wide checks.
         $idle = @($plain | Where-Object { -not $_.IsRunning })
         foreach ($i in $idle) {
             if (-not $targets.Contains($i.Path)) { [void]$targets.Add($i.Path) }
-            W "  $([char]0x2713) Also scanning (not open): " DarkGray -NoNewline
+            [void]$script:IdleScanTargets.Add($i.Path)
+            W "  $([char]0x2713) Also scanning (not open, quick pass): " DarkGray -NoNewline
             W "$($i.Launcher)" Cyan -NoNewline
             if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
             W "  ($($i.JarCount) mods)" DarkGray
