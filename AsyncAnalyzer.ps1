@@ -4321,6 +4321,121 @@ function Get-SiblingInstanceRoot([string]$GameDir) {
     return ""
 }
 
+function Get-RealModFolderPath([string]$Path) {
+    <#
+        Resolves every JUNCTION/SYMLINK ancestor in the path, not just the leaf.
+        A launcher normally links its whole install root (%APPDATA%\ModrinthApp
+        pointing at a folder the user chose on another drive), never the
+        individual profile folder - so the leaf mods/ directory is never itself
+        a reparse point even when the path reaches a different physical location
+        than the one it names. Walking segment by segment catches that; checking
+        only the leaf would not.
+    #>
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+        $parts = $full -split '\\'
+        if ($parts.Count -lt 2) { return $full }
+        $cur = $parts[0] + '\'
+        for ($i = 1; $i -lt $parts.Count; $i++) {
+            $cur = Join-Path $cur $parts[$i]
+            for ($guard = 0; $guard -lt 8; $guard++) {
+                $item = $null
+                try { $item = Get-Item -LiteralPath $cur -Force -ErrorAction Stop } catch { break }
+                if (-not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { break }
+                $tgt = [string]$item.Target
+                if (-not $tgt) { break }
+                if (-not [System.IO.Path]::IsPathRooted($tgt)) {
+                    $tgt = [System.IO.Path]::GetFullPath((Join-Path (Split-Path $cur -Parent) $tgt))
+                }
+                if ($tgt.TrimEnd('\') -ieq $cur.TrimEnd('\')) { break }
+                $cur = $tgt.TrimEnd('\')
+            }
+        }
+        return $cur.TrimEnd('\')
+    } catch { return $Path.TrimEnd('\') }
+}
+
+function Get-ModFolderContentKey([string]$Path, [int]$JarCount) {
+    <#
+        A fingerprint of what is actually IN a mods folder: every jar's name,
+        size and last-write time. Two folders with the same fingerprint hold
+        the same files - a modpack copied to a second location rather than
+        linked, or the same physical folder reached by two paths a junction
+        walk could not resolve (a mapped network drive, a mount point outside
+        NTFS reparse points). Any single jar differing changes the hash, so a
+        copy that has since drifted is never folded in - it gets scanned.
+    #>
+    if ($JarCount -le 0) { return $null }
+    try {
+        $files = @([System.IO.Directory]::GetFiles($Path, '*.jar') | Sort-Object)
+        if ($files.Count -eq 0) { return $null }
+        $sb = [System.Text.StringBuilder]::new()
+        foreach ($f in $files) {
+            $fi = [System.IO.FileInfo]::new($f)
+            [void]$sb.Append($fi.Name).Append('|').Append($fi.Length).Append('|').Append($fi.LastWriteTimeUtc.Ticks).Append(';')
+        }
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($sb.ToString())
+        $sha1 = [System.Security.Cryptography.SHA1]::Create()
+        try { return [System.BitConverter]::ToString($sha1.ComputeHash($bytes)) -replace '-', '' }
+        finally { $sha1.Dispose() }
+    } catch { return $null }
+}
+
+function Merge-DuplicateModFolders($Results) {
+    <#
+        Two paths can name the same set of jars two ways: a real NTFS junction or
+        symlink (a launcher's %APPDATA% root pointing at a folder on another
+        drive - E:\ModrinthApp\profiles\X\mods and
+        C:\...\Roaming\ModrinthApp\profiles\X\mods naming one physical folder),
+        or two genuinely separate folders that happen to hold byte-for-byte the
+        same jars (a modpack copied rather than linked). Either way the analysis
+        is identical work done twice, and the report would show one mod flagged
+        under two paths as if two installs each needed their own verdict.
+
+        Physical-path resolution wins when it applies (it is certain); the
+        content fingerprint is the fallback for what resolution cannot reach.
+        A RUNNING duplicate always ends up as the surviving entry, whichever one
+        was found first - dropping that flag would report an open game as not
+        open, which is the one thing this tool cannot afford to get backwards.
+    #>
+    $out = [System.Collections.Generic.List[object]]::new()
+    $byReal = @{}
+    $byContent = @{}
+    foreach ($r in @($Results)) {
+        $real = (Get-RealModFolderPath $r.Path).ToLowerInvariant()
+        $key = Get-ModFolderContentKey $r.Path $r.JarCount
+        $survivor = $null
+        if ($byReal.ContainsKey($real)) { $survivor = $byReal[$real] }
+        elseif ($key -and $byContent.ContainsKey($key)) { $survivor = $byContent[$key] }
+
+        if ($null -eq $survivor) {
+            [void]$out.Add($r)
+            $byReal[$real] = $r
+            if ($key) { $byContent[$key] = $r }
+            continue
+        }
+
+        if ($r.IsRunning -and -not $survivor.IsRunning) {
+            $carried = [System.Collections.Generic.List[string]]::new()
+            [void]$carried.Add($survivor.Path)
+            if ($survivor.PSObject.Properties['DuplicatePaths']) { foreach ($x in $survivor.DuplicatePaths) { [void]$carried.Add($x) } }
+            Add-Member -InputObject $r -NotePropertyName 'DuplicatePaths' -NotePropertyValue $carried -Force
+            $idx = $out.IndexOf($survivor)
+            if ($idx -ge 0) { $out[$idx] = $r } else { [void]$out.Add($r) }
+            $byReal[$real] = $r
+            if ($key) { $byContent[$key] = $r }
+            continue
+        }
+
+        if (-not $survivor.PSObject.Properties['DuplicatePaths']) {
+            Add-Member -InputObject $survivor -NotePropertyName 'DuplicatePaths' -NotePropertyValue ([System.Collections.Generic.List[string]]::new())
+        }
+        [void]$survivor.DuplicatePaths.Add($r.Path)
+        if ($r.IsRunning) { $survivor.IsRunning = $true }
+    }
+    return @($out)
+}
+
 function Find-MinecraftModFolders {
     $runningJava = @(Get-Process javaw,java -ErrorAction SilentlyContinue)
 
@@ -4573,7 +4688,8 @@ function Find-MinecraftModFolders {
     } catch {}
     }
 
-    $sorted = $results | Sort-Object @{e={[int]$_.IsRunning};Descending=$true}, @{e='JarCount';Descending=$true}, @{e='LastWrite';Descending=$true}
+    $merged = Merge-DuplicateModFolders $results
+    $sorted = $merged | Sort-Object @{e={[int]$_.IsRunning};Descending=$true}, @{e='JarCount';Descending=$true}, @{e='LastWrite';Descending=$true}
     return @($sorted)
 }
 
@@ -4595,11 +4711,22 @@ function Get-ConfiguredPaths {
     return @($out | Select-Object -Unique)
 }
 
+function Write-DuplicatePathsNote($Entry) {
+    if (-not $Entry.PSObject.Properties['DuplicatePaths']) { return }
+    $dups = @($Entry.DuplicatePaths)
+    if ($dups.Count -eq 0) { return }
+    foreach ($d in $dups) {
+        W "  $([char]0x2713)   also reached as: $d $([char]0x2014) same jars, scanned once" DarkGray
+        [void]$script:DuplicateFolderNotes.Add("$d is the same files as $($Entry.Path)")
+    }
+}
+
 function Get-ScanTargets {
     # During a screenshare the instance that is OPEN is the one that matters: it is
     # the one being played, and it cannot be swapped out while you are watching.
     W "  $([char]0x25CF) Finding what to scan..." DarkGray
     $targets = [System.Collections.Generic.List[string]]::new()
+    $script:DuplicateFolderNotes = [System.Collections.Generic.List[string]]::new()
     $found   = @(Find-MinecraftModFolders)
     # Alternative clients are handled separately below and are ALWAYS scanned, so
     # they must not be counted here - neither as the best guess nor as a skipped
@@ -4615,6 +4742,7 @@ function Get-ScanTargets {
             W "$($r.Launcher)" Cyan -NoNewline
             if ($r.Instance) { W " / $($r.Instance)" White -NoNewline }
             W "  ($($r.JarCount) mods)" DarkGray
+            Write-DuplicatePathsNote $r
         }
         # An install that is NOT open is scanned too. It used to be reported as a
         # gap and skipped, which is backwards: the profile somebody is not playing
@@ -4628,6 +4756,7 @@ function Get-ScanTargets {
             W "$($i.Launcher)" Cyan -NoNewline
             if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
             W "  ($($i.JarCount) mods)" DarkGray
+            Write-DuplicatePathsNote $i
         }
     } elseif ($plain.Count -gt 0) {
         # Nothing open: scan every install that was found, not the best guess.
@@ -4637,6 +4766,7 @@ function Get-ScanTargets {
             W "$($i.Launcher)" Cyan -NoNewline
             if ($i.Instance) { W " / $($i.Instance)" White -NoNewline }
             W "  ($($i.JarCount) mods)" DarkGray
+            Write-DuplicatePathsNote $i
         }
         Add-ScanGap "No Minecraft was running, so nothing could be read out of a live game $([char]0x2014) an injected client leaves no file to find"
     }
@@ -4674,6 +4804,12 @@ function Get-ScanTargets {
             @($script:AltClients) `
             "The install folders of Lunar, Badlion, Feather, LabyMod and friends were located, and every mods/ or addons/ folder inside them was added to the scan." `
             "Owning one of these is completely normal. It is here because a jar parked in another client's folder is out of sight of a scan that only looks at .minecraft." | Out-Null
+    }
+    if ($script:DuplicateFolderNotes.Count -gt 0) {
+        Add-Finding "INFO" "Duplicate folders folded into one scan" "$($script:DuplicateFolderNotes.Count) path(s) point at files already scanned elsewhere" `
+            @($script:DuplicateFolderNotes) `
+            "A directory junction/symlink (a launcher's install root pointing at a folder on another drive) or two folders holding byte-for-byte the same jars, resolved so the analysis was not done twice." `
+            "Every jar in every listed path was still verified against the survivor's fingerprint - a copy that has since drifted even by one file is scanned on its own, not folded in." | Out-Null
     }
     foreach ($t in $targets) { if (-not $script:ScanTargetDirs.Contains($t)) { [void]$script:ScanTargetDirs.Add($t) } }
     Write-Host ""
