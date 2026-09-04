@@ -1050,6 +1050,20 @@ function Get-SelfSource {
     return $best
 }
 
+function New-ElevatedCommand([string]$Self, [string[]]$Flags, [string]$Log) {
+    <#
+        The command the elevated window runs. It notes in the log that it got as
+        far as running at all, runs the copy, and writes any terminating error to
+        the log and to the screen - so a window that closes, or is closed, leaves
+        the reason behind for the window that started it, which reads the log.
+    #>
+    $selfQ = "'" + ($Self -replace "'", "''") + "'"
+    $logQ  = "'" + ($Log  -replace "'", "''") + "'"
+    $run   = "& $selfQ " + ($Flags -join ' ')
+    return ("try { Set-Content -LiteralPath $logQ -Value ('elevated run started ' + (Get-Date -Format s) + ' on PowerShell ' + `$PSVersionTable.PSVersion) } catch {}; " +
+            "try { $run } catch { `$m = (`$_ | Out-String); try { Add-Content -LiteralPath $logQ -Value ('FAILED: ' + `$m) } catch {}; Write-Host `$m -ForegroundColor Red }")
+}
+
 function Invoke-SelfElevate {
     # Without admin the BAM history (which executables ran and were then deleted),
     # the Defender exclusion list and scheduled tasks cannot be read - and those are
@@ -1092,7 +1106,14 @@ function Invoke-SelfElevate {
             $self = $tempCopy
             W "  $([char]0x2139) Elevating THIS copy, not a fresh download: $self" DarkGray
         }
-        $inner = "& '" + ($self -replace "'", "''") + "' " + ($flags -join ' ')
+        # What the elevated window does is also written to a log, so a window
+        # that closes - or gets closed - leaves the reason behind. The window
+        # that started it reads that log below.
+        $logDir = Join-Path $env:APPDATA 'AsyncAnalyzer'
+        try { if (-not (Test-Path -LiteralPath $logDir)) { New-Item -ItemType Directory -Force -Path $logDir | Out-Null } } catch {}
+        $log = Join-Path $logDir 'elevated.log'
+        try { if (Test-Path -LiteralPath $log) { Remove-Item -LiteralPath $log -Force -ErrorAction Stop } } catch {}
+        $inner = New-ElevatedCommand $self $flags $log
         # -EncodedCommand, not -Command. -Command hands the text through the
         # Windows command line first, where every double quote is stripped, so a
         # -Path with a space in it arrived as two words. Base64 has nothing to strip.
@@ -1107,10 +1128,30 @@ function Invoke-SelfElevate {
         # -NoExit: this is a NEW window and the whole scan runs in it. Without it
         # the window closes the moment the scan ends - or the moment it fails -
         # and takes every line the staff member was reading with it.
-        Start-Process -FilePath $hostExe -Verb RunAs -ArgumentList @(
-            '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -ErrorAction Stop
-        W "  $([char]0x2713) Continuing in the elevated window." Green
-        return $true
+        $proc = Start-Process -FilePath $hostExe -Verb RunAs -ArgumentList @(
+            '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -PassThru -ErrorAction Stop
+        W "  $([char]0x2713) Continuing in the elevated window (watching for a few seconds that it starts)." Green
+        # A window that is gone within seconds did not run the scan. Say so HERE,
+        # where it can still be read, with what the log has - and carry on without
+        # Administrator, which is what declining the prompt does too.
+        $gone = $false
+        try { if ($proc) { $gone = $proc.WaitForExit(8000) } } catch {}
+        if (-not $gone) { return $true }
+        $code = $null
+        try { $code = $proc.ExitCode } catch {}
+        if ($tempCopy) { try { Remove-Item -LiteralPath $tempCopy -Force -ErrorAction Stop } catch {} }
+        Write-Host ""
+        W "  $([char]0x2717) The elevated window closed within seconds (exit code $code) and did not run the scan." Red
+        if (Test-Path -LiteralPath $log) {
+            W "    What it left in ${log}:" DarkGray
+            try { foreach ($ln in @(Get-Content -LiteralPath $log -Tail 12 -ErrorAction Stop)) { W "      $ln" DarkGray } } catch {}
+        } else {
+            W "    It wrote nothing to $log, so PowerShell did not get as far as starting the script." DarkGray
+        }
+        W "  $([char]0x2139) Continuing without Administrator in this window." DarkGray
+        Write-Host ""
+        Add-ScanGap "The elevated window closed at once, so this ran without Administrator $([char]0x2014) deleted-program history (BAM), Defender exclusions and scheduled tasks were NOT checked"
+        return $false
     } catch {
         # Declined, or nothing to elevate. The copy was for that window only.
         if ($tempCopy) { try { Remove-Item -LiteralPath $tempCopy -Force -ErrorAction Stop } catch {} }
