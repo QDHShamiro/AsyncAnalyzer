@@ -46,7 +46,7 @@ def build(tmp):
     for kind, names in (("cheat", ["KillAura", "Esp", "Flight", "Loader", "MixinSilentRot", "CoreModAura", "SelfWipe"]),
                         ("clean", ["Minimap", "ConfigBinder", "Keybinds",
                                    "MixinRender", "MixinFreelook", "CoreModPerf", "NativeUnpack",
-                                   "DebugDecompiler"])):
+                                   "DebugDecompiler", "ScatteredMove"])):
         for nm in names:
             jp = os.path.join(jars, "%s_%s.jar" % (kind, nm))
             subprocess.run(["jar", "cf", jp] + sorted(glob.glob(
@@ -59,8 +59,11 @@ def rules(r):
     120 classes because it speaks TLS, while a packed loader does it in nearly all
     of them. Counting absolutely made netty look like a dropper."""
     return {
-        # forging your own outgoing movement packet with a computed rotation
-        "aim": r["bc_movepacket_ratio"] > 0 and r["bc_rotation_ratio"] > 0,
+        # forging your own outgoing movement packet with a computed rotation, in
+        # the SAME class - not "this jar contains both APIs somewhere". See
+        # ScatteredMoveA/B below for the jar-wide-but-never-together case this
+        # narrowing exists for.
+        "aim": r["bc_aimcheat_ratio"] > 0,
         # drawing from a full entity sweep
         "esp": r["bc_render_ratio"] > 0 and r["bc_entityscan_ratio"] > 0,
         # decrypt-then-define-a-class, across most of the jar
@@ -351,6 +354,27 @@ def main():
                 "PASS" if ok else "FAIL", nm, r["bc_mixin"], r["bc_mixintarget"],
                 ",".join(r["mixin_areas"]) or "-", got, want))
 
+        # The false positive this narrowing exists for: a jar where movepacket and
+        # rotation are both present, but never in the same class - two unrelated
+        # utilities, not one aim-cheat module. This is not hypothetical: a real
+        # report scored Feather (a Fabric utility client) Likely 60 with this
+        # exact shape, and its own witness text named different classes for each
+        # half ("[pktlisten in aX.class, bB.class; motion in bI.class, bW.class]").
+        print("\n=== Same jar, different classes: must NOT read as one module ===")
+        jp = os.path.join(jars, "clean_ScatteredMove.jar")
+        r = bytecode.extract_jar(jp)
+        jarwide = r["bc_movepacket_ratio"] > 0 and r["bc_rotation_ratio"] > 0
+        sameclass = r.get("bc_aimcheat_ratio", 0) > 0
+        ok = jarwide and not sameclass
+        passed += ok
+        failed += (not ok)
+        print("  [%s] jar-wide movepacket+rotation=%s, same-class=%s (want jar-wide True, same-class False)" % (
+            "PASS" if ok else "FAIL", jarwide, sameclass))
+        ok2 = rules(r)["aim"] is False
+        passed += ok2
+        failed += (not ok2)
+        print("  [%s] rules()['aim'] on the scattered jar is False" % ("PASS" if ok2 else "FAIL"))
+
         # ---- every rule that fires must be able to say WHERE ------------------
         # "a class in here does X" is not something a moderator, or the person
         # being accused, can check. The report names the class the rule actually
@@ -388,12 +412,25 @@ def main():
         failed += (not ok)
         print("  [%s] %d rule firings had a witness to produce (needs 6+)" % (
             "PASS" if ok else "FAIL", fired))
-        # And the clean corpus must produce no firing at all to be witnessed.
+        # And the clean corpus must produce no firing at all to be witnessed - by
+        # the rule that actually scores, which for four of these five is now the
+        # SAME-CLASS derived ratio (see bytecode.PAIR_DEFS), not the raw jar-wide
+        # AND. ScatteredMoveA/B is a clean jar that deliberately has movepacket in
+        # one class and rotation in another - proving the old jar-wide check alone
+        # would have let it through, which is the false positive this rule exists
+        # to close. "loader/dropper" has no same-class variant (see verdict.py: it
+        # stays a percentage-of-jar threshold on purpose) so it keeps the raw check.
+        SAME_CLASS_KEY = {
+            "aim/killaura": "bc_aimcheat", "scaffold": "bc_scaffold",
+            "speed/no-fall": "bc_speedmotion", "target sweep": "bc_killaura",
+        }
         clean_fired = 0
         for jp in sorted(glob.glob(os.path.join(jars, "clean_*.jar"))):
             r = bytecode.extract_jar(jp)
-            for cats, _label in WITNESS_RULES:
-                if all(r[c + "_ratio"] > 0 for c in cats):
+            for cats, label in WITNESS_RULES:
+                dk = SAME_CLASS_KEY.get(label)
+                fired_here = (r.get(dk + "_ratio", 0) > 0) if dk else all(r[c + "_ratio"] > 0 for c in cats)
+                if fired_here:
                     clean_fired += 1
         ok = clean_fired == 0
         passed += ok

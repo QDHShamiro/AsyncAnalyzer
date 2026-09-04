@@ -207,6 +207,26 @@ DERIVED = {
     # compares against, never a call
     "bc_coretarget": lambda hits: False,    # set directly, not derived from others
 }
+
+# Paired behaviours that only mean "one purpose-built module" when the SAME
+# class carries both halves - not "this jar contains both APIs somewhere".
+# Jar-wide ratios also match a large multi-feature client where an unrelated
+# movement utility and an unrelated camera utility happen to coexist: Feather,
+# a Fabric utility client, scored a real report Likely 60 with two of these
+# pairs firing jar-wide while their own witness output named DIFFERENT classes
+# for each half - proof the pair was never in one class. Mirrors
+# $script:bcPairDefs in AsyncAnalyzer.ps1.
+PAIR_DEFS = {
+    "bc_aimcheat":      ("bc_movepacket", "bc_rotation"),
+    "bc_scaffold":      ("bc_blockplace", "bc_movepacket"),
+    "bc_speedmotion":   ("bc_movepacket", "bc_motion"),
+    "bc_containermove": ("bc_container", "bc_movepacket"),
+    "bc_killaura":      ("bc_entityscan", "bc_attack"),
+    "bc_antikb":        ("bc_pktlisten", "bc_motion"),
+    "bc_freecam":       ("bc_rotation", "bc_render"),
+}
+for _pk, _cats in PAIR_DEFS.items():
+    DERIVED[_pk] = (lambda cats: (lambda hits: all(c in hits for c in cats)))(_cats)
 _COMPILED = {k: re.compile("|".join(v)) for k, v in BEHAVIOUR.items()}
 
 # Names a dropper almost always reaches REFLECTIVELY, so they land in a string

@@ -162,6 +162,39 @@ caught, all 11 legit mixin variants clean. Parity between `ml/bytecode.py` and t
 PowerShell tables is machine-checked in `test_bytecode.py` — a silent drift there
 reopens the hole.
 
+## Same class, not same jar — the fourth hole (real false flag: Feather)
+A real report scored **Feather** (a Fabric utility client, `net.digitalingot.feather`)
+**Likely 60**, on two paired-behaviour rules that both fired **jar-wide**: pktlisten+motion
+(anti-knockback) and rotation+render (freecam). Each rule's own witness text proved the
+bug on the spot — `[pktlisten in aX.class, bB.class; motion in bI.class, bW.class]` names
+**different classes for each half**. Every real cheat module in `ml/corpus_src/cheat/`
+does both halves of a pair in ONE class (`KillAura0.java`: `setYRot`/`setXRot` and
+`ServerboundMovePlayerPacket` in the same `onTick()`), because that is how these are
+actually coded — one Module class per feature. A jar-wide `ratioA > 0 and ratioB > 0`
+check never required that; a client with hundreds of Mixin-injected classes has more than
+enough surface for two unrelated features to each trip one half by accident.
+
+Fixed the same way as the three holes above: gate narrower, not "trust the text more."
+`$script:bcPairDefs` (7 pairs: aimcheat, scaffold, speedmotion, containermove, killaura,
+antikb, freecam) is checked **inside the per-class loop** — same mechanism as `selfwipe` —
+so `$hit['aimcheat']` etc. is only set when one class carries both halves, and flows
+through the existing `ClassHits`/ratio/witness machinery for free. Each of the 7 verdict
+rules is now `if (sameClassRatio -gt 0) { 85/60 } elseif (jarWideOldCondition) { 35 }` —
+still present in the report, just never Likely/Confirmed on its own. `bc_crypto`+
+`bc_classload` (the dropper rule) is untouched on purpose: it is a percentage-of-jar
+threshold, not a presence check, and a real dropper legitimately splits decrypt/load
+across a Decryptor + Loader class pair.
+
+Regression-tested three ways: 7 new PS self-tests reproduce the exact scattered shape
+(`Bands = @("Review")`, never Likely/Confirmed) alongside the 13 existing same-class
+cases updated to set the new pair ratio; `ml/corpus_src/clean/ScatteredMoveA.java` +
+`ScatteredMoveB.java` is one compiled jar with movepacket in one class and rotation in
+another, asserted jar-wide-true / same-class-false; `ml/test_bytecode.py`'s "clean corpus
+fires nothing" check now asserts on the same-class key, not the raw AND, for the four
+pairs that have one. `$script:bcDerived` stays a literal array (not built from
+`$script:bcPairDefs.Keys`) on purpose — `test_bytecode.py`'s parity check greps it out of
+the source with a regex, and a computed expression reads back empty.
+
 ## Session model v3 - the behaviour rules finally reach the whole-scan verdict
 **The bug this fixes was real and quiet.** The whole-scan model saw the behaviour
 rules only through `flagged_ratio`, and a big modpack divides that away. Measured:

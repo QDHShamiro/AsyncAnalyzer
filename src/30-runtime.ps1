@@ -866,7 +866,27 @@ $script:bcBehaviour = [ordered]@{
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget', 'coretarget')
+# Paired behaviours that only mean "one purpose-built module" when the SAME
+# class carries both halves - not "this jar contains both APIs somewhere".
+# Jar-wide ratios also match a large multi-feature client where an unrelated
+# movement utility and an unrelated camera utility happen to coexist: Feather,
+# a Fabric utility client, scored Likely 60 with two of these pairs firing
+# jar-wide while their own witness text named DIFFERENT classes for each half
+# - proof the pair was never in one class. Mirrors ml/bytecode.py DERIVED.
+$script:bcPairDefs = [ordered]@{
+    'aimcheat'      = @('movepacket', 'rotation')
+    'scaffold'      = @('blockplace', 'movepacket')
+    'speedmotion'   = @('movepacket', 'motion')
+    'containermove' = @('container', 'movepacket')
+    'killaura'      = @('entityscan', 'attack')
+    'antikb'        = @('pktlisten', 'motion')
+    'freecam'       = @('rotation', 'render')
+}
+# A literal list, not built from $script:bcPairDefs.Keys: ml/test_bytecode.py's
+# parity check greps this exact line out of the source with a regex, and a
+# computed expression would read back as empty - a drift here fails SILENTLY,
+# so it has to stay something a regex can see.
+$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget', 'coretarget', 'aimcheat', 'scaffold', 'speedmotion', 'containermove', 'killaura', 'antikb', 'freecam')
 
 # --- reflective use of the same API ------------------------------------------
 #

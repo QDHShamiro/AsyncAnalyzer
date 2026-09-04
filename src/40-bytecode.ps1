@@ -322,6 +322,16 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp'] -and -not $hit['archive']) {
                 $hit['selfwipe'] = $true
             }
+            # Same-class pairing: see $script:bcPairDefs. A combination that means
+            # something only when ONE class does both halves, not when the jar does
+            # each half somewhere. Runs after mixin/transformer/reflection above, so
+            # a pair found through any of those three doors is caught here too.
+            foreach ($pairName in $script:bcPairDefs.Keys) {
+                if ($hit.ContainsKey($pairName)) { continue }
+                $bothHit = $true
+                foreach ($c in $script:bcPairDefs[$pairName]) { if (-not $hit.ContainsKey($c)) { $bothHit = $false; break } }
+                if ($bothHit) { $hit[$pairName] = $true }
+            }
             foreach ($k in $script:bcReflectiveNames.Keys) {
                 if ($hit.ContainsKey($k)) { continue }
                 foreach ($s in $cp.Strings) {

@@ -1844,7 +1844,27 @@ $script:bcBehaviour = [ordered]@{
 # library "something locates its own jar" and "something deletes a file" are
 # usually unrelated classes, which is exactly how the first version of this signal
 # matched sixteen legitimate bytecode libraries.
-$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget', 'coretarget')
+# Paired behaviours that only mean "one purpose-built module" when the SAME
+# class carries both halves - not "this jar contains both APIs somewhere".
+# Jar-wide ratios also match a large multi-feature client where an unrelated
+# movement utility and an unrelated camera utility happen to coexist: Feather,
+# a Fabric utility client, scored Likely 60 with two of these pairs firing
+# jar-wide while their own witness text named DIFFERENT classes for each half
+# - proof the pair was never in one class. Mirrors ml/bytecode.py DERIVED.
+$script:bcPairDefs = [ordered]@{
+    'aimcheat'      = @('movepacket', 'rotation')
+    'scaffold'      = @('blockplace', 'movepacket')
+    'speedmotion'   = @('movepacket', 'motion')
+    'containermove' = @('container', 'movepacket')
+    'killaura'      = @('entityscan', 'attack')
+    'antikb'        = @('pktlisten', 'motion')
+    'freecam'       = @('rotation', 'render')
+}
+# A literal list, not built from $script:bcPairDefs.Keys: ml/test_bytecode.py's
+# parity check greps this exact line out of the source with a regex, and a
+# computed expression would read back as empty - a drift here fails SILENTLY,
+# so it has to stay something a regex can see.
+$script:bcDerived = @('selfwipe', 'hiddenapi', 'mixintarget', 'coretarget', 'aimcheat', 'scaffold', 'speedmotion', 'containermove', 'killaura', 'antikb', 'freecam')
 
 # --- reflective use of the same API ------------------------------------------
 #
@@ -2272,6 +2292,16 @@ function Get-BytecodeFeatures([string]$JarPath, [int]$MaxClasses = 40) {
             if ($hit['selfpath'] -and $hit['filedelete'] -and -not $hit['nativetemp'] -and -not $hit['archive']) {
                 $hit['selfwipe'] = $true
             }
+            # Same-class pairing: see $script:bcPairDefs. A combination that means
+            # something only when ONE class does both halves, not when the jar does
+            # each half somewhere. Runs after mixin/transformer/reflection above, so
+            # a pair found through any of those three doors is caught here too.
+            foreach ($pairName in $script:bcPairDefs.Keys) {
+                if ($hit.ContainsKey($pairName)) { continue }
+                $bothHit = $true
+                foreach ($c in $script:bcPairDefs[$pairName]) { if (-not $hit.ContainsKey($c)) { $bothHit = $false; break } }
+                if ($bothHit) { $hit[$pairName] = $true }
+            }
             foreach ($k in $script:bcReflectiveNames.Keys) {
                 if ($hit.ContainsKey($k)) { continue }
                 foreach ($s in $cp.Strings) {
@@ -2694,9 +2724,17 @@ function Get-ModVerdict($ctx) {
         # The aim / killaura fingerprint, verified against real cheat source: forging your
         # own outgoing movement packet while writing a computed rotation into it. Measured
         # separation on the corpus was total - no legitimate mod fakes its own movement.
-        if ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
+        if ($bc.aimcheatRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation $([char]0x2014) the aim/killaura fingerprint; normal mods never do this" + (Get-BcWitness $bc @('movepacket','rotation')))
+            [void]$reasons.Add("Behaviour: forges its own movement packet while writing a computed rotation, in the same class $([char]0x2014) the aim/killaura fingerprint; normal mods never do this" + (Get-BcWitness $bc @('aimcheat')))
+        } elseif ($bc.movepacketRatio -gt 0 -and $bc.rotationRatio -gt 0) {
+            # Both exist in this jar, but never in the same class - the shape of a
+            # large multi-feature client (an unrelated movement utility and an
+            # unrelated camera/rotation utility), not one module doing both. This
+            # is the exact rule that scored Feather (a Fabric utility client)
+            # Likely 60: its own witness named different classes for each half.
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: forges a movement packet and separately writes a computed rotation, but never in the same class $([char]0x2014) not the aim/killaura fingerprint, which is one class doing both. Recorded because a large jar can carry unrelated movement and camera code that only looks like this from a jar-wide count" + (Get-BcWitness $bc @('movepacket','rotation')))
         }
         # Loader / dropper: decrypt something, then define a class out of the plaintext.
         if ($bc.cryptoRatio -ge 0.5 -and ($bc.classloadRatio -gt 0 -or $bc.reflectRatio -ge 0.5)) {
@@ -2707,17 +2745,26 @@ function Get-ModVerdict($ctx) {
         # lying to the server about where you are. Each of these pairs that forgery
         # with a second thing no legitimate mod combines it with. Measured on the
         # corpus at 0 hits across 405 clean jars, 177 of them real libraries.
-        if ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+        if ($bc.scaffoldRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement" + (Get-BcWitness $bc @('blockplace','movepacket')))
+            [void]$reasons.Add("Behaviour: places blocks while forging its own movement packet, in the same class $([char]0x2014) the scaffold/tower fingerprint. A schematic printer places blocks too, but through the game's own interaction system and without touching movement" + (Get-BcWitness $bc @('scaffold')))
+        } elseif ($bc.blockplaceRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: places blocks and separately forges a movement packet, but never in the same class $([char]0x2014) not the scaffold/tower fingerprint, which is one class doing both" + (Get-BcWitness $bc @('blockplace','movepacket')))
         }
-        if ($bc.movepacketRatio -gt 0 -and $bc.motionRatio -gt 0) {
+        if ($bc.speedmotionRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match $([char]0x2014) speed / no-fall / blink. The game never produced this movement" + (Get-BcWitness $bc @('movepacket','motion')))
+            [void]$reasons.Add("Behaviour: writes its own velocity and then forges the movement packet to match, in the same class $([char]0x2014) speed / no-fall / blink. The game never produced this movement" + (Get-BcWitness $bc @('speedmotion')))
+        } elseif ($bc.movepacketRatio -gt 0 -and $bc.motionRatio -gt 0) {
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: writes velocity and separately forges a movement packet, but never in the same class $([char]0x2014) not the speed/no-fall/blink fingerprint, which is one class doing both" + (Get-BcWitness $bc @('movepacket','motion')))
         }
-        if ($bc.containerRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+        if ($bc.containermoveRatio -gt 0) {
             $score = [Math]::Max($score, 85); $bhv = [Math]::Max($bhv, 85)
-            [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement" + (Get-BcWitness $bc @('container','movepacket')))
+            [void]$reasons.Add("Behaviour: clicks inventory slots while forging movement packets, in the same class $([char]0x2014) moving with a container open, which the game does not allow. Inventory sorting mods click slots and never touch movement" + (Get-BcWitness $bc @('containermove')))
+        } elseif ($bc.containerRatio -gt 0 -and $bc.movepacketRatio -gt 0) {
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: clicks inventory slots and separately forges a movement packet, but never in the same class $([char]0x2014) not the container/movement fingerprint, which is one class doing both" + (Get-BcWitness $bc @('container','movepacket')))
         }
         # Strong, but not the same order of certainty as forging movement, so these
         # flag rather than confirm.
@@ -2725,25 +2772,34 @@ function Get-ModVerdict($ctx) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: sends its own movement packets and never reads the keyboard $([char]0x2014) the movement is not coming from the player" + (Get-BcWitness $bc @('movepacket')))
         }
-        if ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
+        if ($bc.killauraRatio -gt 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep $([char]0x2014) killaura / reach / triggerbot pick their target this way" + (Get-BcWitness $bc @('entityscan','attack')))
+            [void]$reasons.Add("Behaviour: attacks entities picked out of a full entity sweep, in the same class $([char]0x2014) killaura / reach / triggerbot pick their target this way" + (Get-BcWitness $bc @('killaura')))
+        } elseif ($bc.entityscanRatio -gt 0 -and $bc.attackRatio -gt 0) {
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: sweeps every entity and separately attacks, but never in the same class $([char]0x2014) not the killaura/reach targeting fingerprint, which is one class doing both. A minimap's entity radar and an unrelated auto-fish module can produce this from two unrelated classes" + (Get-BcWitness $bc @('entityscan','attack')))
         }
         if ($bc.attackRatio -gt 0 -and $bc.inputRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: attacks without ever reading a key or mouse button $([char]0x2014) the hits are not coming from the player (autoclicker / triggerbot)" + (Get-BcWitness $bc @('attack')))
         }
-        if ($bc.pktlistenRatio -gt 0 -and $bc.motionRatio -gt 0) {
+        if ($bc.antikbRatio -gt 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back" + (Get-BcWitness $bc @('pktlisten','motion')))
+            [void]$reasons.Add("Behaviour: intercepts incoming packets and rewrites the player's velocity, in the same class $([char]0x2014) anti-knockback / velocity. A replay recorder listens to packets and never writes motion back" + (Get-BcWitness $bc @('antikb')))
+        } elseif ($bc.pktlistenRatio -gt 0 -and $bc.motionRatio -gt 0) {
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: listens to incoming packets and separately rewrites velocity, but never in the same class $([char]0x2014) not the anti-knockback fingerprint, which is one class doing both" + (Get-BcWitness $bc @('pktlisten','motion')))
         }
         if ($bc.blockbreakRatio -gt 0 -and $bc.inputRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
             [void]$reasons.Add("Behaviour: breaks blocks without reading input $([char]0x2014) nuker. A vein miner breaks blocks too, but only while the player is mining" + (Get-BcWitness $bc @('blockbreak')))
         }
-        if ($bc.rotationRatio -gt 0 -and $bc.renderRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
+        if ($bc.freecamRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
             $score = [Math]::Max($score, 60); $bhv = [Math]::Max($bhv, 60)
-            [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them" + (Get-BcWitness $bc @('rotation','render')))
+            [void]$reasons.Add("Behaviour: writes the player's look direction and renders from it, in the same class $([char]0x2014) freecam. A third-person camera derives its position from the player instead of writing to them" + (Get-BcWitness $bc @('freecam')))
+        } elseif ($bc.rotationRatio -gt 0 -and $bc.renderRatio -gt 0 -and $bc.movepacketRatio -eq 0) {
+            $score = [Math]::Max($score, 35); $bhv = [Math]::Max($bhv, 35)
+            [void]$reasons.Add("Behaviour: writes the look direction and separately renders, but never in the same class $([char]0x2014) not the freecam fingerprint, which is one class doing both. A large client can carry an unrelated rotation feature and an unrelated rendering feature with nothing connecting them" + (Get-BcWitness $bc @('rotation','render')))
         }
         # NOT a rule. A jar that locates its own file and deletes it is exactly the
         # wipe pattern, and it is still measured ($bc.selfwipeRatio) - but it does
@@ -3053,7 +3109,13 @@ function Invoke-SelfTest {
         @{ Label = "Cheat hiding behind a legit mod id"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; HiddenPayload = 3; PackageHits = @('org/chainlibs'); StrongStrings = @('AutoCrystal','KillAura'); HighEntropyPct = 0.4; AvgEntropy = 7.0; ReflectionCount = 4 }) } }
         @{ Label = "Legit mod tampered with (agent added)"; Bands = @("Confirmed"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ JavaAgent = $true; ReflectionCount = 3 }) } }
         @{ Label = "Real verified mod shipping its own agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true }) } }
-        @{ Label = "Aim cheat by behaviour alone"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0 }) } }
+        @{ Label = "Aim cheat by behaviour alone"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0; aimcheatRatio = 1.0 }) } }
+        # Regression: this is the exact shape a real report scored Likely 60 by
+        # mistake - Feather (a Fabric utility client) had a movement-forging class
+        # and a rotation-writing class that were never the same class, and its own
+        # witness output named two different classes for each half. Jar-wide
+        # co-presence must never be enough on its own; only Review.
+        @{ Label = "Movepacket + rotation, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Chat macro (packet, no rotation)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Minimap w/ mob radar, unverified"; Bands = @("ServerRule"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
         @{ Label = "Minimap w/ mob radar, verified"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; entityscanRatio = 1.0 }) } }
@@ -3070,14 +3132,14 @@ function Invoke-SelfTest {
         # Silent rotations: the target is named in the annotation, so movepacket and
         # rotation are both found in strings rather than in the symbol table. Same
         # rule, same band - the mixin only changes where the evidence was read from.
-        @{ Label = "Silent rotations via a packet mixin"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        @{ Label = "Silent rotations via a packet mixin"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0; aimcheatRatio = 1.0 }) } }
         @{ Label = "Mixin that moves the player (jetpack)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ mixinRatio = 1.0; mixintargetRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0 }) } }
         # A class transformer is how half of Forge works and OptiFine is a tweaker,
         # so installing one must never move the band on its own.
         @{ Label = "Forge coremod, rewrites the renderer"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; renderRatio = 1.0 }) } }
-        @{ Label = "Coremod that spoofs the reported aim"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; coretargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        @{ Label = "Coremod that spoofs the reported aim"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ transformerRatio = 1.0; coretargetRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0; aimcheatRatio = 1.0 }) } }
         # 1.8.9 in its own names: same rules, same bands, MCP vocabulary.
-        @{ Label = "1.8.9 killaura (MCP names)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0; entityscanRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "1.8.9 killaura (MCP names)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; attackRatio = 1.0; entityscanRatio = 1.0; inputRatio = 1.0; aimcheatRatio = 1.0; killauraRatio = 1.0 }) } }
         @{ Label = "1.8.9 sprint mod (MCP names)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Agent injector (Premain + retransform)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ JavaAgent = $true; AgentRetransform = $true; AgentClass = "net.java.a.b"; SingleCharClsPct = 0.4 }) } }
         # The other half of the agent rule, and the reason it has two halves:
@@ -3092,27 +3154,39 @@ function Invoke-SelfTest {
         @{ Label = "Verified mod that ships an agent"; Bands = @("Clean"); Over = @{ Verified = $true; Features = (New-TestFeatures @{ JavaAgent = $true; AgentClass = "org.spongepowered.asm.launch.MixinAgent" }) } }
         @{ Label = "Architectury jar (fabric+forge only)"; Bands = @("Clean"); Over = @{ LegitModId = $true; Features = (New-TestFeatures @{ LoaderIds = @('fabric', 'forge'); ReflectionCount = 2 }) } }
         # ---- the behaviour families, each against the legit mod it resembles ----
-        @{ Label = "Scaffold (places + forges movement)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Scaffold (places + forges movement)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; movepacketRatio = 1.0; rotationRatio = 1.0; inputRatio = 1.0; scaffoldRatio = 1.0; aimcheatRatio = 1.0 }) } }
+        @{ Label = "Block-placer + movement forger, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; movepacketRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Schematic printer (places on a key)"; Bands = @("ServerRule"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; renderRatio = 1.0 }) } }
-        @{ Label = "Speed/no-fall (velocity + forged move)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Inventory-move (slots + forged move)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; movepacketRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Speed/no-fall (velocity + forged move)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0; speedmotionRatio = 1.0 }) } }
+        @{ Label = "Velocity writer + movement forger, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; motionRatio = 1.0; inputRatio = 1.0; speedmotionRatio = 0.0 }) } }
+        @{ Label = "Inventory-move (slots + forged move)"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; movepacketRatio = 1.0; inputRatio = 1.0; containermoveRatio = 1.0 }) } }
+        @{ Label = "Container clicker + movement forger, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; movepacketRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Inventory sorting (slots on a key)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Obfuscated inventory sorter"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ SingleCharClsPct = 0.7; HighEntropyPct = 0.5; AvgEntropy = 7.0 }); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0; ObfNameRatio = 0.8; StrReadableRatio = 0.1 }) } }
         @{ Label = "Nuker (breaks blocks, no input)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockbreakRatio = 1.0 }) } }
         @{ Label = "Vein miner (breaks on a key)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockbreakRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Triggerbot (attacks, no input)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ attackRatio = 1.0; entityscanRatio = 1.0 }) } }
+        @{ Label = "Triggerbot (attacks, no input)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ attackRatio = 1.0; entityscanRatio = 1.0; killauraRatio = 1.0 }) } }
+        @{ Label = "Entity sweep + attack, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ attackRatio = 1.0; entityscanRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Reach display (crosshair, no attack)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Velocity (packet listen + motion)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ pktlistenRatio = 1.0; motionRatio = 1.0 }) } }
+        @{ Label = "Velocity (packet listen + motion)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ pktlistenRatio = 1.0; motionRatio = 1.0; antikbRatio = 1.0 }) } }
+        # This exact shape - pktlisten and motion both present, spread across
+        # different classes - is what the real Feather report showed for its
+        # anti-knockback finding: "[pktlisten in aX.class, bB.class; motion in
+        # bI.class, bW.class]". Never Likely on its own.
+        @{ Label = "Packet listener + velocity writer, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ pktlistenRatio = 1.0; motionRatio = 1.0 }) } }
         @{ Label = "Replay recorder (listen, no motion)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ pktlistenRatio = 1.0; renderRatio = 1.0 }) } }
-        @{ Label = "Freecam (writes rotation + renders)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0 }) } }
+        @{ Label = "Freecam (writes rotation + renders)"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0; freecamRatio = 1.0 }) } }
+        # The Feather report's other finding: "[render in A.class, aC.class]" -
+        # rotation was written somewhere else entirely. Never Likely on its own.
+        @{ Label = "Rotation writer + renderer, never the same class"; Bands = @("Review"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ rotationRatio = 1.0; renderRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Third-person camera (renders only)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ renderRatio = 1.0 }) } }
-        @{ Label = "Baritone-style pathing"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0 }) } }
+        @{ Label = "Baritone-style pathing"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; aimcheatRatio = 1.0 }) } }
         # A real Baritone jar: it ships baritone/ classes, which is an identity
         # match, so it is flagged for THAT rather than through the freecam rule it
         # happened to trip on the way past.
         @{ Label = "A jar that ships Baritone"; Bands = @("Likely", "Confirmed"); Over = @{ Features = (New-TestFeatures @{ PackageHits = @("baritone/") }); Bytecode = (New-TestBytecode @{ rotationRatio = 0.3; renderRatio = 0.3; inputRatio = 0.4 }) } }
         @{ Label = "Baritone by filename, no packages read"; Bands = @("Likely", "Confirmed"); Over = @{ FilenameClient = $true; FilenameToken = "baritone"; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ inputRatio = 1.0 }) } }
-        @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0 }) } }
+        @{ Label = "Printer that ALSO forges movement"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ blockplaceRatio = 1.0; inputRatio = 1.0; movepacketRatio = 1.0; scaffoldRatio = 1.0 }) } }
         @{ Label = "Known cheat hash beats the clean cap"; Bands = @("Confirmed"); Over = @{ HashKnownCheat = $true; Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ containerRatio = 1.0; inputRatio = 1.0 }) } }
         # This case used to expect Clean, and said "measured, not accused". It was
         # right to be careful and wrong to stop there: the rule was never given a
@@ -3132,7 +3206,7 @@ function Invoke-SelfTest {
         @{ Label = "Mod that reads its own jar location"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ selfpathRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Jetpack mod (writes velocity)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{}); Bytecode = (New-TestBytecode @{ motionRatio = 1.0; inputRatio = 1.0 }) } }
         @{ Label = "Update checker (http + reflection)"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ netRatio = 1.0; reflectRatio = 1.0; inputRatio = 1.0 }) } }
-        @{ Label = "Aim cheat hidden behind reflection"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 4 }); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; reflectRatio = 1.0; hiddenapiRatio = 1.0 }) } }
+        @{ Label = "Aim cheat hidden behind reflection"; Bands = @("Confirmed"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 4 }); Bytecode = (New-TestBytecode @{ movepacketRatio = 1.0; rotationRatio = 1.0; reflectRatio = 1.0; hiddenapiRatio = 1.0; aimcheatRatio = 1.0 }) } }
         @{ Label = "Compat shim reflecting on a MC class"; Bands = @("Clean"); Over = @{ Features = (New-TestFeatures @{ ReflectionCount = 3 }); Bytecode = (New-TestBytecode @{ reflectRatio = 1.0; inputRatio = 1.0 }) } }
     )
     $pass = 0; $fail = 0

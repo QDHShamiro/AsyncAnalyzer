@@ -120,37 +120,59 @@ def verdict(raw):
     # rule rather than a technical fact. It renames the band; it never raises it.
     policy = False
     if bc.get("classes_parsed", 0) > 0:
-        # aim/killaura: forging your own movement packet with a computed rotation
-        if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_rotation_ratio", 0) > 0:
+        # aim/killaura: forging your own movement packet with a computed rotation,
+        # in the SAME class. Both present but never together = a large jar with
+        # unrelated movement and camera code, not one module - Review only. This
+        # is the exact rule that scored a real utility client (Feather) Likely 60.
+        if bc.get("bc_aimcheat_ratio", 0) > 0:
             score = max(score, 85)
+        elif bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_rotation_ratio", 0) > 0:
+            score = max(score, 35)
         # dropper: decrypt, then define a class from the plaintext
         if bc.get("bc_crypto_ratio", 0) >= 0.5 and (
                 bc.get("bc_classload_ratio", 0) > 0 or bc.get("bc_reflect_ratio", 0) >= 0.5):
             score = max(score, 85)
         # Forging movement paired with a second thing no legitimate mod combines it
-        # with. Measured at 0 hits across 405 clean jars, 177 of them real libraries.
-        if bc.get("bc_blockplace_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
+        # with, in the same class. Measured at 0 hits across 405 clean jars, 177 of
+        # them real libraries.
+        if bc.get("bc_scaffold_ratio", 0) > 0:
             score = max(score, 85)          # scaffold / tower
-        if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_motion_ratio", 0) > 0:
+        elif bc.get("bc_blockplace_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
+            score = max(score, 35)
+        if bc.get("bc_speedmotion_ratio", 0) > 0:
             score = max(score, 85)          # speed / no-fall / blink
-        if bc.get("bc_container_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
+        elif bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_motion_ratio", 0) > 0:
+            score = max(score, 35)
+        if bc.get("bc_containermove_ratio", 0) > 0:
             score = max(score, 85)          # inventory-move
+        elif bc.get("bc_container_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) > 0:
+            score = max(score, 35)
         if bc.get("bc_instrument_ratio", 0) > 0:
             score = max(score, 80)
         # Strong, but not the same order of certainty -> flag, do not confirm.
         if bc.get("bc_movepacket_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) == 0:
             score = max(score, 60)          # movement not coming from the player
-        if bc.get("bc_entityscan_ratio", 0) > 0 and bc.get("bc_attack_ratio", 0) > 0:
+        if bc.get("bc_killaura_ratio", 0) > 0:
             score = max(score, 60)          # killaura / reach / triggerbot targeting
+        elif bc.get("bc_entityscan_ratio", 0) > 0 and bc.get("bc_attack_ratio", 0) > 0:
+            score = max(score, 35)
         if bc.get("bc_attack_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) == 0:
             score = max(score, 60)          # autoclicker / triggerbot
-        if bc.get("bc_pktlisten_ratio", 0) > 0 and bc.get("bc_motion_ratio", 0) > 0:
+        # The other half of the real false positive: pktlisten and motion both
+        # present, spread across different classes ("[pktlisten in aX.class,
+        # bB.class; motion in bI.class, bW.class]" in the report that triggered
+        # this). Never Likely on a jar-wide count alone.
+        if bc.get("bc_antikb_ratio", 0) > 0:
             score = max(score, 60)          # velocity / anti-knockback
+        elif bc.get("bc_pktlisten_ratio", 0) > 0 and bc.get("bc_motion_ratio", 0) > 0:
+            score = max(score, 35)
         if bc.get("bc_blockbreak_ratio", 0) > 0 and bc.get("bc_input_ratio", 0) == 0:
             score = max(score, 60)          # nuker
-        if (bc.get("bc_rotation_ratio", 0) > 0 and bc.get("bc_render_ratio", 0) > 0
-                and bc.get("bc_movepacket_ratio", 0) == 0):
+        if bc.get("bc_freecam_ratio", 0) > 0 and bc.get("bc_movepacket_ratio", 0) == 0:
             score = max(score, 60)          # freecam
+        elif (bc.get("bc_rotation_ratio", 0) > 0 and bc.get("bc_render_ratio", 0) > 0
+                and bc.get("bc_movepacket_ratio", 0) == 0):
+            score = max(score, 35)
         # A mod that finds its OWN jar and deletes it. Measured: 0 of 179 real
         # libraries, caught on cheat/SelfWipe.java, and NOT caught on
         # clean/NativeUnpack.java - the library that unpacks a native to temp
