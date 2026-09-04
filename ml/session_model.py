@@ -210,6 +210,20 @@ def verdict(raw, weights=None, intercept=None):
     # one too - so it flags for a person and does not auto-label anything.
     if raw.get("instance_agent", 0) > 0:
         score = max(score, 60)
+    # Injected/self-destructing-client evidence, mirrored from Get-SessionVerdict
+    # in AsyncAnalyzer.ps1. Each has no innocent second reading by the time it
+    # reaches here, so each is a hard rule rather than a model feature - same
+    # treatment as instance_agent and macro_named.
+    if raw.get("manual_map", 0) > 0:
+        score = max(score, 85)
+    if raw.get("attach_agent", 0) > 0:
+        score = max(score, 85)
+    if raw.get("dll_gone", 0) > 0:
+        score = max(score, 85)
+    if raw.get("defender_detect", 0) > 0:
+        score = max(score, 85)
+    if raw.get("exec_trace", 0) > 0:
+        score = max(score, 85)
     # An autoclicker is not a mod and never appears in the mods folder. A script
     # that repeats mouse input IN A LOOP and names the Minecraft window, the
     # launcher or javaw has no second reading. These reach the verdict as hard
@@ -252,6 +266,11 @@ def label_for(raw):
         and raw.get("log_cheat", 0) == 0
         and raw.get("instance_cheat", 0) == 0
         and raw.get("instance_agent", 0) == 0
+        and raw.get("manual_map", 0) == 0
+        and raw.get("attach_agent", 0) == 0
+        and raw.get("dll_gone", 0) == 0
+        and raw.get("defender_detect", 0) == 0
+        and raw.get("exec_trace", 0) == 0
         and raw.get("verified", 0) >= 0.6 * raw.get("total_mods", 0)
     ):
         return 0

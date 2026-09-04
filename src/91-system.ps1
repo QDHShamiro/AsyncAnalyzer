@@ -321,6 +321,11 @@ function Run-SystemChecks {
                 "HackTool/Injector/Trojan is Defender's own classification, not a name match here $([char]0x2014) Defender inspected the file's actual behaviour before flagging it." `
                 "Windows Security's own detection log." `
                 "The file is very likely already quarantined or removed by Defender itself; check Protection History in Windows Security for what happened to it."
+            # Only the HackTool/Injector/Trojan tier reaches the whole-scan hard
+            # rule - the WARN tier (adware, PUA, generic) still counts toward
+            # sys_issues through Add-SysCheat, same as everything else in "PC
+            # state", but is not certain enough on its own to force a band.
+            $script:Evidence.DefenderDetect += $mpFail.Count
         }
         if ($mpWarn.Count -gt 0) {
             Add-SysCheat "WARN" "Windows Defender recorded other detections near the game or Java itself:" $mpWarn

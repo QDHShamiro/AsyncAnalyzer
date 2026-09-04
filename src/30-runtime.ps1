@@ -404,6 +404,18 @@ function Get-SessionRaw {
         # client. None of it is in the mods folder, all of it outlives the jar.
         instance_cheat   = [int]$script:InstanceHits
         instance_agent   = [int]$script:InstanceAgents
+        # Injected/self-destructing-client evidence: each of these has no
+        # innocent second reading by the time it reaches here (a manually
+        # mapped DLL, an agent attached with corroborating heap strings, a
+        # loaded DLL whose file is gone, a Defender HackTool/Injector/Trojan
+        # detection, a shortcut to a known cheat client that no longer
+        # exists), so each is a hard rule in Get-SessionVerdict rather than a
+        # model feature - same treatment as instance_agent and macro_named.
+        manual_map       = [int]$ev.ManualMap
+        attach_agent     = [int]$ev.AttachAgent
+        dll_gone         = [int]$ev.DllGoneMissing
+        defender_detect  = [int]$ev.DefenderDetect
+        exec_trace       = [int]$ev.ExecTrace
     }
 }
 
@@ -478,6 +490,23 @@ function Get-SessionVerdict($raw) {
     # launch. One step below the rest, because a profiler or a dev setup can carry
     # one too - so it flags for a person and teaches the model nothing.
     if ($raw.instance_agent -gt 0) { $score = [Math]::Max($score, 60); [void]$reasons.Add("$($raw.instance_agent) launcher profile(s) attach a Java agent at startup $([char]0x2014) that is how an injected client is loaded, and the path is in the report") }
+    # Manually mapped code has no innocent explanation: LoadLibrary never produces
+    # MEM_PRIVATE memory, and the JIT never starts a region with a PE header.
+    if ($raw.manual_map -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.manual_map) region(s) of manually-mapped code found live in the game's memory $([char]0x2014) a DLL loaded without LoadLibrary, so no module list or signature check could ever have seen it") }
+    # instrument.dll with no -javaagent, corroborated by agentmain/Agent-Class in
+    # the heap, capped out at the JVM layer when a known launcher explains it - so
+    # by the time this is nonzero it already survived that check.
+    if ($raw.attach_agent -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.attach_agent) JVM agent attached to the game AFTER it was already running $([char]0x2014) the Attach API, not -javaagent, is how an injector hooks an already-running process") }
+    # A DLL the game still has loaded, whose file is gone from disk. Nothing
+    # legitimate deletes its own DLL while it is still mapped into the process.
+    if ($raw.dll_gone -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.dll_gone) DLL(s) still loaded in the game, whose file is no longer on disk $([char]0x2014) deleted while still in use") }
+    # Windows Defender's own HackTool/Injector/Trojan classification, not a name
+    # match - Defender inspected the file's actual behaviour before flagging it.
+    if ($raw.defender_detect -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.defender_detect) hacking-tool detection(s) from Windows Defender's own history, near the game or Java") }
+    # RecentDocs/MuiCache/Recent\*.lnk naming a known cheat client whose file is
+    # gone - the same "ran, then vanished" pattern BAM and UserAssist catch,
+    # from three sources those do not read.
+    if ($raw.exec_trace -gt 0) { $score = [Math]::Max($score, 85); [void]$reasons.Add("$($raw.exec_trace) known cheat client name found in RecentDocs/MuiCache/Recent shortcuts, now gone from disk") }
     # An autoclicker is not a mod and never shows up in the mods folder. A script
     # that repeats mouse input in a loop AND names the Minecraft window, the
     # launcher or javaw has no second reading.
@@ -516,6 +545,8 @@ function Get-SessionLabel($raw) {
         $raw.macro_cheat -eq 0 -and $raw.macro_named -eq 0 -and
         $raw.behaviour_cheat -eq 0 -and $raw.behaviour_likely -eq 0 -and $raw.server_rule -eq 0 -and
         $raw.log_cheat -eq 0 -and $raw.instance_cheat -eq 0 -and $raw.instance_agent -eq 0 -and
+        $raw.manual_map -eq 0 -and $raw.attach_agent -eq 0 -and $raw.dll_gone -eq 0 -and
+        $raw.defender_detect -eq 0 -and $raw.exec_trace -eq 0 -and
         [double]$raw.verified -ge (0.6 * [double]$raw.total_mods)) { return 0 }
     return -1
 }

@@ -344,8 +344,11 @@ function Show-ExecTraceScan {
             "Not proof by itself - files get moved and renamed for ordinary reasons - but it is exactly where an injector's own loader lives, and it is gone now." `
             "HKCU\...\Explorer\RecentDocs, HKCU\...\Shell\MuiCache, and Recent\*.lnk." `
             "Ask what it was before drawing a conclusion."
+        # Not added to Evidence.ExecTrace: that field feeds a hard rule, and a
+        # plain jar/exe/dll from a user-writable folder is not certain enough
+        # for one, the same reason dllReview and Defender's WARN tier stay out
+        # of their own hard-rule fields. It still counts toward sys_issues.
         $script:SystemIssues += $et.Warn.Count
-        $script:Evidence.ExecTrace += $et.Warn.Count
     }
     if ($et.Fail.Count -eq 0 -and $et.Warn.Count -eq 0) {
         Write-SystemFlag "OK" "Recent-file and shortcut records $([char]0x2014) nothing pointing at a missing jar/exe/DLL"
