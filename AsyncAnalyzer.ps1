@@ -38,6 +38,21 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 if (Get-Command chcp -ErrorAction SilentlyContinue) { $null = chcp 65001 }
 $ModPath = ""
 
+# The elevated window runs a temp copy of this file (see Invoke-SelfElevate). By
+# the time this line runs the copy has been read and parsed in full, so it can
+# go - and it goes NOW, before one check has run, so that nothing of the tool is
+# left on the PC even if the scan dies halfway. Only the copy: a clone that is
+# run with -NoElevate lives somewhere else and is not named after a scan id.
+if ($NoElevate -and $PSCommandPath) {
+    try {
+        $elevTmpDir = [System.IO.Path]::GetTempPath().TrimEnd('\')
+        if ((Split-Path -Parent $PSCommandPath).TrimEnd('\') -ieq $elevTmpDir -and
+            (Split-Path -Leaf $PSCommandPath) -match '^AsyncAnalyzer_[0-9A-F]{12}\.ps1$') {
+            Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction Stop
+        }
+    } catch {}
+}
+
 $script:Version      = "4.0.0"
 $script:Author       = "QDHShamiro"
 $script:ToolName     = "AsyncAnalyzer"
@@ -1000,6 +1015,40 @@ function Test-IsAdmin {
     } catch { return $false }
 }
 
+function Get-SelfSource {
+    <#
+        The full text of THIS script, however it was started.
+
+        Inside a function, $MyInvocation.MyCommand is the function, so its
+        ScriptBlock is that function's text and nothing else. That is what the
+        elevated copy used to be written from: one function definition, which the
+        elevated window then called with -NoElevate - a parameter that file did
+        not have. It closed on the error before anyone could read it. And under
+        iex (irm ...), which is how the tool is delivered, not even the top-level
+        frame carries the script, so no $MyInvocation anywhere is enough.
+
+        Every frame on the call stack knows the whole text its position belongs
+        to (IScriptPosition.GetFullScript). The frame running the iex'd body is
+        on that stack, so the longest text that is recognisably this script IS
+        this script - under -File, iex and & { } alike. Recognisably: it must
+        contain two of this file's own function definitions, spelled here in
+        halves so that this function's own body can never pass the test.
+    #>
+    $mark1 = 'function ' + 'Invoke-SelfElevate'
+    $mark2 = 'function ' + 'New-HtmlReport'
+    $best = $null
+    foreach ($f in @(Get-PSCallStack)) {
+        $t = $null
+        try { $t = $f.Position.StartScriptPosition.GetFullScript() } catch {}
+        if (-not $t) { try { $t = $f.InvocationInfo.MyCommand.ScriptBlock.Ast.Extent.Text } catch {} }
+        if (-not $t) { continue }
+        if (-not ($t.Contains($mark1) -and $t.Contains($mark2))) { continue }
+        if ($null -eq $best -or $t.Length -gt $best.Length) { $best = $t }
+    }
+    if ($best) { $best = $best.TrimStart([char]0xFEFF) }
+    return $best
+}
+
 function Invoke-SelfElevate {
     # Without admin the BAM history (which executables ran and were then deleted),
     # the Defender exclusion list and scheduled tasks cannot be read - and those are
@@ -1012,6 +1061,7 @@ function Invoke-SelfElevate {
     W "    Windows will show a UAC prompt. Decline and the scan simply continues" DarkGray
     W "    without those checks $([char]0x2014) it is not required. Use -NoElevate to skip asking." DarkGray
     Write-Host ""
+    $tempCopy = $null
     try {
         $flags = @()
         if ($script:DeepScan)   { $flags += '-DeepScan' }
@@ -1021,37 +1071,48 @@ function Invoke-SelfElevate {
         if ($script:NoLearn)    { $flags += '-NoLearn' }
         if ($script:Share)      { $flags += '-Share' }
         $flags += '-NoElevate'          # the elevated run must never try to elevate again
-        if ($script:ScanCode) { $flags += @('-Code', ('"' + $script:ScanCode + '"')) }
-        if ($ModPath)         { $flags += @('-Path', ('"' + $ModPath + '"')) }
+        if ($script:ScanCode) { $flags += @('-Code', ("'" + ($script:ScanCode -replace "'", "''") + "'")) }
+        if ($ModPath)         { $flags += @('-Path', ("'" + ($ModPath -replace "'", "''") + "'")) }
 
-        # The elevated window runs THIS code, not a fresh download.
-        #
-        # It used to re-fetch the script from GitHub, which is wrong twice over.
-        # It is a different file: whatever is on main at that second, not what the
-        # person watching just read. And it stops working the moment the repo is
-        # private, which it now is - the fetch returns 404 and the elevated window
-        # dies with nothing on screen.
-        #
-        # So the running script writes ITSELF to a temp file and elevates that.
-        # Same bytes, no network, and the temp copy is deleted by the elevated run
-        # before it does anything else.
+        # The elevated window runs THIS code, not a fresh download: a re-fetch is
+        # whatever main holds at that second, not what the person watching just
+        # read. So the running script writes ITSELF to a temp file and elevates
+        # that. Same bytes, no network; the copy is deleted by the elevated run
+        # before it does anything else (see the top of the file).
         $self = $null
-        if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+        if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath)) {
             $self = $PSCommandPath
         } else {
             # Started with iex, so there is no file. Write the source out.
-            $body = $MyInvocation.MyCommand.ScriptBlock.Ast.Extent.Text
+            $body = Get-SelfSource
             if (-not $body) { throw "cannot recover the running script to elevate it" }
-            $self = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_" + $script:ScanId + ".ps1")
-            [System.IO.File]::WriteAllText($self, $body, [System.Text.UTF8Encoding]::new($true))
+            $tempCopy = Join-Path ([System.IO.Path]::GetTempPath()) ("AsyncAnalyzer_" + $script:ScanId + ".ps1")
+            [System.IO.File]::WriteAllText($tempCopy, $body, [System.Text.UTF8Encoding]::new($true))
+            $self = $tempCopy
             W "  $([char]0x2139) Elevating THIS copy, not a fresh download: $self" DarkGray
         }
         $inner = "& '" + ($self -replace "'", "''") + "' " + ($flags -join ' ')
-        Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $inner) -ErrorAction Stop
+        # -EncodedCommand, not -Command. -Command hands the text through the
+        # Windows command line first, where every double quote is stripped, so a
+        # -Path with a space in it arrived as two words. Base64 has nothing to strip.
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($inner))
+        # The same engine this is running in. Elevating pwsh into powershell.exe
+        # (or the other way) changes what the checks can see - see Get-WmiOrCim.
+        $hostExe = 'powershell.exe'
+        try {
+            $me = (Get-Process -Id $PID -ErrorAction Stop).Path
+            if ($me -and ([System.IO.Path]::GetFileName($me) -in @('powershell.exe', 'pwsh.exe'))) { $hostExe = $me }
+        } catch {}
+        # -NoExit: this is a NEW window and the whole scan runs in it. Without it
+        # the window closes the moment the scan ends - or the moment it fails -
+        # and takes every line the staff member was reading with it.
+        Start-Process -FilePath $hostExe -Verb RunAs -ArgumentList @(
+            '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -ErrorAction Stop
         W "  $([char]0x2713) Continuing in the elevated window." Green
         return $true
     } catch {
+        # Declined, or nothing to elevate. The copy was for that window only.
+        if ($tempCopy) { try { Remove-Item -LiteralPath $tempCopy -Force -ErrorAction Stop } catch {} }
         Add-ScanGap "Ran without Administrator $([char]0x2014) deleted-program history (BAM), Defender exclusions and scheduled tasks were NOT checked"
         W "  $([char]0x2139) Continuing without Administrator." DarkGray
         Write-Host ""
@@ -3605,15 +3666,19 @@ function New-HtmlReport([string]$OutPath = "") {
               elseif ($script:ReviewModsList.Contains($name)) { "<span class='pill warn'>Review</span>" }
               elseif (@($verified | Where-Object { $_.FileName -eq $name }).Count -gt 0) { "<span class='pill good'>Verified</span>" }
               else { "<span class='pill neutral'>Clean</span>" }
-        $script:_allRows += "<tr data-ext='$ext'><td class='mono'>$(Enc $name)</td><td class='dim'>.$ext</td><td>$st</td></tr>"
+        [void]$script:_allRowsSb.Append("<tr data-ext='$ext'><td class='mono'>$(Enc $name)</td><td class='dim'>.$ext</td><td>$st</td></tr>")
     }
-    $script:_allRows = ""
+    # A StringBuilder, not $s += $row. The inventory holds one row per file seen on
+    # the PC, which on an ordinary Windows install is tens of thousands, and += is
+    # O(n^2) because every += copies the whole string again: measured at 30.3 s for
+    # 25 000 rows against 52 ms for the builder, for byte-identical HTML.
+    $script:_allRowsSb = [System.Text.StringBuilder]::new()
     foreach ($f in @($jarFiles | Where-Object { $_ })) { & $addRow $f.Name "jar" }
     foreach ($f in @($exeFiles | Where-Object { $_ })) { & $addRow $f.Name "exe" }
     foreach ($f in @($pyFiles  | Where-Object { $_ })) { & $addRow $f.Name "py" }
     if ($null -ne $script:PCScannedExeNames) { foreach ($nm in @($script:PCScannedExeNames | Where-Object { $_ })) { & $addRow $nm "exe" } }
     if ($null -ne $script:PCScannedPyNames)  { foreach ($nm in @($script:PCScannedPyNames  | Where-Object { $_ })) { & $addRow $nm "py" } }
-    $allRows = $script:_allRows
+    $allRows = $script:_allRowsSb.ToString()
 
     # ---- plain text copy, for pasting into a ticket -------------------------
     $plain = New-PlainSummary $sv $svStyle $stampLocal $reportId $isAdmin

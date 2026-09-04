@@ -38,6 +38,21 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
 if (Get-Command chcp -ErrorAction SilentlyContinue) { $null = chcp 65001 }
 $ModPath = ""
 
+# The elevated window runs a temp copy of this file (see Invoke-SelfElevate). By
+# the time this line runs the copy has been read and parsed in full, so it can
+# go - and it goes NOW, before one check has run, so that nothing of the tool is
+# left on the PC even if the scan dies halfway. Only the copy: a clone that is
+# run with -NoElevate lives somewhere else and is not named after a scan id.
+if ($NoElevate -and $PSCommandPath) {
+    try {
+        $elevTmpDir = [System.IO.Path]::GetTempPath().TrimEnd('\')
+        if ((Split-Path -Parent $PSCommandPath).TrimEnd('\') -ieq $elevTmpDir -and
+            (Split-Path -Leaf $PSCommandPath) -match '^AsyncAnalyzer_[0-9A-F]{12}\.ps1$') {
+            Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction Stop
+        }
+    } catch {}
+}
+
 $script:Version      = "4.0.0"
 $script:Author       = "QDHShamiro"
 $script:ToolName     = "AsyncAnalyzer"
